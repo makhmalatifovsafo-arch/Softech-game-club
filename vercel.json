@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/SoftechCloudAdmin/api/index.js"
+    },
+    {
+      "source": "/login",
+      "destination": "/SoftechCloudAdmin/public/views/login.html"
+    },
+    {
+      "source": "/views/(.*)",
+      "destination": "/SoftechCloudAdmin/public/views/$1"
+    },
+    {
+      "source": "/icons/(.*)",
+      "destination": "/SoftechCloudAdmin/public/icons/$1"
+    },
+    {
+      "source": "/sw.js",
+      "destination": "/SoftechCloudAdmin/public/sw.js"
+    },
+    {
+      "source": "/manifest.json",
+      "destination": "/SoftechCloudAdmin/public/manifest.json"
+    },
+    {
+      "source": "/",
+      "destination": "/SoftechCloudAdmin/public/index.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/SoftechCloudAdmin/public/$1"
+    }
+  ]
+}
