@@ -51,6 +51,28 @@ export class LicenseManager {
     this.clientBroadcaster = clientBroadcaster;
     this.sessionDropper = sessionDropper;
 
+    // Bulut URL ni config.json dan yuklash va localhost bo'lsa darhol Vercel ga yo'naltirish
+    try {
+      const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
+      if (fs.existsSync(CONFIG_FILE)) {
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        if (cfg.cloudUrl && !cfg.cloudUrl.includes('localhost') && !cfg.cloudUrl.includes('127.0.0.1')) {
+          this.cloudUrl = cfg.cloudUrl.trim();
+        } else {
+          this.cloudUrl = 'https://softech-game-club.vercel.app';
+        }
+      } else {
+        this.cloudUrl = 'https://softech-game-club.vercel.app';
+      }
+    } catch (e) {
+      this.cloudUrl = 'https://softech-game-club.vercel.app';
+    }
+
+    if (!this.cloudUrl || this.cloudUrl.includes('localhost') || this.cloudUrl.includes('127.0.0.1')) {
+      this.cloudUrl = 'https://softech-game-club.vercel.app';
+    }
+
+    console.log(`🌐 [Anti-Piracy] Markaziy Cloud URL: ${this.cloudUrl}`);
     console.log('🔒 [Anti-Piracy] Softech HWID & Kill-Switch xavfsizlik dvigateli yuklanmoqda...');
     const currentHwid = HwidService.getHardwareFingerprint();
     console.log(`🖥️ [Anti-Piracy] Mashina HWID: ${currentHwid}`);

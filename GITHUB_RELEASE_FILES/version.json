@@ -9,7 +9,7 @@
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "4e7903a24b8f968194a0433c66e81c8b40928b90e1c2da7f7f9345a22146957a"
+    "sha256": "0bc6badc82381dd84c7df4ee6a99e53dd5358ed252c7da29f45bde75bf055555"
   },
   "changelog": "Qora CMD oynasiz to'liq fon rejimida (Silent / Headless) yangilanish, litsenziya kaliti kiritish va Telegram integratsiyasi."
 }
