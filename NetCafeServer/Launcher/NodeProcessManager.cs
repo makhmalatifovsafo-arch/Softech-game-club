@@ -68,6 +68,9 @@ public class NodeProcessManager
             return true;
         }
 
+        // Port 5000 da qotib qolgan zombi jarayon bo'lsa tozalash
+        KillProcessOnPort(5000);
+
         // 2. Node.js ijro faylini va server ildiz papkasini topish
         var (nodePath, serverDir) = ResolveNodeAndServerPaths();
 
@@ -251,5 +254,48 @@ public class NodeProcessManager
             _spawnedProcess = null;
             _isSpawnedByThisInstance = false;
         }
+    }
+
+    /// <summary>
+    /// Port band bo'lsa (masalan qotib qolgan zombi Node instansiyasi), uning jarayonini to'xtatadi.
+    /// </summary>
+    public static void KillProcessOnPort(int port)
+    {
+        try
+        {
+            var p = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c netstat -ano | findstr :{port}",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true
+                }
+            };
+            p.Start();
+            string output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(1000);
+
+            foreach (var line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (line.Contains("LISTENING", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length > 0 && int.TryParse(parts[^1], out int pid) && pid > 0)
+                    {
+                        try
+                        {
+                            var procToKill = Process.GetProcessById(pid);
+                            procToKill.Kill(entireProcessTree: true);
+                            procToKill.WaitForExit(1000);
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+        catch { }
     }
 }

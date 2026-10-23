@@ -265,31 +265,36 @@ public class WebSocketClientService
             try
             {
                 await Task.Delay(retryDelay, _cts.Token);
-                retryDelay = Math.Min(retryDelay + 500, 5000);
+                retryDelay = Math.Min(retryDelay * 2, 15000);
             }
             catch (OperationCanceledException) { break; }
         }
     }
 
     // -----------------------------------------------------------------------
-    // Handshake (BUG 1: CLIENT_HELLO)
+    // Handshake (Contract: CLIENT_HELLO)
     // -----------------------------------------------------------------------
 
     private async Task SendHandshakeAsync()
     {
         string localIp = GetLocalIpAddress();
+        string mac = GetMacAddress();
         var helloMsg = new
         {
             type = "CLIENT_HELLO",
             @event = "CLIENT_HANDSHAKE",
             pcNumber = _config.PcNumber,
+            mac = mac,
+            clientVersion = "1.0.0",
             ip = localIp,
             payload = new
             {
                 pcNumber = _config.PcNumber,
                 ipAddress = localIp,
-                macAddress = GetMacAddress(),
-                agentVersion = "2.0.0",
+                mac = mac,
+                macAddress = mac,
+                clientVersion = "1.0.0",
+                agentVersion = "1.0.0",
                 osInfo = Environment.OSVersion.VersionString
             },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -385,13 +390,17 @@ public class WebSocketClientService
             switch (eventName.ToUpperInvariant())
             {
                 // ---- SaaS Remote Kill-Switch & Anti-Piracy Lockdown ----
+                case "SUPER_ADMIN_LOCKDOWN":
                 case "EMERGENCY_LOCKDOWN":
                 case "LOCK_WORKSTATION":
                 case "LOCKED_BY_ADMIN":
                 case "FORCE_CLIENT_LOCKDOWN":
                 {
                     string reason = data.TryGetProperty("reason", out var r) ? (r.GetString() ?? "PAYMENT_OVERDUE") : "PAYMENT_OVERDUE";
-                    string msg = data.TryGetProperty("message", out var m) ? (m.GetString() ?? "DIQQAT: Dastur litsenziyasi to'xtatildi. Qayta faollashtirish uchun ta'minotchi bilan bog'laning: +998 95 222 06 44, +998 99 563 45 16") : "DIQQAT: Dastur litsenziyasi to'xtatildi. Qayta faollashtirish uchun ta'minotchi bilan bog'laning: +998 95 222 06 44, +998 99 563 45 16";
+                    string contactPhone = data.TryGetProperty("contactPhone", out var cp) ? (cp.GetString() ?? "+998 95 222 06 44, +998 99 563 45 16") : "+998 95 222 06 44, +998 99 563 45 16";
+                    string msg = data.TryGetProperty("message", out var m) 
+                        ? (m.GetString() ?? $"DIQQAT: Dastur litsenziyasi to'xtatildi. Qayta faollashtirish uchun ta'minotchi bilan bog'laning: {contactPhone}") 
+                        : $"DIQQAT: Dastur litsenziyasi to'xtatildi. Qayta faollashtirish uchun ta'minotchi bilan bog'laning: {contactPhone}";
 
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
@@ -637,21 +646,28 @@ public class WebSocketClientService
         await SendRawAsync(msg);
     }
 
-    public async Task SendBarOrderAsync(string pcNumber, object items, double totalAmount, string paymentMethod, string? note = null)
+    public async Task SendBarOrderAsync(string pcNumber, object items, double totalAmount, string paymentMethod = "ON_PC_SESSION", string? note = null)
     {
+        string pType = string.IsNullOrWhiteSpace(paymentMethod) ? "ON_PC_SESSION" : paymentMethod;
         var msg = new
         {
             type = "CLIENT_BAR_ORDER",
             @event = "CLIENT_BAR_ORDER",
             pcNumber = _config.PcNumber,
             workstationName = _config.PcNumber,
+            items,
+            totalAmount,
+            paymentType = pType,
+            paymentMethod = pType,
+            note,
             payload = new
             {
                 pcNumber = _config.PcNumber,
                 workstationName = _config.PcNumber,
                 items,
                 totalAmount,
-                paymentMethod,
+                paymentType = pType,
+                paymentMethod = pType,
                 note
             },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -709,7 +725,12 @@ public class WebSocketClientService
                 if (nic.OperationalStatus == OperationalStatus.Up &&
                     nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
                 {
-                    return nic.GetPhysicalAddress().ToString();
+                    string raw = nic.GetPhysicalAddress().ToString();
+                    if (!string.IsNullOrEmpty(raw) && raw.Length == 12)
+                    {
+                        return string.Join(":", System.Linq.Enumerable.Range(0, 6).Select(i => raw.Substring(i * 2, 2)));
+                    }
+                    return raw;
                 }
             }
         }

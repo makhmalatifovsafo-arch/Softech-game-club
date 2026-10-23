@@ -253,20 +253,22 @@ export class CloudLicenseService {
       console.warn('⚠️ Seanslarni yopishda xatolik:', err.message);
     }
 
-    // 2. Barcha mijoz kompyuterlariga FORCE_CLIENT_LOCKDOWN yuborish
+    // 2. Barcha mijoz kompyuterlariga SUPER_ADMIN_LOCKDOWN yuborish
     try {
       const payload = {
-        type: 'FORCE_CLIENT_LOCKDOWN',
-        event: 'FORCE_CLIENT_LOCKDOWN',
+        type: 'SUPER_ADMIN_LOCKDOWN',
+        event: 'SUPER_ADMIN_LOCKDOWN',
         reason: this.lockReason,
         message: this.lockMessage,
+        contactPhone: this.supportPhone,
         supportPhone: this.supportPhone,
         timestamp: Date.now()
       };
 
+      ClientManager.broadcast('SUPER_ADMIN_LOCKDOWN', payload);
       ClientManager.broadcast('FORCE_CLIENT_LOCKDOWN', payload);
       ClientManager.broadcast('EMERGENCY_LOCKDOWN', payload);
-      console.log('📡 [CloudLicense] Barcha mijoz kompyuterlariga FORCE_CLIENT_LOCKDOWN tarqatildi.');
+      console.log('📡 [CloudLicense] Barcha mijoz kompyuterlariga SUPER_ADMIN_LOCKDOWN tarqatildi.');
     } catch (err) {
       console.warn('⚠️ Mijozlarga lockdown xabarini yuborishda xatolik:', err.message);
     }
@@ -362,7 +364,8 @@ export class CloudLicenseService {
           today_revenue: todayRevenue,
           occupied_pcs: occupiedCount,
           online_pcs: onlineCount,
-          total_pcs: totalPcs
+          total_pcs: totalPcs,
+          server_version: '1.0.0'
         })
         .eq('id', this.clubId);
 
