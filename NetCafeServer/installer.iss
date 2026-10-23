@@ -39,6 +39,7 @@ Source: "src\*"; DestDir: "{app}\src"; Flags: ignoreversion recursesubdirs creat
 Source: "public\*"; DestDir: "{app}\public"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "package.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "config.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "SoftechCockpit.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "schema.sql"; DestDir: "{app}"; Flags: ignoreversion
