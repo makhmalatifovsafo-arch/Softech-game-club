@@ -110,7 +110,29 @@ export default async function handler(req, res) {
     // ========================================================================
     // 1. AUTENTIFIKATSIYA (AUTH)
     // ========================================================================
-    if (pathname === '/api/auth/login' && method === 'POST') {
+    if (pathname.includes('pin-login') && method === 'POST') {
+      const body = await getParsedBody(req);
+      const { pinCode } = body;
+
+      if (!pinCode || String(pinCode).length !== 4) {
+        return sendJson(res, 400, { success: false, error: "4 xonali PIN kod kiritilishi shart." });
+      }
+
+      const user = await SupabaseCloudService.verifyPinCode(pinCode);
+      if (!user) {
+        if (String(pinCode) === '7777') {
+          const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
+          const token = generateJwt(fallbackUser);
+          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
+        }
+        return sendJson(res, 401, { success: false, error: "Noto'g'ri PIN kod." });
+      }
+
+      const token = generateJwt(user);
+      return sendJson(res, 200, { success: true, token, accessToken: token, user });
+    }
+
+    if ((pathname.includes('auth/login') || pathname.endsWith('/login')) && !pathname.includes('pin-login') && method === 'POST') {
       const body = await getParsedBody(req);
       const { username, password } = body;
 
@@ -128,28 +150,6 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
         }
         return sendJson(res, 401, { success: false, error: "Login yoki parol noto'g'ri." });
-      }
-
-      const token = generateJwt(user);
-      return sendJson(res, 200, { success: true, token, accessToken: token, user });
-    }
-
-    if (pathname === '/api/auth/pin-login' && method === 'POST') {
-      const body = await getParsedBody(req);
-      const { pinCode } = body;
-
-      if (!pinCode || String(pinCode).length !== 4) {
-        return sendJson(res, 400, { success: false, error: "4 xonali PIN kod kiritilishi shart." });
-      }
-
-      const user = await SupabaseCloudService.verifyPinCode(pinCode);
-      if (!user) {
-        if (String(pinCode) === '7777') {
-          const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
-          const token = generateJwt(fallbackUser);
-          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
-        }
-        return sendJson(res, 401, { success: false, error: "Noto'g'ri PIN kod." });
       }
 
       const token = generateJwt(user);
