@@ -276,48 +276,56 @@ export class ServerUpdater {
 
     console.log(`🚀 [ServerUpdater] Server yangilanishi qo'llanilmoqda (v${this.currentVersion} -> v${version})...`);
 
-    // Detached bat skripti yaratish (netcafe.db* mutlaqo saqlab qolinadi)
+    // Mutlaqo qora oynasiz (Headless / Silent) yangilash uchun bat va vbs yaratamiz
     const batchScriptPath = path.resolve(ROOT_DIR, 'apply_server_update.bat');
+    const vbsScriptPath = path.resolve(ROOT_DIR, 'apply_server_update.vbs');
+
     const batchContent = `@echo off
-title Softech Server Updater Handover
 cd /d "${ROOT_DIR}"
-echo ====================================================
-echo  Softech Server Engine — OTA Update Handover (v${version})
-echo ====================================================
 
-echo 1. Server jarayoni to'xtashini kutish...
-timeout /t 2 /nobreak >nul
+:: 1. Eski server jarayoni to'xtashini kutish
+timeout /t 2 /nobreak >nul 2>&1
 
-echo 2. Zaxira nusxasi yaratilmoqda (netcafe.db o'zgarishsiz qoladi)...
-if not exist "backup_v${this.currentVersion}" mkdir "backup_v${this.currentVersion}"
+:: 2. Zaxira nusxasi yaratilmoqda (netcafe.db daxlsiz qoladi)
+if not exist "backup_v${this.currentVersion}" mkdir "backup_v${this.currentVersion}" >nul 2>&1
 if exist "src" xcopy /E /I /Y "src" "backup_v${this.currentVersion}\\src" >nul 2>&1
 if exist "public" xcopy /E /I /Y "public" "backup_v${this.currentVersion}\\public" >nul 2>&1
 if exist "package.json" copy /Y "package.json" "backup_v${this.currentVersion}\\package.json" >nul 2>&1
 
-echo 3. Yangi fayllar ko'chirilmoqda...
+:: 3. Yangi fayllar ko'chirilmoqda
 xcopy /E /I /Y "${sourceDir}\\*" "." >nul 2>&1
 
-echo 4. Softech Cockpit UI qayta ishga tushirilmoqda...
+:: 4. Serverni qora oynasiz, orqa fonda qayta ishga tushirish
 if exist "SoftechCockpit.exe" (
     start "" "SoftechCockpit.exe"
-) else if exist "start_server.bat" (
-    start "" "start_server.bat"
+) else if exist "start_server_background.vbs" (
+    start "" wscript.exe //B //Nologo "start_server_background.vbs"
+) else if exist ".\\runtime\\node.exe" (
+    start "" /B ".\\runtime\\node.exe" src/server.js
 ) else (
-    start "" node src/server.js
+    start "" /B node src/server.js
 )
 
-echo Yangilanish muvaffaqiyatli yakunlandi.
 exit
 `;
 
-    fs.writeFileSync(batchScriptPath, batchContent, 'utf8');
+    // Qora konsol oynasini 100% yashiruvchi VBScript
+    const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
+Set FSO = CreateObject("Scripting.FileSystemObject")
+currentDir = "${ROOT_DIR.replace(/\\/g, '\\\\')}"
+WshShell.CurrentDirectory = currentDir
+WshShell.Run "cmd.exe /c """ & currentDir & "\\apply_server_update.bat""", 0, False
+`;
 
-    // Detached jarayon sifatida ishga tushirish
-    const child = spawn('cmd.exe', ['/c', batchScriptPath], {
+    fs.writeFileSync(batchScriptPath, batchContent, 'utf8');
+    fs.writeFileSync(vbsScriptPath, vbsContent, 'utf8');
+
+    // wscript.exe orqali qora oynasiz ishga tushirish
+    const child = spawn('wscript.exe', ['//B', '//Nologo', vbsScriptPath], {
       detached: true,
       stdio: 'ignore',
       cwd: ROOT_DIR,
-      windowsHide: false,
+      windowsHide: true,
     });
     child.unref();
 

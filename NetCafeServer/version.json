@@ -9,7 +9,7 @@
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "b557703a874e7e67bed10df740cf3d0b3265eab36be96bf2907b404ecd071f0a"
+    "sha256": "4e7903a24b8f968194a0433c66e81c8b40928b90e1c2da7f7f9345a22146957a"
   },
-  "changelog": "Litsenziya kalitini qo'lda kiritish, markaziy Vercel bulutiga to'g'ridan-to'g'ri ulanish va Telegram /approve avtomatik faollashtirish."
+  "changelog": "Qora CMD oynasiz to'liq fon rejimida (Silent / Headless) yangilanish, litsenziya kaliti kiritish va Telegram integratsiyasi."
 }
