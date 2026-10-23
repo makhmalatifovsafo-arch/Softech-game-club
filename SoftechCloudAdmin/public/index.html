@@ -573,7 +573,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pinCode: currentAuthPin })
         });
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          data = { error: `Server xatosi (${res.status})` };
+        }
 
         if (res.ok && data.success) {
           triggerHaptic();
@@ -611,7 +616,7 @@
         }
       } catch (err) {
         if (statusText) {
-          statusText.textContent = 'Tarmoq xatosi. Qayta urinib ko\'ring.';
+          statusText.textContent = 'Tarmoq xatosi: ' + (err.message || 'Serverga ulanib bo\'lmadi');
           statusText.className = 'text-xs text-rose-400 font-mono h-5 text-center font-bold';
         }
         currentAuthPin = '';
@@ -640,7 +645,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: u, password: p })
         });
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = { error: `Server xatosi (${res.status})` };
+        }
         if (res.ok && data.success) {
           triggerHaptic();
           const token = data.accessToken || data.token;
@@ -660,7 +670,7 @@
         }
       } catch (err) {
         if (errEl) {
-          errEl.textContent = 'Server bilan aloqa yo\'q.';
+          errEl.textContent = 'Tarmoq xatosi: ' + (err.message || 'Serverga ulanib bo\'lmadi');
           errEl.classList.remove('hidden');
         }
       } finally {
