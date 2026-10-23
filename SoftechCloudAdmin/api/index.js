@@ -296,6 +296,118 @@ export default async function handler(req, res) {
       });
     }
 
+    // 2.6 Litsenziya Kaliti (Super Admin kodi) orqali darhol faollashtirish
+    if (pathname === '/api/telemetry/activate-by-key' && method === 'POST') {
+      const body = await getParsedBody(req);
+      const { licenseKey, hardwareFingerprint, totalPcs, serverLanIp, serverVersion } = body;
+
+      if (!licenseKey || !licenseKey.trim()) {
+        return sendJson(res, 400, { success: false, error: "Litsenziya kaliti kiritilishi shart." });
+      }
+      if (!hardwareFingerprint || !hardwareFingerprint.trim()) {
+        return sendJson(res, 400, { success: false, error: "Qurilma HWID aniqlanmadi." });
+      }
+
+      const cleanKey = licenseKey.trim();
+      const client = SupabaseCloudService.getClient();
+      let club = null;
+
+      if (client) {
+        const { data } = await client.from('clubs')
+          .select('*')
+          .or(`api_secret_token.eq.${cleanKey},slug.eq.${cleanKey}`)
+          .maybeSingle();
+        club = data;
+      }
+
+      if (!club) {
+        return sendJson(res, 404, { success: false, error: "Kiritilgan litsenziya kaliti topilmadi yoki noto'g'ri. Super Admin paneldagi kalitni tekshiring." });
+      }
+
+      // Klubni ACTIVE qilish va HWID ga biriktirish
+      const finalPcs = parseInt(totalPcs || club.total_workstations || 16, 10);
+      if (client) {
+        await client.from('clubs').update({
+          status: 'ACTIVE',
+          hardware_fingerprint: hardwareFingerprint,
+          server_lan_ip: serverLanIp || club.server_lan_ip,
+          server_version: serverVersion || club.server_version,
+          total_workstations: finalPcs,
+          updated_at: new Date().toISOString()
+        }).eq('id', club.id);
+      }
+
+      // Kriptografik imzolangan litsenziyani yaratish
+      const CLOUD_MASTER_KEY = process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026';
+      const issuedAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+      const payload = {
+        clubId: club.id,
+        clubName: club.name,
+        hardwareFingerprint,
+        status: 'ACTIVE',
+        issuedAt,
+        expiresAt,
+        maxPcs: finalPcs,
+        verifiedAt: issuedAt
+      };
+      const signature = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
+      const signedLicense = { payload, signature };
+
+      // Telegram xabarnoma
+      try {
+        await TelegramBotService.sendMessage(
+          `✅ <b>LITSENZIYA FAOLLASHTIRILDI (KALIT BILAN)!</b>\n🏢 Klub: <b>${club.name}</b>\n🔑 Kalit: <code>${cleanKey}</code>\n🖥️ Mashina HWID: <code>${hardwareFingerprint}</code>\n💻 Kompyuterlar: <b>${finalPcs} ta PC</b>`
+        );
+      } catch (err) {}
+
+      return sendJson(res, 200, {
+        success: true,
+        message: "Litsenziya muvaffaqiyatli faollashtirildi!",
+        club: { id: club.id, name: club.name },
+        signedLicense
+      });
+    }
+
+    // 2.7 So'rov holatini tekshirish (Polling Activation Status)
+    if (pathname === '/api/telemetry/activation-status' && method === 'GET') {
+      const hwid = url.searchParams.get('hwid');
+      if (!hwid) return sendJson(res, 200, { success: true, status: 'NONE' });
+
+      const client = SupabaseCloudService.getClient();
+      if (client) {
+        const { data: club } = await client.from('clubs')
+          .select('*')
+          .eq('hardware_fingerprint', hwid)
+          .maybeSingle();
+
+        if (club && club.status === 'ACTIVE') {
+          const CLOUD_MASTER_KEY = process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026';
+          const issuedAt = new Date().toISOString();
+          const expiresAt = club.license_expires_at || new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+          const payload = {
+            clubId: club.id,
+            clubName: club.name,
+            hardwareFingerprint: hwid,
+            status: 'ACTIVE',
+            issuedAt,
+            expiresAt,
+            maxPcs: club.total_workstations || 16,
+            verifiedAt: issuedAt
+          };
+          const signature = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
+          return sendJson(res, 200, {
+            success: true,
+            status: 'APPROVED',
+            club: { id: club.id, name: club.name },
+            signedLicense: { payload, signature }
+          });
+        }
+      }
+
+      return sendJson(res, 200, { success: true, status: 'PENDING' });
+    }
+
     if (pathname === '/api/telemetry/activation-requests' && method === 'GET') {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });

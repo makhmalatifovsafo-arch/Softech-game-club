@@ -64,6 +64,11 @@ export class LicenseManager {
     // Agar server yangi bo'lsa (PENDING_ACTIVATION), darhol Super Adminga Telegram so'rov yuborish
     if (this.state === 'PENDING_ACTIVATION') {
       this.requestActivation('Yangi Game Club');
+      if (!this.approvalPollTimer) {
+        this.approvalPollTimer = setInterval(() => {
+          this.checkApprovalStatus();
+        }, 5000);
+      }
     }
 
     // Bulut bilan doimiy WebSocket va Kill-Switch aloqasini o'rnatish
@@ -94,11 +99,116 @@ export class LicenseManager {
       });
       const data = await res.json();
       console.log('✅ [Activation] So\'rov muvaffaqiyatli yuborildi:', data.message || data);
+
+      if (!this.approvalPollTimer) {
+        this.approvalPollTimer = setInterval(() => {
+          this.checkApprovalStatus();
+        }, 4000);
+      }
+
       return data;
     } catch (err) {
       console.warn('⚠️ [Activation] Bulutga so\'rov yuborishda xatolik:', err.message);
       return { success: false, error: err.message };
     }
+  }
+
+  static async activateWithKey(licenseKey) {
+    if (!licenseKey || !licenseKey.trim()) {
+      return { success: false, error: "Litsenziya kaliti kiritilishi shart." };
+    }
+    const hwid = HwidService.getHardwareFingerprint();
+    const url = `${this.cloudUrl}/api/telemetry/activate-by-key`;
+
+    try {
+      console.log(`📡 [Activation] Bulutdan kalit bilan faollashtirish: ${url}`);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          licenseKey: licenseKey.trim(),
+          hardwareFingerprint: hwid,
+          totalPcs: 16,
+          serverVersion: '1.0.1'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || "Faollashtirib bo'lmadi" };
+      }
+
+      if (data.signedLicense) {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(LICENSE_FILE, JSON.stringify(data.signedLicense, null, 2), 'utf8');
+      }
+
+      if (data.club?.id) {
+        try {
+          const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
+          let cfg = {};
+          if (fs.existsSync(CONFIG_FILE)) cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+          cfg.clubId = data.club.id;
+          cfg.cloudUrl = this.cloudUrl;
+          fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+        } catch (e) {}
+      }
+
+      const verified = this.loadAndVerifyLocalLicense();
+      if (this.approvalPollTimer) {
+        clearInterval(this.approvalPollTimer);
+        this.approvalPollTimer = null;
+      }
+
+      return {
+        success: verified,
+        message: verified ? "Litsenziya muvaffaqiyatli faollashtirildi!" : "Litsenziyani tasdiqlashda xatolik yuz berdi.",
+        club: data.club
+      };
+    } catch (err) {
+      console.warn('⚠️ [Activation] Kalit orqali faollashtirishda xatolik:', err.message);
+      return { success: false, error: "Bulut serveriga ulanishda xatolik: " + err.message };
+    }
+  }
+
+  static async checkApprovalStatus() {
+    if (this.state !== 'PENDING_ACTIVATION') {
+      if (this.approvalPollTimer) {
+        clearInterval(this.approvalPollTimer);
+        this.approvalPollTimer = null;
+      }
+      return;
+    }
+
+    const hwid = HwidService.getHardwareFingerprint();
+    const url = `${this.cloudUrl}/api/telemetry/activation-status?hwid=${encodeURIComponent(hwid)}`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.status === 'APPROVED' && data.signedLicense) {
+        console.log('🎉 [Activation] Super Admin so\'rovni tasdiqladi! Litsenziya avtomatik saqlanmoqda...');
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(LICENSE_FILE, JSON.stringify(data.signedLicense, null, 2), 'utf8');
+
+        if (data.club?.id) {
+          try {
+            const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
+            let cfg = {};
+            if (fs.existsSync(CONFIG_FILE)) cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+            cfg.clubId = data.club.id;
+            fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+          } catch (e) {}
+        }
+
+        this.loadAndVerifyLocalLicense();
+        if (this.approvalPollTimer) {
+          clearInterval(this.approvalPollTimer);
+          this.approvalPollTimer = null;
+        }
+      }
+    } catch (e) {}
   }
 
   /**

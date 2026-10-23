@@ -10,7 +10,7 @@
  */
 
 import crypto from 'node:crypto';
-import { db } from '../db/connection.js';
+import { db, initDatabase } from '../db/connection.js';
 import { TelegramBotService } from './telegramBot.js';
 
 const CLOUD_MASTER_KEY = process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026';
@@ -24,6 +24,10 @@ export class ActivationService {
    * 1. Sxemani initsializatsiya qilish
    */
   static initSchema() {
+    try {
+      if (typeof initDatabase === 'function') initDatabase();
+    } catch (e) {}
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS activation_requests (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,10 +118,22 @@ export class ActivationService {
         `💻 Kompyuterlar: <b>${totalPcs} ta PC</b>`,
         `🌐 LAN IP: <code>${serverLanIp}</code> • v${serverVersion}`,
         ``,
-        `<i>Super Admin PWA orqali [✅ TASDIQLASH] yoki [❌ RAD ETISH] mumkin.</i>`
+        `Tasdiqlash: /approve_${requestId}`,
+        `Rad etish: /reject_${requestId}`,
+        ``,
+        `<i>Super Admin PWA yoki Telegram orqali [✅ TASDIQLASH] mumkin.</i>`
       ].join('\n');
 
-      await TelegramBotService.sendMessage(alertMsg);
+      const inlineKeyboard = {
+        inline_keyboard: [
+          [
+            { text: '✅ FAOLLASHTIRISH', callback_data: `approve_${requestId}` },
+            { text: '❌ RAD ETISH', callback_data: `reject_${requestId}` }
+          ]
+        ]
+      };
+
+      await TelegramBotService.sendMessage(alertMsg, { replyMarkup: inlineKeyboard });
     } catch (err) {
       console.warn('⚠️ Telegram ogohlantirish yuborishda xatolik:', err.message);
     }
@@ -128,6 +144,144 @@ export class ActivationService {
       status: 'PENDING',
       message: "Litsenziya so'rovi Super Adminga yuborildi. Tasdiqlanishi kutilmoqda."
     };
+  }
+
+  /**
+   * 3.5 Litsenziya Kaliti (Super Admin kaliti) orqali darhol faollashtirish
+   */
+  static async activateByKey({ licenseKey, hardwareFingerprint, totalPcs = 16, serverLanIp = '192.168.1.100', serverVersion = '1.0.1' }) {
+    this.initSchema();
+    if (!licenseKey || !licenseKey.trim()) {
+      throw new Error("Litsenziya kaliti kiritilishi shart.");
+    }
+    if (!hardwareFingerprint || !hardwareFingerprint.trim()) {
+      throw new Error("Qurilma HWID aniqlanmadi.");
+    }
+
+    const cleanKey = licenseKey.trim();
+
+    // 1. clubs jadvalidan api_secret_token yoki slug orqali qidirish
+    let club = db.prepare('SELECT * FROM clubs WHERE api_secret_token = ? OR slug = ?').get(cleanKey, cleanKey);
+
+    if (!club) {
+      club = db.prepare('SELECT * FROM clubs WHERE UPPER(api_secret_token) = UPPER(?)').get(cleanKey);
+    }
+
+    if (!club) {
+      throw new Error("Kiritilgan litsenziya kaliti topilmadi yoki noto'g'ri. Super Admin bergan kalitni tekshiring.");
+    }
+
+    // 2. Klubni faollashtirish va ushbu HWID ga biriktirish
+    const finalPcs = parseInt(totalPcs || club.total_workstations || 16, 10);
+    const expiresAtIso = club.license_expires_at || new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+
+    db.prepare(`
+      UPDATE clubs 
+      SET status = 'ACTIVE', 
+          hardware_fingerprint = ?, 
+          server_lan_ip = ?, 
+          server_version = ?, 
+          total_workstations = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(hardwareFingerprint, serverLanIp, serverVersion, finalPcs, club.id);
+
+    try {
+      db.prepare(`
+        UPDATE activation_requests 
+        SET status = 'APPROVED', club_id = ?, processed_at = CURRENT_TIMESTAMP 
+        WHERE hardware_fingerprint = ? AND status = 'PENDING'
+      `).run(club.id, hardwareFingerprint);
+    } catch (e) {}
+
+    // 3. Imzolangan litsenziyani tayyorlash
+    const signedLicense = this.generateSignedLicense({
+      clubId: club.id,
+      clubName: club.name,
+      hardwareFingerprint,
+      days: 30,
+      maxPcs: finalPcs
+    });
+
+    // 4. Telegram orqali Super Adminga xabarnoma
+    try {
+      await TelegramBotService.sendMessage(
+        `✅ <b>LITSENZIYA FAOLLASHTIRILDI (KALIT BILAN)!</b>\n` +
+        `🏢 Klub: <b>${club.name}</b>\n` +
+        `🔑 Kalit: <code>${cleanKey}</code>\n` +
+        `🖥️ HWID: <code>${hardwareFingerprint}</code>\n` +
+        `💻 Kompyuterlar: <b>${finalPcs} ta PC</b>\n` +
+        `🌐 LAN IP: <code>${serverLanIp}</code> • v${serverVersion}\n\n` +
+        `<i>Filial serveri muvaffaqiyatli ishga tushirildi!</i>`
+      );
+    } catch (err) {}
+
+    return {
+      success: true,
+      message: "Litsenziya muvaffaqiyatli faollashtirildi!",
+      club: { id: club.id, name: club.name },
+      signedLicense
+    };
+  }
+
+  /**
+   * 3.6 NetCafeServer dan so'rov holatini tekshirish (Polling Status)
+   */
+  static getActivationStatus(hardwareFingerprint) {
+    this.initSchema();
+    if (!hardwareFingerprint) return { status: 'NONE' };
+
+    const req = db.prepare(`
+      SELECT * FROM activation_requests 
+      WHERE hardware_fingerprint = ? 
+      ORDER BY id DESC LIMIT 1
+    `).get(hardwareFingerprint);
+
+    if (req) {
+      if (req.status === 'APPROVED') {
+        const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club_id) ||
+                     db.prepare('SELECT * FROM clubs WHERE hardware_fingerprint = ?').get(hardwareFingerprint);
+
+        const signedLicense = this.generateSignedLicense({
+          clubId: club ? club.id : req.club_id,
+          clubName: club ? club.name : req.club_name,
+          hardwareFingerprint,
+          days: 30,
+          maxPcs: club ? club.total_workstations : req.total_pcs
+        });
+
+        return {
+          status: 'APPROVED',
+          club: club ? { id: club.id, name: club.name } : { id: req.club_id, name: req.club_name },
+          signedLicense
+        };
+      } else if (req.status === 'REJECTED') {
+        return { status: 'REJECTED', reason: req.rejection_reason || "Super Admin tomonidan rad etildi" };
+      } else {
+        return { status: 'PENDING' };
+      }
+    }
+
+    try {
+      const club = db.prepare("SELECT * FROM clubs WHERE hardware_fingerprint = ? AND status = 'ACTIVE'").get(hardwareFingerprint);
+      if (club) {
+        const signedLicense = this.generateSignedLicense({
+          clubId: club.id,
+          clubName: club.name,
+          hardwareFingerprint,
+          days: 30,
+          maxPcs: club.total_workstations
+        });
+
+        return {
+          status: 'APPROVED',
+          club: { id: club.id, name: club.name },
+          signedLicense
+        };
+      }
+    } catch (e) {}
+
+    return { status: 'NONE' };
   }
 
   /**

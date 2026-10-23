@@ -94,28 +94,18 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/license/request-activation' && req.method === 'POST') {
     readBody(req, async (body) => {
       const clubName = body.clubName || 'Softech Gaming Club';
-      const hwid = HwidService.getHardwareFingerprint();
-      const totalPcs = parseInt(body.totalPcs, 10) || 16;
-      const lanIps = getLocalLanIps();
-      const lanIp = lanIps[0]?.address || '192.168.1.100';
+      const result = await LicenseManager.requestActivation(clubName);
+      sendJson(res, 200, result);
+    });
+    return;
+  }
 
-      try {
-        const cloudRes = await fetch(`${LicenseManager.cloudUrl}/api/telemetry/activation-request`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clubName,
-            hardwareFingerprint: hwid,
-            totalPcs,
-            serverLanIp: lanIp,
-            serverVersion: '1.0.1'
-          })
-        });
-        const cloudData = await cloudRes.json();
-        sendJson(res, 200, cloudData);
-      } catch (err) {
-        sendJson(res, 502, { success: false, error: "Bulut serveri bilan bog'lanib bo'lmadi: " + err.message });
-      }
+  // 3. POST /api/license/activate-with-key (Super Admin kaliti bilan darhol faollashtirish)
+  if (url.pathname === '/api/license/activate-with-key' && req.method === 'POST') {
+    readBody(req, async (body) => {
+      const { licenseKey } = body;
+      const result = await LicenseManager.activateWithKey(licenseKey);
+      sendJson(res, result.success ? 200 : 400, result);
     });
     return;
   }

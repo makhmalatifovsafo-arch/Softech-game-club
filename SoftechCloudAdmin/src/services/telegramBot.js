@@ -181,6 +181,43 @@ export class TelegramBotService {
     const rawCmd = String(commandText || '').trim();
     const cmd = rawCmd.toLowerCase();
 
+    // 0. /approve_<id> va /reject_<id>
+    if (cmd.startsWith('/approve_') || cmd.startsWith('/approve')) {
+      const match = cmd.match(/\/approve_?(\d+)/);
+      if (match) {
+        const reqId = parseInt(match[1], 10);
+        try {
+          const { ActivationService } = await import('./activationService.js');
+          const res = await ActivationService.approveActivation(reqId);
+          const reply = `✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)\n📅 Muddat: 30 kun`;
+          await this.sendMessage(reply, { chatId });
+          return reply;
+        } catch (err) {
+          const reply = `⚠️ Xatolik: ${err.message}`;
+          await this.sendMessage(reply, { chatId });
+          return reply;
+        }
+      }
+    }
+
+    if (cmd.startsWith('/reject_') || cmd.startsWith('/reject')) {
+      const match = cmd.match(/\/reject_?(\d+)/);
+      if (match) {
+        const reqId = parseInt(match[1], 10);
+        try {
+          const { ActivationService } = await import('./activationService.js');
+          await ActivationService.rejectActivation(reqId, "Super Admin Telegram orqali rad etdi");
+          const reply = `❌ So'rov #${reqId} rad etildi.`;
+          await this.sendMessage(reply, { chatId });
+          return reply;
+        } catch (err) {
+          const reply = `⚠️ Xatolik: ${err.message}`;
+          await this.sendMessage(reply, { chatId });
+          return reply;
+        }
+      }
+    }
+
     // 1. /status — Barcha klublarning joriy holati
     if (cmd === '/status' || cmd.startsWith('/status@') || cmd.includes('/status')) {
       const summary = TelemetryService.getGlobalMetricsSummary();
@@ -328,13 +365,51 @@ export class TelegramBotService {
    * Telegram Webhook / Update ni qabul qilish
    */
   static async handleWebhookUpdate(update) {
-    if (!update || !update.message) return { handled: false };
+    if (!update) return { handled: false };
+
+    // Inline tugmalar bosilganda (Callback Query)
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const data = String(cb.data || '');
+      const chatId = cb.message?.chat?.id || this.adminChatId;
+
+      if (data.startsWith('approve_')) {
+        const reqId = parseInt(data.replace('approve_', ''), 10);
+        try {
+          const { ActivationService } = await import('./activationService.js');
+          const res = await ActivationService.approveActivation(reqId);
+          await this.sendMessage(`✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)`, { chatId });
+        } catch (err) {
+          await this.sendMessage(`⚠️ Xatolik: ${err.message}`, { chatId });
+        }
+      } else if (data.startsWith('reject_')) {
+        const reqId = parseInt(data.replace('reject_', ''), 10);
+        try {
+          const { ActivationService } = await import('./activationService.js');
+          await ActivationService.rejectActivation(reqId);
+          await this.sendMessage(`❌ So'rov #${reqId} rad etildi.`, { chatId });
+        } catch (err) {
+          await this.sendMessage(`⚠️ Xatolik: ${err.message}`, { chatId });
+        }
+      }
+
+      try {
+        await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callback_query_id: cb.id, text: 'Bajarildi!' })
+        });
+      } catch {}
+
+      return { handled: true };
+    }
+
+    if (!update.message) return { handled: false };
 
     const message = update.message;
     const text = message.text;
     const chatId = message.chat?.id;
 
-    // Agar admin chat ID birinchi marta kelsa va mos kelsa, saqlab qo'yamiz
     if (chatId && String(chatId) === this.adminChatId) {
       this.adminChatId = String(chatId);
     }
