@@ -181,30 +181,6 @@ INSERT INTO public.super_admins (
     '+998 95 222 06 44'
 ) ON CONFLICT (username) DO NOTHING;
 
--- Namuna Klublar (CyberArena, Samarqand Prime, Yunusobod)
-INSERT INTO public.clubs (
-    id, name, slug, owner_name, owner_phone, city, status, 
-    api_secret_token, hardware_fingerprint, total_workstations, occupied_pcs, online_pcs,
-    today_revenue, license_expires_at, tariff_type, tariff_price_per_pc
-) VALUES 
-(
-    1, 'CyberArena Chilonzor', 'cyberarena-chilonzor', 'Jasur Rahimov', '+998 90 123 45 67', 'Toshkent', 'ACTIVE',
-    'softech_sec_cyberarena_token', 'HWID-7521-4EC1-84CC-9559', 24, 14, 18,
-    2450000.00, NOW() + INTERVAL '30 days', 'PER_PC', 20000.00
-),
-(
-    2, 'Softech Cyber Yunusobod', 'softech-yunusobod', 'Bobur Mirzayev', '+998 93 444 55 66', 'Toshkent', 'ACTIVE',
-    'softech_sec_yunusobod_token', 'HWID-8123-5FB2-95DD-1234', 40, 25, 38,
-    4120000.00, NOW() + INTERVAL '25 days', 'PER_PC', 20000.00
-),
-(
-    3, 'Softech Samarqand Prime', 'softech-samarqand', 'Sardor Rustamov', '+998 97 777 88 99', 'Samarqand', 'ACTIVE',
-    'softech_sec_samarqand_token', 'HWID-9934-6AC3-77EE-5678', 30, 18, 28,
-    3150000.00, NOW() + INTERVAL '18 days', 'FIXED_MONTHLY', 20000.00
-) ON CONFLICT (id) DO UPDATE SET
-    status = EXCLUDED.status,
-    hardware_fingerprint = EXCLUDED.hardware_fingerprint;
-
 -- Serial sanagichni to'g'rilash
-SELECT setval('public.clubs_id_seq', (SELECT MAX(id) FROM public.clubs));
-SELECT setval('public.super_admins_id_seq', (SELECT MAX(id) FROM public.super_admins));
+SELECT setval('public.super_admins_id_seq', (SELECT COALESCE(MAX(id), 1) FROM public.super_admins));
+

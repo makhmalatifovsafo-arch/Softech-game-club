@@ -1,8 +1,6 @@
 /**
- * Softech Super Admin — Vercel Serverless Function API Entrypoint
- * Location: SoftechCloudAdmin/api/index.js
- * 
- * Routes incoming HTTP requests to Supabase services or local SQLite fallback.
+ * Softech Super Admin — Central Vercel Serverless Function API Entrypoint
+ * Location: api/index.js (Repo Root)
  */
 
 import crypto from 'node:crypto';
@@ -90,15 +88,51 @@ export default async function handler(req, res) {
     return res.end();
   }
 
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const pathname = url.pathname;
+  // Vercel path normalization (handles rewrites, dynamic routes, query params)
+  const rawPath = req.headers['x-matched-path'] || req.headers['x-forwarded-uri'] || req.url || '/';
+  const url = new URL(rawPath, `http://${req.headers.host || 'localhost'}`);
+  let pathname = url.pathname;
   const method = req.method;
+
+  const routeParam = url.searchParams.get('route') || url.searchParams.get('path');
+  if (routeParam) {
+    pathname = routeParam.startsWith('/') ? routeParam : `/${routeParam}`;
+    if (!pathname.startsWith('/api')) {
+      pathname = `/api${pathname}`;
+    }
+  } else if (pathname === '/api/index.js' || pathname === '/api/index' || pathname === '/api') {
+    if (req.headers['x-matched-path']) {
+      pathname = req.headers['x-matched-path'];
+    }
+  }
 
   try {
     // ========================================================================
     // 1. AUTENTIFIKATSIYA (AUTH)
     // ========================================================================
-    if (pathname === '/api/auth/login' && method === 'POST') {
+    if (pathname.includes('pin-login') && method === 'POST') {
+      const body = await getParsedBody(req);
+      const { pinCode } = body;
+
+      if (!pinCode || String(pinCode).length !== 4) {
+        return sendJson(res, 400, { success: false, error: "4 xonali PIN kod kiritilishi shart." });
+      }
+
+      const user = await SupabaseCloudService.verifyPinCode(pinCode);
+      if (!user) {
+        if (String(pinCode) === '7777') {
+          const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
+          const token = generateJwt(fallbackUser);
+          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
+        }
+        return sendJson(res, 401, { success: false, error: "Noto'g'ri PIN kod." });
+      }
+
+      const token = generateJwt(user);
+      return sendJson(res, 200, { success: true, token, accessToken: token, user });
+    }
+
+    if ((pathname.includes('auth/login') || pathname.endsWith('/login')) && !pathname.includes('pin-login') && method === 'POST') {
       const body = await getParsedBody(req);
       const { username, password } = body;
 
@@ -116,28 +150,6 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
         }
         return sendJson(res, 401, { success: false, error: "Login yoki parol noto'g'ri." });
-      }
-
-      const token = generateJwt(user);
-      return sendJson(res, 200, { success: true, token, accessToken: token, user });
-    }
-
-    if (pathname === '/api/auth/pin-login' && method === 'POST') {
-      const body = await getParsedBody(req);
-      const { pinCode } = body;
-
-      if (!pinCode || String(pinCode).length !== 4) {
-        return sendJson(res, 400, { success: false, error: "4 xonali PIN kod kiritilishi shart." });
-      }
-
-      const user = await SupabaseCloudService.verifyPinCode(pinCode);
-      if (!user) {
-        if (String(pinCode) === '7777') {
-          const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
-          const token = generateJwt(fallbackUser);
-          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
-        }
-        return sendJson(res, 401, { success: false, error: "Noto'g'ri PIN kod." });
       }
 
       const token = generateJwt(user);
@@ -197,7 +209,7 @@ export default async function handler(req, res) {
     }
 
     // Bitta klub ma'lumotlari
-    const clubMatch = pathname.match(/^\/api\/telemetry\/clubs\/(\d+)/);
+    const clubMatch = pathname.match(/^\/api\/(?:telemetry\/)?clubs\/(\d+)/);
     if (clubMatch && method === 'GET') {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
@@ -206,6 +218,25 @@ export default async function handler(req, res) {
       const club = await SupabaseCloudService.getClubById(clubId);
       if (!club) return sendJson(res, 404, { success: false, error: 'Klub topilmadi' });
       return sendJson(res, 200, { success: true, club });
+    }
+
+    // Klubni o'chirish
+    if (clubMatch && method === 'DELETE') {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+
+      const clubId = parseInt(clubMatch[1], 10);
+      await SupabaseCloudService.deleteClub(clubId);
+      return sendJson(res, 200, { success: true, message: `Klub #${clubId} muvaffaqiyatli o'chirildi.` });
+    }
+
+    // Soxta / Namunaviy barcha klublarni tozalash (Wipe all demo clubs)
+    if ((pathname === '/api/admin/clear-demo-data' || pathname === '/api/telemetry/clubs/clear-all' || pathname === '/api/clubs/clear-all') && (method === 'POST' || method === 'DELETE')) {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+
+      await SupabaseCloudService.clearAllDemoClubs();
+      return sendJson(res, 200, { success: true, message: "Barcha soxta/namunaviy klublar o'chirildi. Tizim toza holatga keltirildi." });
     }
 
     // ========================================================================
@@ -283,7 +314,6 @@ export default async function handler(req, res) {
 
       const body = await getParsedBody(req);
       const payment = await SupabaseCloudService.recordSubscriptionPayment(body);
-      // Agar to'lov kiritilsa, klubni ham faollashtiramiz
       if (body.clubId) {
         await SupabaseCloudService.unblockClub(body.clubId, (body.monthsAdded || 1) * 30);
       }

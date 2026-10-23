@@ -169,35 +169,7 @@ export function initDatabase() {
       VALUES (?, ?, ?, ?, ?)
     `).run('admin', pwdHash, '7777', 'Bosh Administrator', '+998901234567');
 
-    console.log('👑 [Database] Standart Super Admin yaratildi: login: admin / parol: admin / PIN: 7777');
-  }
-
-  // Agar klublar bo'lmasa, dastlabki 3 ta namunaviy klubni kiritish (Monitoring testlari uchun)
-  const clubCount = db.prepare('SELECT COUNT(*) as count FROM clubs').get();
-  if (!clubCount || clubCount.count === 0) {
-    const nextYear = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
-    const nowIso = new Date().toISOString();
-    const todayStr = nowIso.slice(0, 10);
-
-    const insertClub = db.prepare(`
-      INSERT INTO clubs (name, slug, owner_name, owner_phone, city, status, license_expires_at, total_workstations, server_lan_ip, server_version, last_heartbeat_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const c1 = insertClub.run('Softech Arena Chilonzor', 'softech-chilonzor', 'Javohir Aliyev', '+998901112233', 'Toshkent', 'ACTIVE', nextYear, 45, '192.168.1.100', '1.0.1', nowIso);
-    const c2 = insertClub.run('Softech Cyber Yunusobod', 'softech-yunusobod', 'Bobur Mirzayev', '+998934445566', 'Toshkent', 'ACTIVE', nextYear, 40, '192.168.1.150', '1.0.1', nowIso);
-    const c3 = insertClub.run('Softech Samarqand Prime', 'softech-samarqand', 'Sardor Rustamov', '+998977778899', 'Samarqand', 'ACTIVE', nextYear, 30, '192.168.1.200', '1.0.1', nowIso);
-
-    // Namunaviy kunlik statistika
-    const insertMetric = db.prepare(`
-      INSERT INTO club_metrics (club_id, record_date, total_daily_revenue, total_sessions_count, total_play_hours, bar_revenue, peak_concurrent_pcs)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    insertMetric.run(Number(c1.lastInsertRowid), todayStr, 4850000, 142, 380.5, 950000, 42);
-    insertMetric.run(Number(c2.lastInsertRowid), todayStr, 3920000, 115, 310.0, 720000, 38);
-    insertMetric.run(Number(c3.lastInsertRowid), todayStr, 2610000, 85, 215.0, 480000, 28);
-
-    console.log('🏢 [Database] Namunaviy 3 ta klub va kunlik metrikalar kiritildi.');
+    console.log('👑 [Database] Standart Super Admin tayyor: login: admin / PIN: 7777');
   }
 
   console.log('✅ [Database] SQLite WAL Rejimi faollashtirildi va jadvallar muvaffaqiyatli tayyorlandi.');

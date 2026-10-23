@@ -209,7 +209,7 @@ export default async function handler(req, res) {
     }
 
     // Bitta klub ma'lumotlari
-    const clubMatch = pathname.match(/^\/api\/telemetry\/clubs\/(\d+)/);
+    const clubMatch = pathname.match(/^\/api\/(?:telemetry\/)?clubs\/(\d+)/);
     if (clubMatch && method === 'GET') {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
@@ -218,6 +218,25 @@ export default async function handler(req, res) {
       const club = await SupabaseCloudService.getClubById(clubId);
       if (!club) return sendJson(res, 404, { success: false, error: 'Klub topilmadi' });
       return sendJson(res, 200, { success: true, club });
+    }
+
+    // Klubni o'chirish
+    if (clubMatch && method === 'DELETE') {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+
+      const clubId = parseInt(clubMatch[1], 10);
+      await SupabaseCloudService.deleteClub(clubId);
+      return sendJson(res, 200, { success: true, message: `Klub #${clubId} muvaffaqiyatli o'chirildi.` });
+    }
+
+    // Soxta / Namunaviy barcha klublarni tozalash (Wipe all demo clubs)
+    if ((pathname === '/api/admin/clear-demo-data' || pathname === '/api/telemetry/clubs/clear-all' || pathname === '/api/clubs/clear-all') && (method === 'POST' || method === 'DELETE')) {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+
+      await SupabaseCloudService.clearAllDemoClubs();
+      return sendJson(res, 200, { success: true, message: "Barcha soxta/namunaviy klublar o'chirildi. Tizim toza holatga keltirildi." });
     }
 
     // ========================================================================

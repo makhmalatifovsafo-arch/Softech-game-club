@@ -287,6 +287,15 @@ function renderClubCard(club) {
           <span>⚙️</span>
           <span>Boshqaruv</span>
         </button>
+
+        <button 
+          type="button" 
+          onclick="deleteClubPrompt(${club.id}, '${club.name}')" 
+          class="py-2 px-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 text-rose-400 border border-rose-500/30 font-semibold text-xs flex items-center justify-center transition shadow-sm"
+          title="Klubni butunlay o'chirish"
+        >
+          <span>🗑️</span>
+        </button>
       </div>
     </div>
   `;
@@ -523,6 +532,15 @@ export function renderClubsDirectoryView() {
         <div class="flex items-center gap-2">
           <button 
             type="button" 
+            onclick="clearDemoClubsPrompt()" 
+            class="py-2 px-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 text-rose-400 border border-rose-500/30 font-semibold text-xs flex items-center gap-1 transition shadow-sm"
+            title="Namunaviy / soxta klublarni tozalash"
+          >
+            <span>🗑️</span>
+            <span>Tozalash</span>
+          </button>
+          <button 
+            type="button" 
             onclick="openAddClubModal()" 
             class="py-2 px-3 rounded-xl bg-gradient-to-r from-sky-400 to-indigo-500 hover:from-sky-300 hover:to-indigo-400 active:scale-95 text-black font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-sky-400/20 transition"
           >
@@ -635,6 +653,58 @@ window.refreshClubsDirectory = async function() {
   await fetchClubsDirectory();
   renderClubsDirectoryView();
   showDirectoryToast("✓ Barcha klublar holati yangilandi");
+};
+
+window.deleteClubPrompt = async function(clubId, clubName) {
+  triggerHaptic(20);
+  if (!confirm(`Rostdan ham "${clubName}" (ID: #${clubId}) klubini tizimdan butunlay o'chirmoqchimisiz?`)) {
+    return;
+  }
+
+  const token = localStorage.getItem('softech_access_token');
+  try {
+    showDirectoryToast("Klub o'chirilmoqda...");
+    const res = await fetch(`/api/telemetry/clubs/${clubId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showDirectoryToast(`✓ ${clubName} o'chirildi`);
+      await fetchClubsDirectory();
+      renderClubsDirectoryView();
+    } else {
+      showDirectoryToast(`Xatolik: ${data.error || "O'chirilmadi"}`);
+    }
+  } catch (err) {
+    showDirectoryToast("Tarmoq xatosi: O'chirib bo'lmadi");
+  }
+};
+
+window.clearDemoClubsPrompt = async function() {
+  triggerHaptic(25);
+  if (!confirm("Diqqat! Barcha namunaviy / soxta klublar o'chiriladi va ma'lumotlar bazasi toza holatga keltiriladi. Davom etasizmi?")) {
+    return;
+  }
+
+  const token = localStorage.getItem('softech_access_token');
+  try {
+    showDirectoryToast("Soxta klublar tozalanmoqda...");
+    const res = await fetch('/api/admin/clear-demo-data', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showDirectoryToast("✓ Barcha soxta klublar muvaffaqiyatli o'chirildi!");
+      await fetchClubsDirectory();
+      renderClubsDirectoryView();
+    } else {
+      showDirectoryToast(`Xatolik: ${data.error || 'Tozalanmadi'}`);
+    }
+  } catch (err) {
+    showDirectoryToast("Tarmoq xatosi: Tozalanmadi");
+  }
 };
 
 function triggerHaptic(pattern = 15) {

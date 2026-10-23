@@ -187,6 +187,62 @@ export class SupabaseCloudService {
     }
   }
 
+  static async deleteClub(clubId) {
+    const client = this.getClient();
+    if (client) {
+      try {
+        await client.from('club_workstations_cache').delete().eq('club_id', clubId);
+        await client.from('club_metrics').delete().eq('club_id', clubId);
+        await client.from('remote_commands').delete().eq('club_id', clubId);
+        await client.from('subscription_payments').delete().eq('club_id', clubId);
+        await client.from('clubs').delete().eq('id', clubId);
+      } catch (err) {
+        console.warn('⚠️ [Supabase] deleteClub xatosi:', err.message);
+      }
+    }
+
+    try {
+      const { db } = await import('../db/connection.js');
+      if (db && typeof db.prepare === 'function') {
+        db.prepare('DELETE FROM club_workstations_cache WHERE club_id = ?').run(clubId);
+        db.prepare('DELETE FROM club_metrics WHERE club_id = ?').run(clubId);
+        db.prepare('DELETE FROM remote_commands WHERE club_id = ?').run(clubId);
+        db.prepare('DELETE FROM subscription_payments WHERE club_id = ?').run(clubId);
+        db.prepare('DELETE FROM clubs WHERE id = ?').run(clubId);
+      }
+    } catch (e) {}
+
+    return true;
+  }
+
+  static async clearAllDemoClubs() {
+    const client = this.getClient();
+    if (client) {
+      try {
+        await client.from('club_workstations_cache').delete().neq('id', 0);
+        await client.from('club_metrics').delete().neq('id', 0);
+        await client.from('remote_commands').delete().neq('id', 0);
+        await client.from('subscription_payments').delete().neq('id', 0);
+        await client.from('clubs').delete().neq('id', 0);
+      } catch (err) {
+        console.warn('⚠️ [Supabase] clearAllDemoClubs xatosi:', err.message);
+      }
+    }
+
+    try {
+      const { db } = await import('../db/connection.js');
+      if (db && typeof db.prepare === 'function') {
+        db.prepare('DELETE FROM club_workstations_cache').run();
+        db.prepare('DELETE FROM club_metrics').run();
+        db.prepare('DELETE FROM remote_commands').run();
+        db.prepare('DELETE FROM subscription_payments').run();
+        db.prepare('DELETE FROM clubs').run();
+      }
+    } catch (e) {}
+
+    return true;
+  }
+
   // ==========================================================================
   // 3. TELEMETRIYA INGESTION & JONLI HEARTBEAT
   // ==========================================================================
