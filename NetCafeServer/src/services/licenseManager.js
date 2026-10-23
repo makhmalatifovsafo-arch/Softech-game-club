@@ -33,8 +33,8 @@ export class LicenseManager {
   static lockReason = '';
   static lockMessage = '';
   static cloudWs = null;
-  static cloudUrl = process.env.SOFTECH_CLOUD_URL || 'http://localhost:7000';
-  static cloudWsUrl = process.env.SOFTECH_CLOUD_WS || 'ws://localhost:7000/cloud-ws';
+  static cloudUrl = process.env.SOFTECH_CLOUD_URL || 'https://softech-game-club.vercel.app';
+  static cloudWsUrl = process.env.SOFTECH_CLOUD_WS || 'wss://softech-game-club.vercel.app/cloud-ws';
   static clientBroadcaster = null; // WebSocket broadcast handler to NetCafeClients
   static sessionDropper = null; // SessionScheduler hook
   static lastVerifiedCloudTimestamp = 0;
@@ -61,6 +61,11 @@ export class LicenseManager {
     // Soat orqaga surilishini (Clock Tampering) tekshirish
     this.verifyClockIntegrity();
 
+    // Agar server yangi bo'lsa (PENDING_ACTIVATION), darhol Super Adminga Telegram so'rov yuborish
+    if (this.state === 'PENDING_ACTIVATION') {
+      this.requestActivation('Yangi Game Club');
+    }
+
     // Bulut bilan doimiy WebSocket va Kill-Switch aloqasini o'rnatish
     this.connectCloudWebSocket();
 
@@ -69,6 +74,30 @@ export class LicenseManager {
       this.checkIntervalTimer = setInterval(() => {
         this.periodicLicenseCheck();
       }, 60000);
+    }
+  }
+
+  static async requestActivation(clubName = 'Softech Game Club') {
+    const hwid = HwidService.getHardwareFingerprint();
+    const url = `${this.cloudUrl}/api/telemetry/activation-request`;
+    try {
+      console.log(`📡 [Activation] Bulutga faollashtirish so'rovi yuborilmoqda: ${url}`);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clubName,
+          hardwareFingerprint: hwid,
+          totalPcs: 16,
+          serverVersion: '1.0.1'
+        })
+      });
+      const data = await res.json();
+      console.log('✅ [Activation] So\'rov muvaffaqiyatli yuborildi:', data.message || data);
+      return data;
+    } catch (err) {
+      console.warn('⚠️ [Activation] Bulutga so\'rov yuborishda xatolik:', err.message);
+      return { success: false, error: err.message };
     }
   }
 

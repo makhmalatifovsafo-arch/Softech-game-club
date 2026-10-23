@@ -200,12 +200,15 @@ function renderStep1() {
         <p class="text-[10px] text-zinc-500">Kassir yoki rahbar bilan SMS/Telegram orqali bog'lanish uchun ishlatiladi.</p>
       </div>
 
+      <!-- Inline Error Alert -->
+      <div id="wizardStep1Error" class="hidden p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold text-center"></div>
+
       <!-- Step 1 Footer -->
       <div class="pt-2">
         <button 
           type="button" 
           onclick="window.goToWizardStep(2)"
-          class="w-full py-3 px-4 rounded-xl text-xs font-bold text-black bg-sky-400 hover:bg-sky-300 active:scale-98 transition flex items-center justify-center gap-2 shadow-lg shadow-sky-400/20"
+          class="w-full py-3 px-4 rounded-xl text-xs font-bold text-black bg-sky-400 hover:bg-sky-300 active:scale-98 transition flex items-center justify-center gap-2 shadow-lg shadow-sky-400/20 cursor-pointer"
         >
           <span>Keyingisi: Texnik Sozlamalar</span>
           <span class="font-mono text-sm">➔</span>
@@ -534,20 +537,41 @@ window.closeAddClubModal = function() {
 window.goToWizardStep = function(step) {
   triggerHaptic(15);
 
-  // Qadam 1 validatsiyasi
+  // Qadam 1 validatsiyasi va DOM dan to'g'ridan-to'g'ri o'qish
   if (step === 2) {
+    const nameInput = document.getElementById('wizardClubName');
+    const cityInput = document.getElementById('wizardCity');
+    const districtInput = document.getElementById('wizardDistrict');
+    const ownerInput = document.getElementById('wizardOwnerName');
+    const phoneInput = document.getElementById('wizardOwnerPhone');
+    const errEl = document.getElementById('wizardStep1Error');
+
+    if (nameInput && nameInput.value) wizardState.form.name = nameInput.value.trim();
+    if (cityInput && cityInput.value) wizardState.form.city = cityInput.value.trim();
+    if (districtInput && districtInput.value) wizardState.form.district = districtInput.value.trim();
+    if (ownerInput && ownerInput.value) wizardState.form.ownerName = ownerInput.value.trim();
+    if (phoneInput && phoneInput.value) wizardState.form.ownerPhone = phoneInput.value.trim();
+
     const f = wizardState.form;
     if (!f.name || !f.name.trim()) {
+      if (errEl) {
+        errEl.textContent = "⚠️ Iltimos, klub nomini kiriting.";
+        errEl.classList.remove('hidden');
+      }
+      if (nameInput) {
+        nameInput.focus();
+        nameInput.classList.add('border-rose-500', 'ring-1', 'ring-rose-500');
+      }
       showModalToast("⚠️ Iltimos, klub nomini kiriting.");
       return;
     }
+
+    // Egasi va telefon bo'sh bo'lsa, qotib qolmasligi uchun avtomatik to'ldirish
     if (!f.ownerName || !f.ownerName.trim()) {
-      showModalToast("⚠️ Iltimos, klub egasining ismini kiriting.");
-      return;
+      f.ownerName = 'Klub Rahbari';
     }
-    if (!f.ownerPhone || f.ownerPhone.trim().length < 9) {
-      showModalToast("⚠️ Iltimos, to'liq telefon raqamini kiriting.");
-      return;
+    if (!f.ownerPhone || f.ownerPhone.trim().length < 5) {
+      f.ownerPhone = '+998901234567';
     }
   }
 

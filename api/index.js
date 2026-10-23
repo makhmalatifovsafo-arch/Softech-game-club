@@ -240,6 +240,75 @@ export default async function handler(req, res) {
     }
 
     // ========================================================================
+    // 2.5 YANGI O'RNATISH VA FAOLLASHTIRISH SO'ROVI (ACTIVATION REQUEST)
+    // ========================================================================
+    if (pathname === '/api/telemetry/activation-request' && method === 'POST') {
+      const body = await getParsedBody(req);
+      const { clubName, hardwareFingerprint, totalPcs, serverLanIp, serverVersion } = body;
+
+      const finalClubName = clubName || `Game Club (${(hardwareFingerprint || 'PC').slice(-4)})`;
+      const hwid = hardwareFingerprint || 'HWID-UNKNOWN';
+      const pcs = parseInt(totalPcs, 10) || 16;
+      const lanIp = serverLanIp || '192.168.1.100';
+      const ver = serverVersion || '1.0.1';
+
+      console.log(`🚨 [Activation Request] Yangi server so'rovi: ${finalClubName} (${hwid})`);
+
+      // 1. Supabase da kiritish yoki yangilash
+      try {
+        const client = SupabaseCloudService.getClient();
+        if (client) {
+          await client.from('clubs').upsert({
+            name: finalClubName,
+            hardware_fingerprint: hwid,
+            total_workstations: pcs,
+            server_lan_ip: lanIp,
+            server_version: ver,
+            status: 'PENDING',
+            license_expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
+          }, { onConflict: 'hardware_fingerprint' });
+        }
+      } catch (err) {
+        console.warn('⚠️ Supabase activation upsert:', err.message);
+      }
+
+      // 2. Telegram Bot orqali Super Adminga xabar yuborish
+      try {
+        const alertMsg = [
+          `🚨 <b>YANGI SERVER LITSENZIYA SO'ROVI!</b>`,
+          `🏢 Klub: <b>${finalClubName}</b>`,
+          `🖥️ Mashina HWID: <code>${hwid}</code>`,
+          `💻 Kompyuterlar: <b>${pcs} ta PC</b>`,
+          `🌐 LAN IP: <code>${lanIp}</code> • v${ver}`,
+          ``,
+          `<i>Super Admin paneli orqali [✅ FAOLLASHTIRISH] mumkin.</i>`
+        ].join('\n');
+
+        await TelegramBotService.sendMessage(alertMsg);
+      } catch (err) {
+        console.warn('⚠️ Telegram bot alert failed:', err.message);
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        status: 'PENDING',
+        message: "Litsenziya so'rovi qabul qilindi. Super Admin tasdiqlashi kutilmoqda."
+      });
+    }
+
+    if (pathname === '/api/telemetry/activation-requests' && method === 'GET') {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+
+      const client = SupabaseCloudService.getClient();
+      if (client) {
+        const { data } = await client.from('clubs').select('*').eq('status', 'PENDING');
+        return sendJson(res, 200, { success: true, requests: data || [] });
+      }
+      return sendJson(res, 200, { success: true, requests: [] });
+    }
+
+    // ========================================================================
     // 3. HEARTBEAT INGESTION (Lokal NetCafeServer dan so'rovlar)
     // ========================================================================
     if (pathname === '/api/telemetry/heartbeat' && method === 'POST') {
