@@ -59,8 +59,8 @@
 
   <style>
     :root {
-      --sat: env(safe-area-inset-top, 0px);
-      --sab: env(safe-area-inset-bottom, 0px);
+      --sat: max(env(safe-area-inset-top, 0px), 50px);
+      --sab: max(env(safe-area-inset-bottom, 0px), 24px);
       --sal: env(safe-area-inset-left, 0px);
       --sar: env(safe-area-inset-right, 0px);
     }
@@ -72,8 +72,8 @@
       -webkit-font-smoothing: antialiased;
       -webkit-tap-highlight-color: transparent;
       user-select: none;
-      padding-top: var(--sat);
-      padding-bottom: calc(var(--sab) + 72px);
+      padding-top: 0;
+      padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), 24px) + 90px);
       padding-left: var(--sal);
       padding-right: var(--sar);
       min-height: 100vh;
@@ -148,7 +148,7 @@
   <!-- ======================================================================== -->
   <!-- 1. TOP HEADER & SYSTEM PULSE (Safe-Area Aware) -->
   <!-- ======================================================================== -->
-  <header class="sticky top-0 z-40 bg-[#09090b]/90 backdrop-blur-md border-b border-[#27272a] px-4 py-3">
+  <header class="sticky top-0 z-40 bg-[#09090b]/94 backdrop-blur-2xl border-b border-[#27272a] px-4 pt-[max(env(safe-area-inset-top,0px),52px)] pb-3 shadow-md shadow-black/40">
     <div class="flex items-center justify-between">
       <!-- Logo & Cockpit Identity -->
       <div class="flex items-center gap-2.5">
@@ -241,40 +241,40 @@
   <!-- ======================================================================== -->
   <!-- 3. FLOATING GLASS BOTTOM NAVIGATION (Thumbs-friendly) -->
   <!-- ======================================================================== -->
-  <nav class="fixed bottom-0 left-0 right-0 z-40 glass-nav px-4 py-2 flex items-center justify-around max-w-lg mx-auto">
-    <button id="navTabDashboard" onclick="switchTab('dashboard')" class="flex flex-col items-center gap-1 text-sky-400 active:scale-95 transition">
+  <nav class="fixed bottom-3 left-3 right-3 z-40 glass-nav px-3 py-2 rounded-2xl flex items-center justify-around max-w-md mx-auto mb-[max(env(safe-area-inset-bottom,0px),12px)] shadow-[0_12px_36px_rgba(0,0,0,0.85)] border border-white/10 backdrop-blur-2xl bg-[#0f0f14]/94">
+    <button id="navTabDashboard" onclick="switchTab('dashboard')" class="flex flex-col items-center justify-center gap-1 text-sky-400 active:scale-90 transition px-2.5 py-1 min-w-[56px]">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
       </svg>
-      <span class="text-[10px] font-medium">Boshqaruv</span>
+      <span class="text-[11px] font-semibold tracking-tight">Boshqaruv</span>
     </button>
 
-    <button id="navTabClubs" onclick="switchTab('clubs')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+    <button id="navTabClubs" onclick="switchTab('clubs')" class="flex flex-col items-center justify-center gap-1 text-zinc-400 hover:text-white active:scale-90 transition px-2.5 py-1 min-w-[56px]">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
       </svg>
-      <span class="text-[10px] font-medium">Klublar</span>
+      <span class="text-[11px] font-semibold tracking-tight">Klublar</span>
     </button>
 
-    <button id="navTabAnalytics" onclick="switchTab('analytics')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+    <button id="navTabAnalytics" onclick="switchTab('analytics')" class="flex flex-col items-center justify-center gap-1 text-zinc-400 hover:text-white active:scale-90 transition px-2.5 py-1 min-w-[56px]">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
       </svg>
-      <span class="text-[10px] font-medium">Analitika</span>
+      <span class="text-[11px] font-semibold tracking-tight">Analitika</span>
     </button>
 
-    <button id="navTabFinance" onclick="switchTab('finance')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+    <button id="navTabFinance" onclick="switchTab('finance')" class="flex flex-col items-center justify-center gap-1 text-zinc-400 hover:text-white active:scale-90 transition px-2.5 py-1 min-w-[56px]">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
       </svg>
-      <span class="text-[10px] font-medium">Moliya</span>
+      <span class="text-[11px] font-semibold tracking-tight">Moliya</span>
     </button>
 
-    <button id="navTabUpdates" onclick="switchTab('updates')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+    <button id="navTabUpdates" onclick="switchTab('updates')" class="flex flex-col items-center justify-center gap-1 text-zinc-400 hover:text-white active:scale-90 transition px-2.5 py-1 min-w-[56px]">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
       </svg>
-      <span class="text-[10px] font-medium">Yangilanish</span>
+      <span class="text-[11px] font-semibold tracking-tight">Yangilanish</span>
     </button>
   </nav>
 
@@ -700,7 +700,7 @@
   <!-- ======================================================================== -->
   <!-- 8. IN-APP GLASS AUTH OVERLAY (STANDALONE ZERO-REDIRECT) -->
   <!-- ======================================================================== -->
-  <aside id="authOverlay" class="hidden fixed inset-0 z-50 bg-[#09090b]/98 backdrop-blur-2xl flex-col justify-between px-6 py-6 max-w-sm mx-auto w-full transition-opacity">
+  <aside id="authOverlay" class="hidden fixed inset-0 z-50 bg-[#09090b]/98 backdrop-blur-2xl flex-col justify-between px-6 pt-[max(env(safe-area-inset-top,0px),54px)] pb-[max(env(safe-area-inset-bottom,0px),28px)] max-w-sm mx-auto w-full transition-opacity">
     <header class="text-center pt-2">
       <div class="inline-flex w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 p-0.5 shadow-xl shadow-sky-500/20 mb-2">
         <div class="w-full h-full bg-[#09090b] rounded-[14px] flex items-center justify-center">
