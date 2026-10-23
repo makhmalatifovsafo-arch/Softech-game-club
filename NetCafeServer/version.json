@@ -1,15 +1,15 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "releaseDate": "2026-10-23",
   "client": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
-    "sha256": "526d8acf1e3102f86a9e9806617b30d634a221e5ebf7bcbc39629f3bba93d9e9"
+    "sha256": "db6153f5e020900e67d4e64ff755fdd0200d810a6066fb93fe90214ce3ef4381"
   },
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "955fb1014f94cbb612fed4cbcedc6e9a2a789f089c26fc9541756ec4d8c897cb"
+    "sha256": "b557703a874e7e67bed10df740cf3d0b3265eab36be96bf2907b404ecd071f0a"
   },
-  "changelog": "VIP narxlar to'g'rilandi, xavfsizlik kuchaytirildi va avtomatik yangilanish tizimi faollashtirildi."
+  "changelog": "Litsenziya kalitini qo'lda kiritish, markaziy Vercel bulutiga to'g'ridan-to'g'ri ulanish va Telegram /approve avtomatik faollashtirish."
 }

@@ -22,7 +22,7 @@ const ROOT_DIR = path.resolve(__dirname, '../../');
  * 6. WebSocket orqali UPDATE_AVAILABLE va SERVER_UPDATE_AVAILABLE hodisalarini tarqatish.
  */
 export class ServerUpdater {
-  static currentVersion = '1.0.0';
+  static currentVersion = '1.0.2';
   static manifestUrl = null;
   static updatesDir = path.resolve(ROOT_DIR, 'updates');
   static stagingDir = path.resolve(ROOT_DIR, 'updates/staging');
@@ -44,10 +44,10 @@ export class ServerUpdater {
       const pkgPath = path.resolve(ROOT_DIR, 'package.json');
       if (fs.existsSync(pkgPath)) {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        this.currentVersion = pkg.version || '1.0.0';
+        this.currentVersion = pkg.version || '1.0.2';
       }
     } catch {
-      this.currentVersion = '1.0.0';
+      this.currentVersion = '1.0.2';
     }
 
     this.manifestUrl = this.resolveManifestUrl();
@@ -84,13 +84,13 @@ export class ServerUpdater {
     return 'https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json';
   }
 
-  static startPeriodicChecks(intervalMs = 15 * 60 * 1000) {
+  static startPeriodicChecks(intervalMs = 3 * 60 * 1000) {
     this.init();
 
-    // Dastur ishga tushgach 10 soniyadan so'ng dastlabki tekshiruv
+    // Dastur ishga tushgach 5 soniyadan so'ng dastlabki tekshiruv
     setTimeout(() => {
       this.checkForUpdates().catch(() => {});
-    }, 10000);
+    }, 5000);
 
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => {
