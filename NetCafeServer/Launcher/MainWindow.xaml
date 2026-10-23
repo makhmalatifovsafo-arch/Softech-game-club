@@ -1,0 +1,214 @@
+<Window x:Class="SoftechCockpit.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        mc:Ignorable="d"
+        Title="Softech Game Club — Boshqaruv Markazi"
+        Height="820" Width="1280"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        Background="#09090B"
+        Icon="app.ico">
+
+    <!-- Modern Windows Aero Snap & Resizing Integration -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0"
+                      CornerRadius="0" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <!-- Window Control Button Style -->
+        <Style x:Key="WindowCaptionButtonStyle" TargetType="Button">
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#A1A1AA" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#27272A" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#3F3F46" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Close Button (Red Hover) -->
+        <Style x:Key="WindowCloseButtonStyle" TargetType="Button" BasedOn="{StaticResource WindowCaptionButtonStyle}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E11D48" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#BE123C" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <!-- Main Grid -->
+    <Grid Background="#09090B">
+        <Grid.RowDefinitions>
+            <!-- Custom Chrome Titlebar (Height: 40) -->
+            <RowDefinition Height="40" />
+            <!-- WebView2 Main Content -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- 1. Custom Dark Chrome Header (Discord / Spotify Style) -->
+        <Border Grid.Row="0"
+                Background="#09090B"
+                BorderBrush="#27272A"
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="Header_MouseLeftButtonDown">
+            <Grid>
+                <!-- Left: App Branding & Status -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <!-- Brand Icon Badge -->
+                    <Border Width="24" Height="24" CornerRadius="7" Background="#0EA5E9" Margin="0,0,10,0">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#0EA5E9" BlurRadius="8" ShadowDepth="0" Opacity="0.4" />
+                        </Border.Effect>
+                        <TextBlock Text="S" Foreground="White" FontWeight="Black" FontSize="13" 
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI" />
+                    </Border>
+
+                    <!-- App Title -->
+                    <TextBlock Text="Softech Game Club" Foreground="#FFFFFF" FontWeight="Bold" FontSize="13" 
+                               VerticalAlignment="Center" FontFamily="Segoe UI" Margin="0,0,8,0" />
+                    <TextBlock Text="— Boshqaruv Markazi" Foreground="#71717A" FontWeight="SemiBold" FontSize="12" 
+                               VerticalAlignment="Center" FontFamily="Segoe UI" Margin="0,0,12,0" />
+
+                    <!-- Live Indicator Badge -->
+                    <Border CornerRadius="10" Background="#18271E" BorderBrush="#059669" BorderThickness="1" 
+                            Padding="7,2" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="#10B981" Margin="0,0,5,0">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect Color="#10B981" BlurRadius="6" ShadowDepth="0" Opacity="0.8" />
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <TextBlock Text="KASSA COCKPIT" Foreground="#34D399" FontSize="9" FontWeight="Bold" FontFamily="Consolas" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Right: Window Caption Controls (Minimize, Maximize, Close) -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
+                    <!-- Minimize Button -->
+                    <Button x:Name="BtnMinimize"
+                            Style="{StaticResource WindowCaptionButtonStyle}"
+                            Click="BtnMinimize_Click"
+                            ToolTip="Kichraytirish">
+                        <TextBlock Text="—" FontSize="11" FontFamily="Segoe UI" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                    </Button>
+
+                    <!-- Maximize / Restore Button -->
+                    <Button x:Name="BtnMaximize"
+                            Style="{StaticResource WindowCaptionButtonStyle}"
+                            Click="BtnMaximize_Click"
+                            ToolTip="Kattalashtirish / Tiklash">
+                        <TextBlock x:Name="TxtMaximizeIcon" Text="口" FontSize="11" FontFamily="Segoe UI Symbol" VerticalAlignment="Center" />
+                    </Button>
+
+                    <!-- Close Button -->
+                    <Button x:Name="BtnClose"
+                            Style="{StaticResource WindowCloseButtonStyle}"
+                            Click="BtnClose_Click"
+                            ToolTip="Yopish">
+                        <TextBlock Text="✕" FontSize="12" FontFamily="Segoe UI" VerticalAlignment="Center" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 2. WebView2 Container -->
+        <Grid Grid.Row="1" Background="#09090B">
+            <wv2:WebView2 x:Name="CockpitWebView"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" />
+
+            <!-- 3. Modern Splash & Loading Overlay -->
+            <Grid x:Name="LoadingOverlay" Background="#09090B" Visibility="Visible">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- Glowing App Logo -->
+                    <Border Width="64" Height="64" CornerRadius="18" HorizontalAlignment="Center" Margin="0,0,0,16">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#0EA5E9" Offset="0" />
+                                <GradientStop Color="#6366F1" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Border.Effect>
+                            <DropShadowEffect Color="#0EA5E9" BlurRadius="24" ShadowDepth="0" Opacity="0.5" />
+                        </Border.Effect>
+                        <TextBlock Text="S" Foreground="White" FontWeight="Black" FontSize="32" 
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI" />
+                    </Border>
+
+                    <!-- Title -->
+                    <TextBlock Text="SOFTECH GAME CLUB" Foreground="White" FontWeight="Black" FontSize="16" 
+                               HorizontalAlignment="Center" Margin="0,0,0,6" />
+                    <TextBlock Text="Kassa Boshqaruv Markazi yuklanmoqda..." Foreground="#A1A1AA" FontSize="12" 
+                               HorizontalAlignment="Center" Margin="0,0,0,18" />
+
+                    <!-- Status Text -->
+                    <Border CornerRadius="8" Background="#18181B" BorderBrush="#27272A" BorderThickness="1" 
+                            Padding="14,8" HorizontalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚡" Foreground="#38BDF8" Margin="0,0,8,0" FontSize="12" />
+                            <TextBlock x:Name="TxtLoadingStatus" Text="Node.js serveri tekshirilmoqda..." 
+                                       Foreground="#E4E4E7" FontSize="11" FontFamily="Consolas" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- 4. Error Overlay (Shown if Node fails) -->
+            <Grid x:Name="ErrorOverlay" Background="#09090B" Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="450">
+                    <TextBlock Text="⚠️" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <TextBlock Text="Serverni ishga tushirib bo'lmadi" Foreground="#F43F5E" FontWeight="Bold" 
+                               FontSize="16" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <TextBlock x:Name="TxtErrorMessage" Text="Xatolik yuz berdi" Foreground="#A1A1AA" FontSize="12" 
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,20" />
+                    
+                    <Button x:Name="BtnRetry" Click="BtnRetry_Click"
+                            Background="#0EA5E9" Foreground="Black" FontWeight="Bold" FontSize="12"
+                            Padding="20,10" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Center">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="10" />
+                            </Style>
+                        </Button.Resources>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🔄" Margin="0,0,6,0" />
+                            <TextBlock Text="Qayta urinish" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

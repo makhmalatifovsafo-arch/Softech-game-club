@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyName>SoftechCockpit</AssemblyName>
+    <RootNamespace>SoftechCockpit</RootNamespace>
+
+    <!-- Application Metadata -->
+    <AssemblyTitle>Softech Game Club — Boshqaruv Markazi</AssemblyTitle>
+    <Product>Softech Game Club Cockpit</Product>
+    <Company>Softech Cloud Systems</Company>
+    <Copyright>Copyright © 2026 Softech Cloud Systems</Copyright>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="app.ico" />
+  </ItemGroup>
+
+</Project>

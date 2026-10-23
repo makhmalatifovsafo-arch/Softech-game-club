@@ -1,0 +1,8 @@
+{
+  "serverUrl": "ws://127.0.0.1:5000/ws",
+  "pcNumber": "PC-01",
+  "heartbeatIntervalSeconds": 5,
+  "githubOwner": "makhmalatifovsafo-arch",
+  "githubRepo": "Softech-game-club",
+  "updateManifestUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json"
+}

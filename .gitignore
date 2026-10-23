@@ -1,0 +1,53 @@
+# ==============================================================================
+# SOFTECH GAME CLUB MANAGEMENT SYSTEM — GITIGNORE
+# ==============================================================================
+
+# .NET Build Artifacts
+bin/
+obj/
+publish/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+# Node.js Dependencies & Logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# SQLite & Local Databases
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Bundled Large Runtimes & Temp Archives (>100MB blocked by GitHub)
+runtime/
+node.exe
+payload.zip
+*.zip
+temp_*
+temp_server_payload/
+temp_ota_server/
+
+# Production Installers (Upload to GitHub Releases instead of Git Commit)
+SOFTECH_PRODUCTION_INSTALLERS/
+Releases/
+
+# OS Generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Environment Secrets
+.env
+.env.local

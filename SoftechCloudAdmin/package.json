@@ -1,0 +1,25 @@
+{
+  "name": "softech-cloud-admin",
+  "version": "1.0.0",
+  "description": "Softech Game Club — Multi-Club Central SaaS & Telemetry Core Engine",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test-db": "node src/db/test.js"
+  },
+  "keywords": [
+    "gameclub",
+    "pwa",
+    "telemetry",
+    "saas",
+    "cockpit"
+  ],
+  "author": "Softech Systems",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "ws": "^8.22.0"
+  }
+}

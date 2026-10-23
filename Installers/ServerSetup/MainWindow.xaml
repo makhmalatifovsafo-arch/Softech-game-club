@@ -1,0 +1,135 @@
+<Window x:Class="ServerSetup.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Softech Game Club - Server O'rnatish Dasturi" 
+        Height="540" Width="680"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#0B0E14"
+        Foreground="#E2E8F0"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <Style x:Key="NeonButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#3B82F6"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="8" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2563EB"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#334155"/>
+                    <Setter Property="Foreground" Value="#94A3B8"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="OutlineButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#93C5FD"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#3B82F6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1E293B"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#111827" CornerRadius="12" Padding="20,16" BorderBrush="#1F2937" BorderThickness="1" Margin="0,0,0,20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="SOFTECH GAME CLUB PRO" FontSize="20" FontWeight="Bold" Foreground="#60A5FA"/>
+                    <TextBlock Text="Klub Boshqaruv Serveri va Kassa Tizimi O'rnatuvchisi" FontSize="13" Foreground="#9CA3AF" Margin="0,4,0,0"/>
+                </StackPanel>
+                <Border Grid.Column="1" Background="#1E3A8A" CornerRadius="6" Padding="10,4" VerticalAlignment="Center">
+                    <TextBlock Text="SERVER v1.0" FontWeight="Bold" FontSize="11" Foreground="#93C5FD"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Main Body -->
+        <Border Grid.Row="1" Background="#111827" CornerRadius="12" Padding="24" BorderBrush="#1F2937" BorderThickness="1">
+            <StackPanel>
+                <!-- Install Directory -->
+                <TextBlock Text="O'rnatish katalogi:" FontSize="13" FontWeight="SemiBold" Foreground="#D1D5DB" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="TxtInstallPath" Text="C:\SoftechServer" FontSize="13" Background="#1F2937" Foreground="White" BorderBrush="#374151" Padding="10,8" VerticalContentAlignment="Center"/>
+                    <Button x:Name="BtnBrowse" Grid.Column="1" Content="📁 Tanlash" Margin="8,0,0,0" Style="{StaticResource OutlineButtonStyle}" Click="BtnBrowse_Click"/>
+                </Grid>
+
+                <!-- Options -->
+                <TextBlock Text="Qo'shimcha parametrlar:" FontSize="13" FontWeight="SemiBold" Foreground="#D1D5DB" Margin="0,0,0,10"/>
+                <CheckBox x:Name="ChkDesktopShortcut" Content="Ish stolida 'Softech Server' yorlig'ini yaratish" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,8"/>
+                <CheckBox x:Name="ChkAutoStart" Content="Windows yoqilganda server avtomatik fonda ishga tushsin (Startup)" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,18"/>
+
+                <!-- Progress & Status -->
+                <ProgressBar x:Name="PbProgress" Height="8" Minimum="0" Maximum="100" Value="0" Foreground="#3B82F6" Background="#1F2937" BorderThickness="0" Margin="0,10,0,6" Visibility="Collapsed"/>
+                <TextBlock x:Name="TxtStatus" Text="O'rnatishga tayyor. 'O'rnatish' tugmasini bosing." FontSize="12" Foreground="#9CA3AF"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Footer / Action Buttons -->
+        <Grid Grid.Row="2" Margin="0,18,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                <Button x:Name="BtnStartServer" Content="▶️ Serverni Ishga Tushirish" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,10,0" Visibility="Collapsed" Click="BtnStartServer_Click"/>
+                <Button x:Name="BtnOpenBrowser" Content="🌐 Admin Panelni Ochish" Style="{StaticResource OutlineButtonStyle}" Visibility="Collapsed" Click="BtnOpenBrowser_Click"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="BtnInstall" Content="🚀 O'RNATISHNI BOSHLASH" Style="{StaticResource NeonButtonStyle}" Margin="0,0,10,0" Click="BtnInstall_Click"/>
+                <Button x:Name="BtnClose" Content="Chiqish" Style="{StaticResource OutlineButtonStyle}" Click="BtnClose_Click"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

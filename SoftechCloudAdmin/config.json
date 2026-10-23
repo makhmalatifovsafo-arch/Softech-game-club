@@ -1,0 +1,8 @@
+{
+  "port": 7000,
+  "telegram": {
+    "botToken": "8984240982:AAGwNfsGlyIG7ewsWKA8Odbo_rchA6Et-a8",
+    "adminChatId": "958262819",
+    "botUsername": "softech_superadmin006_bot"
+  }
+}
