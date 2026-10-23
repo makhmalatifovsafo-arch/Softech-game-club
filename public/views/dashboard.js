@@ -98,7 +98,7 @@ async function fetchSummaryData() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.status === 401) {
-      window.location.href = '/login';
+      if (window.showAuthModal) window.showAuthModal();
       return;
     }
     const data = await res.json();
@@ -117,7 +117,7 @@ async function fetchClubsData() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.status === 401) {
-      window.location.href = '/login';
+      if (window.showAuthModal) window.showAuthModal();
       return;
     }
     const data = await res.json();
@@ -582,7 +582,7 @@ window.handleLogout = function() {
   if (confirm('Super Admin hisobidan chiqmoqchimisiz?')) {
     localStorage.removeItem('softech_access_token');
     localStorage.removeItem('softech_refresh_token');
-    window.location.href = '/login';
+    if (window.showAuthModal) window.showAuthModal();
   }
 };
 
@@ -696,7 +696,7 @@ export async function initExecutiveDashboard() {
   // Avtorizatsiyani tekshirish
   const token = localStorage.getItem('softech_access_token');
   if (!token) {
-    window.location.href = '/login';
+    if (window.showAuthModal) window.showAuthModal();
     return;
   }
 

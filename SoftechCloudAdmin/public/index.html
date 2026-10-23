@@ -105,6 +105,42 @@
     .glow-cyan {
       box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
     }
+
+    /* Glass PIN keypad & dots */
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-btn:active {
+      transform: scale(0.92);
+      background: rgba(56, 189, 248, 0.2);
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+    .pin-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 9999px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      background: transparent;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .pin-dot.filled {
+      background: #38bdf8;
+      border-color: #38bdf8;
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.8), 0 0 4px #38bdf8;
+      transform: scale(1.15);
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-14px); }
+      40%, 80% { transform: translateX(14px); }
+    }
+    .shake-error {
+      animation: shake 0.4s ease-in-out;
+    }
   </style>
 </head>
 <body class="flex flex-col">
@@ -455,7 +491,280 @@
       triggerHaptic();
       showToast(`Filial boshqaruviga o'tilmoqda: ${clubId.toUpperCase()}`);
     }
+
+    // ========================================================================
+    // 7. IN-APP GLASS AUTHENTICATION (NO PAGE RELOADS)
+    // ========================================================================
+    let currentAuthPin = '';
+    let isPasswordAuthMode = false;
+    let isVerifyingAuth = false;
+
+    window.showAuthModal = function() {
+      const modal = document.getElementById('authOverlay');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+      currentAuthPin = '';
+      updateAuthPinDots();
+      resetAuthPinStatus();
+    };
+
+    window.hideAuthModal = function() {
+      const modal = document.getElementById('authOverlay');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    };
+
+    function updateAuthPinDots() {
+      for (let i = 0; i < 4; i++) {
+        const dot = document.getElementById(`authDot${i}`);
+        if (!dot) continue;
+        if (i < currentAuthPin.length) {
+          dot.classList.add('filled');
+        } else {
+          dot.classList.remove('filled');
+        }
+      }
+    }
+
+    function resetAuthPinStatus() {
+      const st = document.getElementById('authPinStatusText');
+      if (st) {
+        st.textContent = '4 xonali shaxsiy PIN-kodni kiriting';
+        st.className = 'text-xs text-zinc-400 font-mono h-5 text-center transition-colors';
+      }
+    }
+
+    window.handleAuthPinInput = function(num) {
+      if (isVerifyingAuth || currentAuthPin.length >= 4) return;
+      triggerHaptic();
+      currentAuthPin += String(num);
+      updateAuthPinDots();
+
+      if (currentAuthPin.length === 4) {
+        verifyAuthPin();
+      }
+    };
+
+    window.handleAuthPinDelete = function() {
+      if (isVerifyingAuth || currentAuthPin.length === 0) return;
+      triggerHaptic();
+      currentAuthPin = currentAuthPin.slice(0, -1);
+      updateAuthPinDots();
+      resetAuthPinStatus();
+    };
+
+    async function verifyAuthPin() {
+      isVerifyingAuth = true;
+      const statusText = document.getElementById('authPinStatusText');
+      const container = document.getElementById('authPinDotsContainer');
+
+      if (statusText) {
+        statusText.textContent = 'Tekshirilmoqda...';
+        statusText.className = 'text-xs text-sky-400 font-mono h-5 text-center animate-pulse font-semibold';
+      }
+
+      try {
+        const res = await fetch('/api/auth/pin-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pinCode: currentAuthPin })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          triggerHaptic();
+          const token = data.accessToken || data.token;
+          localStorage.setItem('softech_access_token', token);
+          localStorage.setItem('softech_user', JSON.stringify(data.user));
+          if (statusText) {
+            statusText.textContent = 'Muvaffaqiyatli! Xush kelibsiz!';
+            statusText.className = 'text-xs text-emerald-400 font-mono h-5 text-center font-bold';
+          }
+          setTimeout(() => {
+            window.hideAuthModal();
+            isVerifyingAuth = false;
+            if (window.initExecutiveDashboard) {
+              window.initExecutiveDashboard();
+            } else {
+              window.location.reload();
+            }
+          }, 350);
+        } else {
+          triggerHaptic();
+          if (container) {
+            container.classList.add('shake-error');
+            setTimeout(() => container.classList.remove('shake-error'), 450);
+          }
+          if (statusText) {
+            statusText.textContent = data.error || 'PIN-kod noto\'g\'ri!';
+            statusText.className = 'text-xs text-rose-400 font-mono h-5 text-center font-bold';
+          }
+          setTimeout(() => {
+            currentAuthPin = '';
+            updateAuthPinDots();
+            isVerifyingAuth = false;
+          }, 600);
+        }
+      } catch (err) {
+        if (statusText) {
+          statusText.textContent = 'Tarmoq xatosi. Qayta urinib ko\'ring.';
+          statusText.className = 'text-xs text-rose-400 font-mono h-5 text-center font-bold';
+        }
+        currentAuthPin = '';
+        updateAuthPinDots();
+        isVerifyingAuth = false;
+      }
+    }
+
+    window.submitPasswordAuth = async function() {
+      const u = document.getElementById('authInputUsername')?.value.trim();
+      const p = document.getElementById('authInputPassword')?.value;
+      const errEl = document.getElementById('authPasswordError');
+      const btn = document.getElementById('authBtnSubmitPassword');
+
+      if (!u || !p) {
+        if (errEl) { errEl.textContent = 'Login va parolni kiriting.'; errEl.classList.remove('hidden'); }
+        return;
+      }
+
+      if (btn) { btn.disabled = true; btn.textContent = 'Kirilmoqda...'; }
+      if (errEl) errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          triggerHaptic();
+          const token = data.accessToken || data.token;
+          localStorage.setItem('softech_access_token', token);
+          localStorage.setItem('softech_user', JSON.stringify(data.user));
+          window.hideAuthModal();
+          if (window.initExecutiveDashboard) {
+            window.initExecutiveDashboard();
+          } else {
+            window.location.reload();
+          }
+        } else {
+          if (errEl) {
+            errEl.textContent = data.error || 'Login yoki parol noto\'g\'ri.';
+            errEl.classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = 'Server bilan aloqa yo\'q.';
+          errEl.classList.remove('hidden');
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Tizimga Kirish ↵'; }
+      }
+    };
+
+    window.toggleAuthViewMode = function() {
+      triggerHaptic();
+      isPasswordAuthMode = !isPasswordAuthMode;
+      const pinV = document.getElementById('authPinView');
+      const passV = document.getElementById('authPasswordView');
+      const togBtn = document.getElementById('authBtnToggle');
+      if (isPasswordAuthMode) {
+        pinV?.classList.add('hidden');
+        passV?.classList.remove('hidden');
+        if (togBtn) togBtn.textContent = '🔢 PIN-kod orqali kirish';
+      } else {
+        passV?.classList.add('hidden');
+        pinV?.classList.remove('hidden');
+        if (togBtn) togBtn.textContent = '🔑 Parol orqali kirish';
+        currentAuthPin = '';
+        updateAuthPinDots();
+        resetAuthPinStatus();
+      }
+    };
+
+    // Sahifa ochilganda agar token yo'q bo'lsa modalni chiqarish
+    document.addEventListener('DOMContentLoaded', () => {
+      const t = localStorage.getItem('softech_access_token');
+      if (!t) {
+        window.showAuthModal();
+      }
+    });
   </script>
+
+  <!-- ======================================================================== -->
+  <!-- 8. IN-APP GLASS AUTH OVERLAY (STANDALONE ZERO-REDIRECT) -->
+  <!-- ======================================================================== -->
+  <aside id="authOverlay" class="hidden fixed inset-0 z-50 bg-[#09090b]/98 backdrop-blur-2xl flex-col justify-between px-6 py-6 max-w-sm mx-auto w-full transition-opacity">
+    <header class="text-center pt-2">
+      <div class="inline-flex w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 p-0.5 shadow-xl shadow-sky-500/20 mb-2">
+        <div class="w-full h-full bg-[#09090b] rounded-[14px] flex items-center justify-center">
+          <svg class="w-7 h-7 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+      </div>
+      <h2 class="text-lg font-bold tracking-tight text-white">Softech Cockpit</h2>
+      <p class="text-xs text-zinc-400 mt-0.5">Super Admin seansini oching</p>
+    </header>
+
+    <!-- PIN VIEW -->
+    <div id="authPinView" class="flex flex-col items-center my-auto w-full">
+      <div id="authPinDotsContainer" class="flex items-center justify-center gap-6 my-4 py-2">
+        <div class="pin-dot" id="authDot0"></div>
+        <div class="pin-dot" id="authDot1"></div>
+        <div class="pin-dot" id="authDot2"></div>
+        <div class="pin-dot" id="authDot3"></div>
+      </div>
+      <div id="authPinStatusText" class="text-xs text-zinc-400 font-mono h-5 text-center transition-colors">
+        4 xonali PIN kodni kiriting
+      </div>
+      <div class="grid grid-cols-3 gap-3 w-full mt-4">
+        <button type="button" onclick="handleAuthPinInput('1')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">1</span></button>
+        <button type="button" onclick="handleAuthPinInput('2')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">2</span></button>
+        <button type="button" onclick="handleAuthPinInput('3')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">3</span></button>
+        <button type="button" onclick="handleAuthPinInput('4')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">4</span></button>
+        <button type="button" onclick="handleAuthPinInput('5')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">5</span></button>
+        <button type="button" onclick="handleAuthPinInput('6')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">6</span></button>
+        <button type="button" onclick="handleAuthPinInput('7')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">7</span></button>
+        <button type="button" onclick="handleAuthPinInput('8')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">8</span></button>
+        <button type="button" onclick="handleAuthPinInput('9')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">9</span></button>
+        <button type="button" onclick="showToast('Standart PIN: 7777')" class="h-14 rounded-2xl flex items-center justify-center text-sky-400 active:scale-90 font-mono text-xs">PIN: 7777</button>
+        <button type="button" onclick="handleAuthPinInput('0')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">0</span></button>
+        <button type="button" onclick="handleAuthPinDelete()" class="h-14 rounded-2xl flex items-center justify-center text-zinc-400 active:scale-90 text-sm">⌫</button>
+      </div>
+    </div>
+
+    <!-- PASSWORD VIEW -->
+    <div id="authPasswordView" class="hidden flex flex-col my-auto w-full space-y-3">
+      <div class="glass-card p-4 rounded-2xl space-y-3 border-zinc-800">
+        <div>
+          <label class="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">Foydalanuvchi nomi</label>
+          <input type="text" id="authInputUsername" value="admin" class="w-full bg-[#121215] border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:border-sky-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-1">Parol</label>
+          <input type="password" id="authInputPassword" placeholder="admin123" class="w-full bg-[#121215] border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:border-sky-500 focus:outline-none">
+        </div>
+        <div id="authPasswordError" class="text-xs text-rose-400 font-medium hidden"></div>
+        <button type="button" onclick="submitPasswordAuth()" id="authBtnSubmitPassword" class="w-full py-3 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-black font-bold text-xs uppercase tracking-wider active:scale-98 transition shadow-lg shadow-sky-500/25">
+          Tizimga Kirish ↵
+        </button>
+      </div>
+    </div>
+
+    <footer class="text-center pt-2">
+      <button type="button" id="authBtnToggle" onclick="toggleAuthViewMode()" class="text-xs font-semibold text-sky-400 hover:text-sky-300 py-1.5 px-3 rounded-xl glass-btn transition">
+        🔑 Parol orqali kirish
+      </button>
+    </footer>
+  </aside>
+
   <!-- Load Executive Mobile Dashboard -->
   <script type="module" src="views/dashboard.js"></script>
 </body>

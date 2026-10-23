@@ -59,7 +59,7 @@ async function fetchAnalyticsData(days = 30) {
     });
 
     if (res.status === 401) {
-      window.location.href = '/login';
+      if (window.showAuthModal) window.showAuthModal();
       return null;
     }
 

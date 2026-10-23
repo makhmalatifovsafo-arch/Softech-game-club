@@ -113,13 +113,13 @@ export default async function handler(req, res) {
         if (username === 'admin' && password === 'admin123') {
           const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
           const token = generateJwt(fallbackUser);
-          return sendJson(res, 200, { success: true, token, user: fallbackUser });
+          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
         }
         return sendJson(res, 401, { success: false, error: "Login yoki parol noto'g'ri." });
       }
 
       const token = generateJwt(user);
-      return sendJson(res, 200, { success: true, token, user });
+      return sendJson(res, 200, { success: true, token, accessToken: token, user });
     }
 
     if (pathname === '/api/auth/pin-login' && method === 'POST') {
@@ -135,13 +135,13 @@ export default async function handler(req, res) {
         if (String(pinCode) === '7777') {
           const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
           const token = generateJwt(fallbackUser);
-          return sendJson(res, 200, { success: true, token, user: fallbackUser });
+          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
         }
         return sendJson(res, 401, { success: false, error: "Noto'g'ri PIN kod." });
       }
 
       const token = generateJwt(user);
-      return sendJson(res, 200, { success: true, token, user });
+      return sendJson(res, 200, { success: true, token, accessToken: token, user });
     }
 
     if (pathname === '/api/auth/me' && method === 'GET') {

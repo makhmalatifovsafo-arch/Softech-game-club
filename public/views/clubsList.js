@@ -26,7 +26,7 @@ export const clubsListState = {
 export async function fetchClubsDirectory() {
   const token = localStorage.getItem('softech_access_token');
   if (!token) {
-    window.location.href = '/login';
+    if (window.showAuthModal) window.showAuthModal();
     return [];
   }
 
@@ -40,7 +40,7 @@ export async function fetchClubsDirectory() {
 
     if (res.status === 401) {
       localStorage.removeItem('softech_access_token');
-      window.location.href = '/login';
+      if (window.showAuthModal) window.showAuthModal();
       return [];
     }
 

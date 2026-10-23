@@ -1,11 +1,12 @@
 // Softech Master Cockpit — Service Worker (PWA Engine)
-const CACHE_NAME = 'softech-cockpit-v1.0.0';
-const DYNAMIC_CACHE = 'softech-dynamic-v1.0.0';
+const CACHE_NAME = 'softech-cockpit-v1.0.2';
+const DYNAMIC_CACHE = 'softech-dynamic-v1.0.2';
 
 // Statik Shell (Offline va tezkor yuklash uchun asosiy resurslar)
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/views/login.html',
   '/manifest.json',
   '/views/dashboard.js',
   '/views/clubsList.js',

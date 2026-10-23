@@ -28,7 +28,7 @@ export const clubInspectorState = {
 export async function fetchClubInspectorData(clubId) {
   const token = localStorage.getItem('softech_access_token');
   if (!token) {
-    window.location.href = '/login';
+    if (window.showAuthModal) window.showAuthModal();
     return null;
   }
 
@@ -44,7 +44,7 @@ export async function fetchClubInspectorData(clubId) {
 
     if (res.status === 401) {
       localStorage.removeItem('softech_access_token');
-      window.location.href = '/login';
+      if (window.showAuthModal) window.showAuthModal();
       return null;
     }
 

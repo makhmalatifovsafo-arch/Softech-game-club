@@ -31,7 +31,7 @@ export const billingState = {
 export async function fetchBillingData() {
   const token = localStorage.getItem('softech_access_token');
   if (!token) {
-    window.location.href = '/login';
+    if (window.showAuthModal) window.showAuthModal();
     return;
   }
 
@@ -43,7 +43,7 @@ export async function fetchBillingData() {
     ]);
 
     if (summaryRes.status === 401 || clubsRes.status === 401) {
-      window.location.href = '/login';
+      if (window.showAuthModal) window.showAuthModal();
       return;
     }
 
