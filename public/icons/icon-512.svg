@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#09090b" />
+      <stop offset="50%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#030712" />
+    </linearGradient>
+    <linearGradient id="primaryGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+    <filter id="neonBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)" stroke="#1f2937" stroke-width="4" />
+
+  <!-- Inner Cyber Grid Accent -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#1e293b" stroke-width="2" stroke-dasharray="8 8" />
+  <circle cx="256" cy="256" r="130" fill="none" stroke="#334155" stroke-width="1.5" />
+
+  <!-- Center 'S' Master Cockpit Emblem -->
+  <g filter="url(#neonBlur)">
+    <!-- Circuit Lines -->
+    <path d="M140 180 L220 180 L256 216 L292 180 L372 180" fill="none" stroke="url(#primaryGlow)" stroke-width="8" stroke-linecap="round" />
+    <path d="M140 332 L220 332 L256 296 L292 332 L372 332" fill="none" stroke="url(#primaryGlow)" stroke-width="8" stroke-linecap="round" />
+    <line x1="256" y1="90" x2="256" y2="140" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" />
+    <line x1="256" y1="372" x2="256" y2="422" stroke="#c084fc" stroke-width="6" stroke-linecap="round" />
+
+    <!-- Stylized Hex Shield / S Monogram -->
+    <path d="M256 120 L360 180 L360 300 L256 360 L152 300 L152 180 Z" fill="none" stroke="url(#primaryGlow)" stroke-width="12" stroke-linejoin="round" />
+    <path d="M280 200 L210 200 C195 200 185 210 185 225 C185 240 195 250 215 256 L295 270 C315 275 325 288 325 305 C325 325 310 340 285 340 L195 340" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="256" cy="256" r="14" fill="#38bdf8" />
+  </g>
+</svg>

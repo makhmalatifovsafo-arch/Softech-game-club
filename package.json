@@ -1,0 +1,12 @@
+{
+  "name": "softech-game-club",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node SoftechCloudAdmin/src/server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.0",
+    "ws": "^8.18.0"
+  }
+}

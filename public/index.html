@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="uz" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <!-- PWA & Responsive Viewport (iOS Notch, Dynamic Island & Home Indicator safe-area) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  
+  <title>Softech Master Cockpit — Mobile Super Admin</title>
+
+  <!-- PWA Web App Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#09090b">
+
+  <!-- Apple iOS Specific PWA Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Softech">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.svg">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.svg">
+
+  <!-- Microsoft Tiles -->
+  <meta name="msapplication-TileColor" content="#09090b">
+  <meta name="msapplication-TileImage" content="icons/icon-512.svg">
+
+  <!-- Shriftlar: Plus Jakarta Sans va JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Chart.js 4.x CDN (Touch-Friendly Charts) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              cyan: '#38bdf8',
+              violet: '#818cf8',
+              purple: '#c084fc',
+              emerald: '#10b981',
+              rose: '#f43f5e',
+              amber: '#f59e0b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+    }
+
+    body {
+      background-color: #09090b;
+      color: #fafafa;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      padding-top: var(--sat);
+      padding-bottom: calc(var(--sab) + 72px);
+      padding-left: var(--sal);
+      padding-right: var(--sar);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Glassmorphism Classes */
+    .glass-card {
+      background: rgba(18, 18, 21, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+    }
+
+    .glass-nav {
+      background: rgba(10, 10, 13, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* iOS smooth bounce scrolling */
+    .ios-scroll {
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Glowing badge */
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+    }
+  </style>
+</head>
+<body class="flex flex-col">
+
+  <!-- ======================================================================== -->
+  <!-- 1. TOP HEADER & SYSTEM PULSE (Safe-Area Aware) -->
+  <!-- ======================================================================== -->
+  <header class="sticky top-0 z-40 bg-[#09090b]/90 backdrop-blur-md border-b border-[#27272a] px-4 py-3">
+    <div class="flex items-center justify-between">
+      <!-- Logo & Cockpit Identity -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-500 p-0.5 shadow-lg shadow-sky-500/20">
+          <div class="w-full h-full bg-[#09090b] rounded-[10px] flex items-center justify-center">
+            <span class="font-mono font-black text-sm text-sky-400">S</span>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-sm font-bold tracking-tight text-white">Softech Cockpit</h1>
+            <span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">MASTER</span>
+          </div>
+          <p id="cloudSyncStatus" class="text-[10px] text-zinc-400 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Cloud SaaS Onlayn</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Action Icons -->
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="refreshData()" class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-zinc-400 active:scale-95 transition" title="Yangilash">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+        </button>
+        <div class="w-9 h-9 rounded-xl glass-card flex items-center justify-center text-zinc-300 font-mono text-xs font-bold border-sky-500/30">
+          UZ
+        </div>
+      </div>
+    </div>
+
+    <!-- Offline Alert Banner (Faqat internet uzilganda chiqadi) -->
+    <div id="offlineIndicator" class="hidden mt-2 p-2 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2">
+      <span>⚠️</span>
+      <span>Internet aloqasi uzildi. Oxirgi saqlangan ma'lumotlar ko'rsatilmoqda (Offline).</span>
+    </div>
+  </header>
+
+  <!-- ======================================================================== -->
+  <!-- 2. MAIN COCKPIT DASHBOARD (Dynamic Telemetry Root) -->
+  <!-- ======================================================================== -->
+  <main id="dashboardContent" class="flex-1 px-4 py-4 max-w-lg mx-auto w-full">
+    <!-- Initial Loading Skeleton -->
+    <div class="space-y-4 animate-pulse">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="h-28 rounded-2xl glass-card"></div>
+        <div class="h-28 rounded-2xl glass-card"></div>
+        <div class="h-28 rounded-2xl glass-card"></div>
+        <div class="h-28 rounded-2xl glass-card"></div>
+      </div>
+      <div class="h-8 rounded-xl glass-card w-3/4"></div>
+      <div class="h-32 rounded-2xl glass-card"></div>
+      <div class="h-32 rounded-2xl glass-card"></div>
+    </div>
+  </main>
+
+  <!-- Remote Command Modal -->
+  <div id="remoteCommandModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+    <div class="glass-card w-full max-w-sm rounded-3xl p-5 space-y-4 border-sky-500/30 glow-cyan">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold text-white">Masofaviy Buyruq Yuborish</h3>
+          <p id="commandModalClubTitle" class="text-xs text-sky-400 font-mono mt-0.5">Filial nomi</p>
+        </div>
+        <button onclick="closeRemoteCommandModal()" class="text-zinc-400 hover:text-white p-1">✕</button>
+      </div>
+      <div class="space-y-2">
+        <button onclick="executeRemoteCommand('FORCE_UPDATE')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-sky-500/20 text-left text-xs font-semibold text-white flex items-center justify-between active:scale-98 transition">
+          <span class="flex items-center gap-2"><span>🚀</span><span>OTA Majburiy Yangilanish (v1.0.1)</span></span>
+          <span class="text-sky-400 font-mono">➔</span>
+        </button>
+        <button onclick="executeRemoteCommand('RESTART_SERVER')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-amber-500/20 text-left text-xs font-semibold text-white flex items-center justify-between active:scale-98 transition">
+          <span class="flex items-center gap-2"><span>🔄</span><span>Serverni Qayta Ishga Tushirish</span></span>
+          <span class="text-amber-400 font-mono">➔</span>
+        </button>
+        <button onclick="executeRemoteCommand('RESET_ADMIN_PASSWORD')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-rose-500/20 text-left text-xs font-semibold text-white flex items-center justify-between active:scale-98 transition">
+          <span class="flex items-center gap-2"><span>🔑</span><span>Admin Parolini Tiklash</span></span>
+          <span class="text-rose-400 font-mono">➔</span>
+        </button>
+        <button onclick="executeRemoteCommand('LOCK_CLUB_LICENSE')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-zinc-800 text-left text-xs font-semibold text-zinc-400 flex items-center justify-between active:scale-98 transition">
+          <span class="flex items-center gap-2"><span>🔒</span><span>Litsenziyani Bloklash (Qarz)</span></span>
+          <span class="text-zinc-500 font-mono">➔</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================== -->
+  <!-- 3. FLOATING GLASS BOTTOM NAVIGATION (Thumbs-friendly) -->
+  <!-- ======================================================================== -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 glass-nav px-4 py-2 flex items-center justify-around max-w-lg mx-auto">
+    <button id="navTabDashboard" onclick="switchTab('dashboard')" class="flex flex-col items-center gap-1 text-sky-400 active:scale-95 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+      </svg>
+      <span class="text-[10px] font-medium">Boshqaruv</span>
+    </button>
+
+    <button id="navTabClubs" onclick="switchTab('clubs')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+      </svg>
+      <span class="text-[10px] font-medium">Klublar</span>
+    </button>
+
+    <button id="navTabAnalytics" onclick="switchTab('analytics')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+      </svg>
+      <span class="text-[10px] font-medium">Analitika</span>
+    </button>
+
+    <button id="navTabFinance" onclick="switchTab('finance')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+      </svg>
+      <span class="text-[10px] font-medium">Moliya</span>
+    </button>
+
+    <button id="navTabUpdates" onclick="switchTab('updates')" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white active:scale-95 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+      </svg>
+      <span class="text-[10px] font-medium">Yangilanish</span>
+    </button>
+  </nav>
+
+  <!-- ======================================================================== -->
+  <!-- 4. PWA INSTALL BANNER ("Bosh Ekranga Qo'shish") -->
+  <!-- ======================================================================== -->
+  <!-- A) Android Chrome Install Prompt Banner -->
+  <aside id="pwaAndroidBanner" class="hidden fixed bottom-20 left-4 right-4 z-50 max-w-md mx-auto glass-card p-4 rounded-2xl border-sky-500/30 glow-cyan animate-fade-in">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 p-0.5 flex-shrink-0">
+        <img src="icons/icon-192.svg" alt="Softech" class="w-full h-full rounded-[10px]">
+      </div>
+      <div class="flex-1">
+        <h3 class="text-sm font-bold text-white">Softech Master Cockpit</h3>
+        <p class="text-xs text-zinc-300 mt-0.5">Ilovani asosiy ekranga o'rnating va tezkor boshqaring.</p>
+        <div class="flex items-center gap-2 mt-3">
+          <button id="btnPwaInstall" type="button" class="px-4 py-1.5 rounded-xl text-xs font-bold text-black bg-sky-400 hover:bg-sky-300 active:scale-95 transition shadow-lg shadow-sky-400/20">
+            📲 O'rnatish
+          </button>
+          <button onclick="dismissPwaBanner('android')" type="button" class="px-3 py-1.5 rounded-xl text-xs text-zinc-400 hover:text-white transition">
+            Keyinroq
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- B) iOS Safari "Bosh ekranga qo'shish" Qo'llanma Banneri -->
+  <aside id="pwaIosBanner" class="hidden fixed bottom-20 left-4 right-4 z-50 max-w-md mx-auto glass-card p-4 rounded-2xl border-sky-500/30 glow-cyan">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-purple-600 p-0.5 flex-shrink-0">
+        <img src="icons/icon-192.svg" alt="Softech" class="w-full h-full rounded-[10px]">
+      </div>
+      <div class="flex-1">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-white">iPhone ekranga o'rnatish</h3>
+          <button onclick="dismissPwaBanner('ios')" class="text-zinc-400 hover:text-white text-sm">✕</button>
+        </div>
+        <p class="text-xs text-zinc-300 mt-1 leading-relaxed">
+          Ushbu ilovani to'liq ekranda ishlatish uchun:
+        </p>
+        <div class="mt-2.5 p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs space-y-1.5">
+          <div class="flex items-center gap-2 text-zinc-200">
+            <span class="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center font-bold text-[11px] text-sky-400">1</span>
+            <span>Safari pastidagi <strong>[⎋ Ulashish / Share]</strong> tugmasini bosing</span>
+          </div>
+          <div class="flex items-center gap-2 text-zinc-200">
+            <span class="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center font-bold text-[11px] text-sky-400">2</span>
+            <span>Menyudan <strong>[➕ Bosh ekranga / Add to Home]</strong> ni tanlang</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Toast Message -->
+  <div id="toastNotification" class="fixed top-14 left-4 right-4 z-50 max-w-sm mx-auto p-3 rounded-xl glass-card text-xs text-white text-center shadow-xl transition-all duration-300 opacity-0 pointer-events-none translate-y-[-10px]">
+  </div>
+
+  <!-- ======================================================================== -->
+  <!-- 5. PWA LOGIC, SERVICE WORKER & INSTALL HANDLER -->
+  <!-- ======================================================================== -->
+  <script>
+    let deferredInstallPrompt = null;
+
+    // 1. Service Worker Ro'yxatdan o'tkazish
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('✅ [PWA] Service Worker muvaffaqiyatli ro\'yxatdan o\'tdi:', registration.scope);
+
+            // Yangilanish mavjudligini kuzatish
+            registration.onupdatefound = () => {
+              const installingWorker = registration.installing;
+              if (installingWorker) {
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    showToast('🚀 Yangi versiya yuklandi! Ilovani yangilash uchun sahifani yangilang.');
+                  }
+                };
+              }
+            };
+          })
+          .catch((err) => {
+            console.warn('❌ [PWA] Service Worker xatosi:', err);
+          });
+      });
+    }
+
+    // 2. Online / Offline Holat Ticker
+    function updateOnlineStatus() {
+      const offlineAlert = document.getElementById('offlineIndicator');
+      const syncStatus = document.getElementById('cloudSyncStatus');
+
+      if (navigator.onLine) {
+        if (offlineAlert) offlineAlert.classList.add('hidden');
+        if (syncStatus) {
+          syncStatus.innerHTML = `
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Cloud SaaS Onlayn</span>
+          `;
+        }
+      } else {
+        if (offlineAlert) offlineAlert.classList.remove('hidden');
+        if (syncStatus) {
+          syncStatus.innerHTML = `
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+            <span class="text-rose-400 font-semibold">Oflayn Rejim</span>
+          `;
+        }
+        showToast('⚠️ Internet uzildi. Oflayn rejim faollashdi.');
+      }
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    // 3. PWA Standalone Holatini Tekshirish (O'rnatilgan yoki yo'qligi)
+    function isRunningStandalone() {
+      return (window.matchMedia('(display-mode: standalone)').matches) || 
+             (window.navigator.standalone === true) || 
+             document.referrer.includes('android-app://');
+    }
+
+    // 4. Android Chrome Install Prompt Trigger
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+
+      // Agar ilova allaqachon o'rnatilmagan bo'lsa va foydalanuvchi bannerini yopmagan bo'lsa
+      if (!isRunningStandalone() && !localStorage.getItem('pwa_banner_dismissed')) {
+        const androidBanner = document.getElementById('pwaAndroidBanner');
+        if (androidBanner) androidBanner.classList.remove('hidden');
+      }
+    });
+
+    const btnInstall = document.getElementById('btnPwaInstall');
+    if (btnInstall) {
+      btnInstall.addEventListener('click', async () => {
+        triggerHaptic();
+        if (deferredInstallPrompt) {
+          deferredInstallPrompt.prompt();
+          const { outcome } = await deferredInstallPrompt.userChoice;
+          console.log(`[PWA] Foydalanuvchi tanlovi: ${outcome}`);
+          deferredInstallPrompt = null;
+          dismissPwaBanner('android');
+        }
+      });
+    }
+
+    // 5. iOS Safari Install Banner Trigger
+    function checkIosPrompt() {
+      const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const isStandalone = isRunningStandalone();
+      const isDismissed = localStorage.getItem('pwa_ios_dismissed');
+
+      // Agar iOS bo'lsa, brauzerda ochilgan bo'lsa va banner yopilmagan bo'lsa
+      if (isIos && !isStandalone && !isDismissed) {
+        setTimeout(() => {
+          const iosBanner = document.getElementById('pwaIosBanner');
+          if (iosBanner) iosBanner.classList.remove('hidden');
+        }, 1500);
+      }
+    }
+    document.addEventListener('DOMContentLoaded', checkIosPrompt);
+
+    function dismissPwaBanner(type) {
+      if (type === 'android') {
+        const el = document.getElementById('pwaAndroidBanner');
+        if (el) el.classList.add('hidden');
+        localStorage.setItem('pwa_banner_dismissed', '1');
+      } else if (type === 'ios') {
+        const el = document.getElementById('pwaIosBanner');
+        if (el) el.classList.add('hidden');
+        localStorage.setItem('pwa_ios_dismissed', '1');
+      }
+    }
+
+    // 6. UI Interactions & Haptics
+    function triggerHaptic() {
+      if (navigator.vibrate) {
+        navigator.vibrate(15);
+      }
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toastNotification');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-[-10px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-[-10px]');
+      }, 3000);
+    }
+
+    // Tab almashish delegatsiyasi
+    window.switchTab = window.switchTab || function(tabName) {
+      triggerHaptic();
+      showToast(`${tabName.toUpperCase()} bo'limi tanlandi`);
+    };
+
+    function refreshData() {
+      triggerHaptic();
+      showToast('🔄 Ma\'lumotlar yangilanmoqda...');
+      setTimeout(() => {
+        showToast('✓ Ma\'lumotlar so\'nggi holatda.');
+      }, 600);
+    }
+
+    function openClubDetail(clubId) {
+      triggerHaptic();
+      showToast(`Filial boshqaruviga o'tilmoqda: ${clubId.toUpperCase()}`);
+    }
+  </script>
+  <!-- Load Executive Mobile Dashboard -->
+  <script type="module" src="views/dashboard.js"></script>
+</body>
+</html>

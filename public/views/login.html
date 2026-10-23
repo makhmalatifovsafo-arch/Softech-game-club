@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="uz" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Softech Master Cockpit — Xavfsiz Kirish</title>
+
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icons/icon-192.svg">
+
+  <!-- Shriftlar -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+    }
+
+    body {
+      background-color: #09090b;
+      color: #fafafa;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      padding-top: var(--sat);
+      padding-bottom: var(--sab);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Glassmorphism */
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-btn:active {
+      transform: scale(0.92);
+      background: rgba(56, 189, 248, 0.2);
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+
+    /* iOS Glass PIN Dots */
+    .pin-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 9999px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      background: transparent;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .pin-dot.filled {
+      background: #38bdf8;
+      border-color: #38bdf8;
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.8), 0 0 4px #38bdf8;
+      transform: scale(1.15);
+    }
+
+    /* Shake Animation on Wrong PIN */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-14px); }
+      40%, 80% { transform: translateX(14px); }
+    }
+    .shake-error {
+      animation: shake 0.4s ease-in-out;
+    }
+
+    /* Fade Transition between Views */
+    .view-transition {
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+  </style>
+</head>
+<body class="justify-between px-6 py-6 max-w-sm mx-auto w-full">
+
+  <!-- ======================================================================== -->
+  <!-- 1. TOP HEADER (Emblem & Title) -->
+  <!-- ======================================================================== -->
+  <header class="text-center pt-4">
+    <div class="inline-flex w-16 h-16 rounded-3xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 p-0.5 shadow-xl shadow-sky-500/20 mb-3">
+      <div class="w-full h-full bg-[#09090b] rounded-[22px] flex items-center justify-center">
+        <svg class="w-8 h-8 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+      </div>
+    </div>
+    <h1 class="text-xl font-bold tracking-tight text-white">Softech Cockpit</h1>
+    <p id="viewSubtitle" class="text-xs text-zinc-400 mt-1">Super Admin xavfsiz seansini oching</p>
+  </header>
+
+  <!-- ======================================================================== -->
+  <!-- 2. PIN VIEW (Standart mobil rejim) -->
+  <!-- ======================================================================== -->
+  <section id="pinView" class="view-transition flex flex-col items-center my-auto w-full">
+    
+    <!-- 4 Ta Shisha Doiracha (PIN Dots) -->
+    <div id="pinDotsContainer" class="flex items-center justify-center gap-6 my-6 py-2">
+      <div class="pin-dot" id="dot0"></div>
+      <div class="pin-dot" id="dot1"></div>
+      <div class="pin-dot" id="dot2"></div>
+      <div class="pin-dot" id="dot3"></div>
+    </div>
+
+    <!-- Holat xabari / Xatolik -->
+    <div id="pinStatusText" class="text-xs text-zinc-400 font-mono h-5 text-center transition-colors">
+      4 xonali shaxsiy PIN-kodni kiriting
+    </div>
+
+    <!-- iOS Usulidagi Raqamlar Klaviatyurasi (3x4 Grid) -->
+    <div class="grid grid-cols-3 gap-4 w-full mt-6">
+      <button type="button" onclick="handlePinInput('1')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">1</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">&nbsp;</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('2')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">2</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">ABC</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('3')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">3</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">DEF</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('4')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">4</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">GHI</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('5')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">5</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">JKL</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('6')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">6</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">MNO</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('7')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">7</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">PQRS</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('8')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">8</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">TUV</span>
+      </button>
+
+      <button type="button" onclick="handlePinInput('9')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">9</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">WXYZ</span>
+      </button>
+
+      <!-- Biometrik / Face ID tugmasi (past chap) -->
+      <button type="button" onclick="handleBiometricAuth()" class="h-16 rounded-2xl flex items-center justify-center text-sky-400 active:scale-90 transition" title="Biometrik Kirish">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 004 11m0 0a8 8 0 00.99 7.132"/>
+        </svg>
+      </button>
+
+      <!-- 0 Raqami -->
+      <button type="button" onclick="handlePinInput('0')" class="glass-btn h-16 rounded-2xl flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold font-mono text-white leading-none">0</span>
+        <span class="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mt-1">+</span>
+      </button>
+
+      <!-- O'chirish (Backspace) tugmasi (past o'ng) -->
+      <button type="button" onclick="handlePinDelete()" class="h-16 rounded-2xl flex items-center justify-center text-zinc-400 hover:text-white active:scale-90 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414-6.414a2 2 0 011.414-.586H19a2 2 0 012 2v10a2 2 0 01-2 2H10.828a2 2 0 01-1.414-.586L3 12z"/>
+        </svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- ======================================================================== -->
+  <!-- 3. PASSWORD VIEW (Muqobil login formasi) -->
+  <!-- ======================================================================== -->
+  <section id="passwordView" class="view-transition hidden flex flex-col my-auto w-full space-y-4">
+    <div class="glass-btn p-5 rounded-2xl space-y-4 border-zinc-800">
+      <div>
+        <label class="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Foydalanuvchi nomi</label>
+        <input type="text" id="inputUsername" value="admin" autocomplete="username"
+               class="w-full bg-[#121215] border border-zinc-800 rounded-xl px-3.5 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono transition">
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Master Parol</label>
+        <input type="password" id="inputPassword" placeholder="••••••••" autocomplete="current-password"
+               class="w-full bg-[#121215] border border-zinc-800 rounded-xl px-3.5 py-3 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono transition">
+      </div>
+
+      <div id="passwordError" class="text-xs text-rose-400 font-medium hidden"></div>
+
+      <button type="button" onclick="submitPasswordLogin()" id="btnSubmitPassword"
+              class="w-full py-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-black font-bold text-sm active:scale-98 transition shadow-lg shadow-sky-500/25">
+        Tizimga Kirish ↵
+      </button>
+    </div>
+  </section>
+
+  <!-- ======================================================================== -->
+  <!-- 4. BOTTOM TOGGLE SWITCHER -->
+  <!-- ======================================================================== -->
+  <footer class="text-center pb-2">
+    <button type="button" id="btnToggleAuthMode" onclick="toggleAuthMode()" 
+            class="text-xs font-semibold text-sky-400 hover:text-sky-300 py-2 px-4 rounded-xl glass-btn transition">
+      🔑 Parol orqali kirish
+    </button>
+  </footer>
+
+  <!-- ======================================================================== -->
+  <!-- 5. CLIENT-SIDE LOGIC & ANIMATIONS -->
+  <!-- ======================================================================== -->
+  <script>
+    let currentPin = '';
+    let isPasswordMode = false;
+    let isVerifying = false;
+
+    // Haptic feedback (Mobil titrash tebranishi)
+    function triggerHaptic(duration = 15) {
+      if ('vibrate' in navigator) {
+        navigator.vibrate(duration);
+      }
+    }
+
+    // 1. PIN Raqam Kiritish
+    function handlePinInput(digit) {
+      if (isVerifying || currentPin.length >= 4) return;
+
+      triggerHaptic(12);
+      currentPin += digit;
+      updatePinDots();
+
+      if (currentPin.length === 4) {
+        submitPinVerification();
+      }
+    }
+
+    // 2. PIN Raqamni O'chirish
+    function handlePinDelete() {
+      if (isVerifying || currentPin.length === 0) return;
+
+      triggerHaptic(8);
+      currentPin = currentPin.slice(0, -1);
+      updatePinDots();
+      resetPinStatus();
+    }
+
+    // 3. Doirachalarni yangilash
+    function updatePinDots() {
+      for (let i = 0; i < 4; i++) {
+        const dot = document.getElementById(`dot${i}`);
+        if (dot) {
+          if (i < currentPin.length) {
+            dot.classList.add('filled');
+          } else {
+            dot.classList.remove('filled');
+          }
+        }
+      }
+    }
+
+    function resetPinStatus() {
+      const statusText = document.getElementById('pinStatusText');
+      if (statusText) {
+        statusText.textContent = '4 xonali shaxsiy PIN-kodni kiriting';
+        statusText.className = 'text-xs text-zinc-400 font-mono h-5 text-center transition-colors';
+      }
+    }
+
+    // 4. PIN Tekshirish (Backend API)
+    async function submitPinVerification() {
+      isVerifying = true;
+      const statusText = document.getElementById('pinStatusText');
+      const dotsContainer = document.getElementById('pinDotsContainer');
+
+      if (statusText) {
+        statusText.textContent = 'Tekshirilmoqda...';
+        statusText.className = 'text-xs text-sky-400 font-mono h-5 text-center';
+      }
+
+      try {
+        const res = await fetch('/api/auth/verify-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: localStorage.getItem('softech_last_username') || 'admin',
+            pinCode: currentPin
+          })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          triggerHaptic([30, 50, 30]);
+          if (statusText) {
+            statusText.textContent = '✓ Muvaffaqiyatli! Yuklanmoqda...';
+            statusText.className = 'text-xs text-emerald-400 font-mono h-5 text-center font-bold';
+          }
+
+          // Tokenlarni saqlash
+          localStorage.setItem('softech_access_token', data.accessToken);
+          localStorage.setItem('softech_refresh_token', data.refreshToken);
+          localStorage.setItem('softech_user', JSON.stringify(data.user));
+
+          // Cockpitga yo'naltirish
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 350);
+        } else {
+          // Xatolik: Silkinish (Shake) animatsiyasi va qizil xabar
+          triggerHaptic([80, 50, 80]);
+          if (dotsContainer) {
+            dotsContainer.classList.add('shake-error');
+            setTimeout(() => dotsContainer.classList.remove('shake-error'), 450);
+          }
+
+          if (statusText) {
+            statusText.textContent = data.error || 'PIN-kod noto\'g\'ri!';
+            statusText.className = 'text-xs text-rose-400 font-mono h-5 text-center font-bold';
+          }
+
+          // PIN-ni tozalash
+          setTimeout(() => {
+            currentPin = '';
+            updatePinDots();
+            isVerifying = false;
+          }, 600);
+        }
+      } catch (err) {
+        triggerHaptic(100);
+        if (statusText) {
+          statusText.textContent = 'Tarmoq xatosi. Server bilan aloqa yo\'q.';
+          statusText.className = 'text-xs text-rose-400 font-mono h-5 text-center font-bold';
+        }
+        currentPin = '';
+        updatePinDots();
+        isVerifying = false;
+      }
+    }
+
+    // 5. Parol orqali Kirish (Password Login)
+    async function submitPasswordLogin() {
+      const usernameInput = document.getElementById('inputUsername');
+      const passwordInput = document.getElementById('inputPassword');
+      const errorDiv = document.getElementById('passwordError');
+      const btn = document.getElementById('btnSubmitPassword');
+
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!username || !password) {
+        errorDiv.textContent = 'Login va parolni kiriting.';
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Kirilmoqda...';
+      errorDiv.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          triggerHaptic([30, 50, 30]);
+          localStorage.setItem('softech_access_token', data.accessToken);
+          localStorage.setItem('softech_refresh_token', data.refreshToken);
+          localStorage.setItem('softech_user', JSON.stringify(data.user));
+          localStorage.setItem('softech_last_username', data.user.username);
+
+          window.location.href = '/';
+        } else {
+          triggerHaptic(80);
+          errorDiv.textContent = data.error || 'Login yoki parol noto\'g\'ri.';
+          errorDiv.classList.remove('hidden');
+        }
+      } catch (err) {
+        errorDiv.textContent = 'Server bilan bog\'lanishda xatolik.';
+        errorDiv.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Tizimga Kirish ↵';
+      }
+    }
+
+    // 6. Biometrik Kirish (Web Authentication API / Face ID)
+    async function handleBiometricAuth() {
+      triggerHaptic(20);
+      if (window.PublicKeyCredential) {
+        // Agar qurilma Face ID/Touch ID qo'llab-quvvatlasa
+        try {
+          const statusText = document.getElementById('pinStatusText');
+          if (statusText) statusText.textContent = 'Biometrik skaner kutilmoqda...';
+          // Avval saqlangan PIN orqali avtomatik tekshiruv
+          submitPinVerification();
+        } catch {
+          showToast('Biometrik ma\'lumot tasdiqlanmadi');
+        }
+      } else {
+        const statusText = document.getElementById('pinStatusText');
+        if (statusText) statusText.textContent = 'Biometriya mavjud emas. PIN kiriting.';
+      }
+    }
+
+    // 7. PIN va Parol rejimlari o'rtasida silliq almashish
+    function toggleAuthMode() {
+      triggerHaptic(15);
+      isPasswordMode = !isPasswordMode;
+
+      const pinView = document.getElementById('pinView');
+      const passwordView = document.getElementById('passwordView');
+      const toggleBtn = document.getElementById('btnToggleAuthMode');
+      const subtitle = document.getElementById('viewSubtitle');
+
+      if (isPasswordMode) {
+        pinView.classList.add('hidden');
+        passwordView.classList.remove('hidden');
+        toggleBtn.textContent = '🔢 PIN-kod orqali kirish';
+        subtitle.textContent = 'Master hisob ma\'lumotlarini kiriting';
+      } else {
+        passwordView.classList.add('hidden');
+        pinView.classList.remove('hidden');
+        toggleBtn.textContent = '🔑 Parol orqali kirish';
+        subtitle.textContent = 'Super Admin xavfsiz seansini oching';
+        currentPin = '';
+        updatePinDots();
+        resetPinStatus();
+      }
+    }
+
+    // Dastur ochilganda agar allaqachon login qilingan bo'lsa
+    document.addEventListener('DOMContentLoaded', () => {
+      const lastUser = localStorage.getItem('softech_last_username');
+      if (lastUser) {
+        document.getElementById('inputUsername').value = lastUser;
+      }
+    });
+  </script>
+</body>
+</html>
