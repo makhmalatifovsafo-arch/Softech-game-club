@@ -1,0 +1,9 @@
+{
+  "githubOwner": "makhmalatifovsafo-arch",
+  "githubRepo": "Softech-game-club",
+  "updateManifestUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json",
+  "supabaseUrl": "https://xyzcompany.supabase.co",
+  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_key_softech_2026",
+  "clubId": 1,
+  "cloudUrl": "https://softech-game-club.vercel.app"
+}

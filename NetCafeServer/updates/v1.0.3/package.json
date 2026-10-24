@@ -1,0 +1,14 @@
+{
+  "name": "netcafe-server",
+  "version": "1.0.2",
+  "description": "Game Club & Internet Cafe Management System Core Server",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "ws": "^8.22.0"
+  }
+}
