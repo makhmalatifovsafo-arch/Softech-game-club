@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "releaseDate": "2026-10-24",
   "client": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
@@ -9,7 +9,7 @@
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "394d3f64721b716a8187c6349c04f7ae21c9b97a7d1afeca453223c9846879f9"
+    "sha256": "af71aaf1a529cbf5d7a686189cf4114201041ebfd2bf6540fe2537ce15376515"
   },
-  "changelog": "Faollashtirish so'rovlari to'g'ridan-to'g'ri Vercel bulut serveriga yuboriladi (localhost xatosi to'liq bartaraf etildi). Telegram xabarnomasi 100% ishlaydi."
+  "changelog": "To'liq fon rejimida uzluksiz qayta ishga tushish va menejer tizimga kirish barqarorlashtirildi."
 }

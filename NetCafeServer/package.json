@@ -1,6 +1,6 @@
 {
   "name": "netcafe-server",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Game Club & Internet Cafe Management System Core Server",
   "main": "src/server.js",
   "type": "module",

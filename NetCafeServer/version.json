@@ -1,6 +1,6 @@
 {
-  "version": "1.0.2",
-  "releaseDate": "2026-10-23",
+  "version": "1.0.4",
+  "releaseDate": "2026-10-24",
   "client": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
@@ -9,7 +9,7 @@
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "0bc6badc82381dd84c7df4ee6a99e53dd5358ed252c7da29f45bde75bf055555"
+    "sha256": "590ab84aa8bf616938a1209ec2c1550288334968ae72cc3d55e09802f0f57f55"
   },
-  "changelog": "Qora CMD oynasiz to'liq fon rejimida (Silent / Headless) yangilanish, litsenziya kaliti kiritish va Telegram integratsiyasi."
+  "changelog": "To'liq fon rejimida uzluksiz qayta ishga tushish va menejer tizimga kirish barqarorlashtirildi."
 }
