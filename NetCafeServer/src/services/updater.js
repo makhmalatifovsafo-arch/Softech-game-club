@@ -296,9 +296,7 @@ if exist "package.json" copy /Y "package.json" "backup_v${this.currentVersion}\\
 xcopy /E /I /Y "${sourceDir}\\*" "." >nul 2>&1
 
 :: 4. Serverni qora oynasiz, orqa fonda qayta ishga tushirish
-if exist "SoftechCockpit.exe" (
-    start "" "SoftechCockpit.exe"
-) else if exist "start_server_background.vbs" (
+if exist "start_server_background.vbs" (
     start "" wscript.exe //B //Nologo "start_server_background.vbs"
 ) else if exist ".\\runtime\\node.exe" (
     start "" /B ".\\runtime\\node.exe" src/server.js
