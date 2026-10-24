@@ -1,5 +1,5 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "releaseDate": "2026-10-24",
   "client": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
@@ -9,7 +9,7 @@
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "e5aa7f5dafa3058a897876c3c4c951dc3c08e03bcbed5b3f4ac86c5d0618ba07"
+    "sha256": "39448a33c5bbb554c1fc8849253dc104c3e79a977a361dab36b226217abd0801"
   },
-  "changelog": "Qurilma HWID tekshiruvi mukammallashtirildi va avtomatik yangilanish barqarorlashtirildi."
+  "changelog": "Yangi reliz chiqqanida ekranda 'Uni o'rnating' interaktiv oynasi avtomatik ko'rsatilishi yoqildi."
 }

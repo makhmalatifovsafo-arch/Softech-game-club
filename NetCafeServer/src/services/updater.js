@@ -84,7 +84,7 @@ export class ServerUpdater {
     return 'https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json';
   }
 
-  static startPeriodicChecks(intervalMs = 3 * 60 * 1000) {
+  static startPeriodicChecks(intervalMs = 60 * 1000) {
     this.init();
 
     // Dastur ishga tushgach 5 soniyadan so'ng dastlabki tekshiruv
@@ -189,16 +189,9 @@ export class ServerUpdater {
 
       this.broadcastUpdateNotice();
 
-      // Agar faol seanslar bo'lmasa (0 ta kompyuter band), avtomatik yangilashni darhol qo'llaymiz
-      const activeSessions = this.getActiveSessionsCount();
-      if (activeSessions === 0) {
-        console.log(`⚡ [ServerUpdater] Faol seanslar yo'q (0 ta PC band). Avtomatik OTA yangilanish qo'llanilmoqda...`);
-        setTimeout(() => {
-          this.applyUpdate({ force: false }).catch(e => console.warn('[ServerUpdater] Auto-apply xatosi:', e.message));
-        }, 3000);
-      } else {
-        console.log(`⏳ [ServerUpdater] Faol seanslar ketmoqda (${activeSessions} ta). Seanslar tugashi bilan yangilanish qo'llaniladi.`);
-      }
+      // Kassir va Admin ekranida yangilanish bildirishnomasi va modali paydo bo'ladi
+      console.log(`📢 [ServerUpdater] Yangi reliz v${version} tayyorlandi va UI ga xabarnoma yuborildi.`);
+      this.broadcastUpdateNotice();
     } catch (err) {
       this.state.error = err.message;
       console.error(`❌ [ServerUpdater] Yuklash yoki ochishda xatolik:`, err.message);

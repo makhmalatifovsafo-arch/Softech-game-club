@@ -8568,14 +8568,20 @@
       const text = document.getElementById('headerUpdateText');
       if (!badge || !text) return;
 
-      if (status && status.isStaged && status.stagedVersion) {
-        text.textContent = `Yangi versiya: v${status.stagedVersion}`;
+      const hasUpdate = (status && status.isStaged && status.stagedVersion) ||
+                        (status && status.latestVersion && status.currentVersion && status.latestVersion !== status.currentVersion);
+
+      if (hasUpdate) {
+        const targetVer = status.stagedVersion || status.latestVersion;
+        text.textContent = `Yangi versiya: v${targetVer} ⚡`;
         badge.classList.remove('hidden');
         badge.classList.add('flex');
-      } else if (status && status.latestVersion && status.currentVersion && status.latestVersion !== status.currentVersion) {
-        text.textContent = `Yangi versiya: v${status.latestVersion}`;
-        badge.classList.remove('hidden');
-        badge.classList.add('flex');
+
+        // Yangi reliz chiqqanida ekranda "Yangi versiya mavjud, o'rnating" modali avtomatik ochiladi!
+        const dismissedKey = 'dismissed_update_modal_v' + targetVer;
+        if (!sessionStorage.getItem(dismissedKey)) {
+          openUpdateModal();
+        }
       } else {
         badge.classList.add('hidden');
         badge.classList.remove('flex');
@@ -8592,6 +8598,12 @@
     function closeUpdateModal() {
       const modal = document.getElementById('serverUpdateModal');
       if (modal) modal.classList.add('hidden');
+      if (currentServerUpdateStatus) {
+        const targetVer = currentServerUpdateStatus.stagedVersion || currentServerUpdateStatus.latestVersion;
+        if (targetVer) {
+          sessionStorage.setItem('dismissed_update_modal_v' + targetVer, 'true');
+        }
+      }
     }
 
     function updateModalUi() {
