@@ -1,11 +1,18 @@
 /**
  * Softech NetCafe Server — Cashier & Admin License Lock Overlay
  * Location: NetCafeServer/public/licenseGuard.js
+ *
+ * MUHIM: Barcha faollashtirish so'rovlari TO'G'RIDAN-TO'G'RI Vercel bulut
+ * serveriga yuboriladi (localhost yoki lokal serverni chetlab o'tadi).
  */
 
 (function () {
   let licensePollingTimer = null;
 
+  // ⚡ CLOUD API — BARCHA SO'ROVLAR SHU YERGA YUBORILADI (HECH QACHON localhost EMAS!)
+  const CLOUD_API = 'https://softech-game-club.vercel.app';
+
+  // Lokal server faqat HWID va holat tekshirish uchun ishlatiladi
   async function checkLicenseStatus() {
     try {
       const res = await fetch('/api/license/status');
@@ -86,8 +93,19 @@
             <div id="activationKeyError" style="display: none; color: #f43f5e; font-size: 11px; margin-top: 8px; font-weight: 600;"></div>
           </div>
 
-          <!-- USUL 2: HWID va Bulut orqali So'rov Yuborish -->
-          <div style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 18px; padding: 16px; text-align: left; margin-bottom: 20px;">
+          <!-- USUL 2: Telegram Orqali So'rov Yuborish -->
+          <div style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 18px; padding: 16px; text-align: left; margin-bottom: 16px;">
+            <label style="display: block; font-size: 11px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+              🏢 Game Club Nomi:
+            </label>
+            <input 
+              type="text" 
+              id="clubNameInput" 
+              placeholder="masalan: Apex Gaming Club" 
+              style="width: 100%; padding: 10px 14px; border-radius: 12px; background: #09090b; border: 1px solid #27272a; color: #fff; font-size: 13px; outline: none; box-sizing: border-box; margin-bottom: 10px;"
+              onfocus="this.style.borderColor='#38bdf8'"
+              onblur="this.style.borderColor='#27272a'"
+            />
             <div style="font-size: 10px; font-weight: 700; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px;">Mashina HWID Kaliti:</div>
             <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: #38bdf8; margin-top: 4px; word-break: break-all;">
               ${status.hwid}
@@ -104,7 +122,7 @@
               onclick="window.requestServerActivation()" 
               style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700; font-size: 12px; cursor: pointer; transition: 0.2s;"
             >
-              🚀 So'rovni Qayta Yuborish
+              🚀 So'rov Yuborish (Telegram)
             </button>
             <button 
               onclick="window.checkLicenseNow()" 
@@ -113,6 +131,8 @@
               🔄 Tekshirish
             </button>
           </div>
+
+          <div id="cloudRequestResult" style="display: none; margin-top: 12px; padding: 10px; border-radius: 10px; font-size: 11px; font-weight: 600;"></div>
         </div>
       `;
       return;
@@ -168,6 +188,10 @@
     checkLicenseStatus();
   };
 
+  // ===================================================================
+  // USUL 1: LITSENZIYA KALITI BILAN DARHOL FAOLLASHTIRISH
+  // TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORILADI!
+  // ===================================================================
   window.activateWithKey = async function () {
     const input = document.getElementById('manualLicenseKeyInput');
     const errEl = document.getElementById('activationKeyError');
@@ -182,24 +206,56 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Tekshirilmoqda...'; }
 
     try {
-      const res = await fetch('/api/license/activate-with-key', {
+      // 1. Avval lokal serverdan HWID ni olamiz
+      let hwid = 'UNKNOWN';
+      try {
+        const statusRes = await fetch('/api/license/status');
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          hwid = statusData.hwid || 'UNKNOWN';
+        }
+      } catch (e) {}
+
+      // 2. TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORAMIZ (localhost EMAS!)
+      const cloudRes = await fetch(CLOUD_API + '/api/telemetry/activate-by-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: key })
+        body: JSON.stringify({ licenseKey: key, hardwareFingerprint: hwid, totalPcs: 16, serverVersion: '1.0.2' })
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        alert(data.message || "✓ Litsenziya muvaffaqiyatli faollashtirildi!");
-        checkLicenseStatus();
+      const cloudData = await cloudRes.json();
+
+      if (cloudRes.ok && cloudData.success) {
+        // 3. Agar muvaffaqiyatli bo'lsa, lokal serverga ham yuborib litsenziyani saqlashga harakat qilamiz
+        try {
+          await fetch('/api/license/activate-with-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ licenseKey: key })
+          });
+        } catch (e) {
+          console.warn('Lokal serverga yuborishda xatolik (muhim emas):', e);
+        }
+
+        if (errEl) { errEl.style.display = 'none'; }
+        const resultEl = document.getElementById('cloudRequestResult');
+        if (resultEl) {
+          resultEl.style.display = 'block';
+          resultEl.style.background = 'rgba(34, 197, 94, 0.15)';
+          resultEl.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+          resultEl.style.color = '#22c55e';
+          resultEl.textContent = "✅ " + (cloudData.message || "Litsenziya muvaffaqiyatli faollashtirildi!");
+        }
+        // Qayta tekshirish
+        setTimeout(() => checkLicenseStatus(), 1000);
       } else {
         if (errEl) {
-          errEl.textContent = data.error || "Litsenziya kaliti noto'g'ri.";
+          errEl.textContent = cloudData.error || "Litsenziya kaliti noto'g'ri.";
           errEl.style.display = 'block';
         }
       }
     } catch (err) {
       if (errEl) {
-        errEl.textContent = "Server bilan aloqa xatosi: " + err.message;
+        errEl.textContent = "Bulut serveriga ulanishda xatolik: " + err.message;
         errEl.style.display = 'block';
       }
     } finally {
@@ -207,28 +263,81 @@
     }
   };
 
+  // ===================================================================
+  // USUL 2: TELEGRAM ORQALI SO'ROV YUBORISH
+  // TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORILADI!
+  // ===================================================================
   window.requestServerActivation = async function () {
     const btn = document.getElementById('btnSendActivationReq');
     const statusText = document.getElementById('activationStatusText');
+    const resultEl = document.getElementById('cloudRequestResult');
+    const clubNameInput = document.getElementById('clubNameInput');
+
+    const clubName = (clubNameInput && clubNameInput.value.trim()) || 'Yangi Game Club';
+
     if (btn) { btn.disabled = true; btn.textContent = 'Yuborilmoqda...'; }
+    if (resultEl) { resultEl.style.display = 'none'; }
 
     try {
-      const res = await fetch('/api/license/request-activation', {
+      // 1. Lokal serverdan HWID ni olamiz
+      let hwid = 'UNKNOWN';
+      try {
+        const statusRes = await fetch('/api/license/status');
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          hwid = statusData.hwid || 'UNKNOWN';
+        }
+      } catch (e) {}
+
+      // 2. TO'G'RIDAN-TO'G'RI VERCEL BULUT SERVERIGA YUBORAMIZ!
+      const cloudRes = await fetch(CLOUD_API + '/api/telemetry/activation-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clubName: 'Softech Game Club', totalPcs: 16 })
+        body: JSON.stringify({
+          clubName: clubName,
+          hardwareFingerprint: hwid,
+          totalPcs: 16,
+          serverVersion: '1.0.2'
+        })
       });
-      const data = await res.json();
+      const cloudData = await cloudRes.json();
+
       if (statusText) {
-        statusText.textContent = "✓ So'rov yuborildi! Telegram orqali Super Admin tasdig'i kutilmoqda...";
+        statusText.textContent = "✅ So'rov bulutga yuborildi! Telegram orqali Super Admin tasdig'i kutilmoqda...";
+        statusText.style.color = '#22c55e';
       }
+      if (resultEl) {
+        resultEl.style.display = 'block';
+        resultEl.style.background = 'rgba(34, 197, 94, 0.15)';
+        resultEl.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+        resultEl.style.color = '#22c55e';
+        resultEl.textContent = "✅ " + (cloudData.message || "So'rov muvaffaqiyatli yuborildi!");
+      }
+
+      // Lokal serverga ham xabar beramiz
+      try {
+        await fetch('/api/license/request-activation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clubName: clubName, totalPcs: 16 })
+        });
+      } catch (e) {}
+
       checkLicenseStatus();
     } catch (err) {
       if (statusText) {
-        statusText.textContent = "⚠️ Yuborishda xatolik: " + err.message;
+        statusText.textContent = "⚠️ Bulut serveriga ulanishda xatolik: " + err.message;
+        statusText.style.color = '#f43f5e';
+      }
+      if (resultEl) {
+        resultEl.style.display = 'block';
+        resultEl.style.background = 'rgba(244, 63, 94, 0.15)';
+        resultEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+        resultEl.style.color = '#f43f5e';
+        resultEl.textContent = "❌ Xatolik: " + err.message;
       }
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '🚀 So\'rovni Qayta Yuborish'; }
+      if (btn) { btn.disabled = false; btn.textContent = '🚀 So\'rov Yuborish (Telegram)'; }
     }
   };
 

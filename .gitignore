@@ -40,6 +40,9 @@ temp_ota_server/
 # Production Installers (Upload to GitHub Releases instead of Git Commit)
 SOFTECH_PRODUCTION_INSTALLERS/
 Releases/
+publish_single/
+Installers/publish/
+*.exe
 
 # OS Generated
 Thumbs.db
