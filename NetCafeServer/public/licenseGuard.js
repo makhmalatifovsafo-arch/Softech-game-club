@@ -8,6 +8,7 @@
 
 (function () {
   let licensePollingTimer = null;
+  let currentServerHwid = null;
 
   // ⚡ CLOUD API — BARCHA SO'ROVLAR SHU YERGA YUBORILADI (HECH QACHON localhost EMAS!)
   const CLOUD_API = 'https://softech-game-club.vercel.app';
@@ -18,6 +19,7 @@
       const res = await fetch('/api/license/status');
       if (!res.ok) return;
       const status = await res.json();
+      if (status.hwid) currentServerHwid = status.hwid;
       updateLicenseOverlay(status);
     } catch (err) {
       console.warn('⚠️ Litsenziya holatini tekshirishda xatolik:', err);
@@ -172,6 +174,38 @@
           </div>
         </div>
 
+        ${isMismatch ? `
+        <!-- HWID Qayta Faollashtirish Qismi -->
+        <div style="background: rgba(0, 0, 0, 0.6); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 18px; padding: 18px; text-align: left; margin-bottom: 16px;">
+          <label style="display: block; font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+            🔑 Super Admin Litsenziya Kaliti:
+          </label>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input 
+              type="text" 
+              id="manualLicenseKeyInput" 
+              placeholder="masalan: SOFTECH-XXXX-XXXX" 
+              style="flex: 1; padding: 10px 14px; border-radius: 12px; background: #09090b; border: 1px solid #27272a; color: #fff; font-family: monospace; font-size: 13px; outline: none;"
+            />
+            <button 
+              id="btnActivateByKey"
+              onclick="window.activateWithKey()" 
+              style="padding: 10px 16px; border-radius: 12px; background: #38bdf8; color: #000; font-weight: 800; font-size: 12px; border: none; cursor: pointer; white-space: nowrap;"
+            >
+              Faollashtirish ↵
+            </button>
+          </div>
+          <button 
+            id="btnSendActivationReq"
+            onclick="window.requestServerActivation()" 
+            style="width: 100%; padding: 11px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 700; font-size: 12px; cursor: pointer;"
+          >
+            🚀 Ushbu Yangi Qurilma Uchun So'rov Yuborish (Telegram)
+          </button>
+          <div id="activationKeyError" style="display: none; color: #f43f5e; font-size: 11px; margin-top: 8px; font-weight: 600;"></div>
+        </div>
+        ` : ''}
+
         <div style="display: flex; flex-direction: column; gap: 10px;">
           <a href="tel:+998952220644" style="display: block; text-decoration: none; padding: 14px; border-radius: 14px; background: #f43f5e; color: #fff; font-weight: 800; font-size: 13px; text-align: center; box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4);">
             📞 Ta'minotchi: +998 95 222 06 44 / +998 99 563 45 16
@@ -180,6 +214,7 @@
             🔄 Litsenziyani Qayta Tekshirish
           </button>
         </div>
+        <div id="cloudRequestResult" style="display: none; margin-top: 12px; padding: 10px; border-radius: 10px; font-size: 11px; font-weight: 600;"></div>
       </div>
     `;
   }
@@ -207,14 +242,17 @@
 
     try {
       // 1. Avval lokal serverdan HWID ni olamiz
-      let hwid = 'UNKNOWN';
-      try {
-        const statusRes = await fetch('/api/license/status');
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          hwid = statusData.hwid || 'UNKNOWN';
-        }
-      } catch (e) {}
+      let hwid = currentServerHwid || 'UNKNOWN';
+      if (hwid === 'UNKNOWN') {
+        try {
+          const statusRes = await fetch('/api/license/status');
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            hwid = statusData.hwid || 'UNKNOWN';
+            if (hwid !== 'UNKNOWN') currentServerHwid = hwid;
+          }
+        } catch (e) {}
+      }
 
       // 2. TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORAMIZ (localhost EMAS!)
       const cloudRes = await fetch(CLOUD_API + '/api/telemetry/activate-by-key', {
@@ -280,14 +318,17 @@
 
     try {
       // 1. Lokal serverdan HWID ni olamiz
-      let hwid = 'UNKNOWN';
-      try {
-        const statusRes = await fetch('/api/license/status');
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          hwid = statusData.hwid || 'UNKNOWN';
-        }
-      } catch (e) {}
+      let hwid = currentServerHwid || 'UNKNOWN';
+      if (hwid === 'UNKNOWN') {
+        try {
+          const statusRes = await fetch('/api/license/status');
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            hwid = statusData.hwid || 'UNKNOWN';
+            if (hwid !== 'UNKNOWN') currentServerHwid = hwid;
+          }
+        } catch (e) {}
+      }
 
       // 2. TO'G'RIDAN-TO'G'RI VERCEL BULUT SERVERIGA YUBORAMIZ!
       const cloudRes = await fetch(CLOUD_API + '/api/telemetry/activation-request', {

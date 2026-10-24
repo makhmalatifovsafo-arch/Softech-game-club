@@ -9,7 +9,7 @@
   "server": {
     "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
     "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "af71aaf1a529cbf5d7a686189cf4114201041ebfd2bf6540fe2537ce15376515"
+    "sha256": "e5aa7f5dafa3058a897876c3c4c951dc3c08e03bcbed5b3f4ac86c5d0618ba07"
   },
-  "changelog": "To'liq fon rejimida uzluksiz qayta ishga tushish va menejer tizimga kirish barqarorlashtirildi."
+  "changelog": "Qurilma HWID tekshiruvi mukammallashtirildi va avtomatik yangilanish barqarorlashtirildi."
 }

@@ -77,7 +77,9 @@ export class HwidService {
   static getPrimaryMacAddress() {
     try {
       const nics = os.networkInterfaces();
-      for (const name of Object.keys(nics)) {
+      const sortedKeys = Object.keys(nics).sort();
+      for (const name of sortedKeys) {
+        if (/virtual|vmware|vbox|tap|hyper-v|wsl|pseudo|loopback/i.test(name)) continue;
         const list = nics[name] || [];
         for (const net of list) {
           if (!net.internal && net.mac && net.mac !== '00:00:00:00:00:00') {

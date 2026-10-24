@@ -262,7 +262,16 @@ export class LicenseManager {
 
       // 2. Hardware Binding tekshiruvi (HWID solishtirish)
       const currentHwid = HwidService.getHardwareFingerprint();
-      if (payload.hardwareFingerprint !== currentHwid) {
+      const isWildcardHwid = !payload.hardwareFingerprint || 
+                             payload.hardwareFingerprint === 'UNKNOWN' || 
+                             payload.hardwareFingerprint.includes('UNKNOWN');
+
+      if (isWildcardHwid) {
+        console.log(`ℹ️ [Anti-Piracy] Birlamchi litsenziya ushbu qurilmaga (${currentHwid}) bog'lanmoqda...`);
+        payload.hardwareFingerprint = currentHwid;
+        const newSig = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
+        fs.writeFileSync(LICENSE_FILE, JSON.stringify({ payload, signature: newSig }, null, 2), 'utf8');
+      } else if (payload.hardwareFingerprint !== currentHwid) {
         console.error(`❌ [Anti-Piracy] HWID mos kelmadi! Litsenziya: ${payload.hardwareFingerprint}, Joriy: ${currentHwid}`);
         this.enforceLockdown('HWID_MISMATCH', `Ushbu dastur boshqa mashinaga nusxalangan! Ushbu qurilma (${currentHwid}) uchun litsenziya berilmagan.`);
         this.state = 'HWID_MISMATCH';
