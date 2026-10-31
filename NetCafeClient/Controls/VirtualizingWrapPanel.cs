@@ -119,7 +119,8 @@ public class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
         if (itemCount == 0 || availableSize.Width <= 0)
         {
             _extent = new Size(0, 0);
-            _viewport = availableSize;
+            _viewport = new Size(double.IsFinite(availableSize.Width) ? availableSize.Width : 0,
+                double.IsFinite(availableSize.Height) ? availableSize.Height : 0);
             _scrollOwner?.InvalidateScrollInfo();
             return new Size(0, 0);
         }
@@ -145,7 +146,9 @@ public class VirtualizingWrapPanel : VirtualizingPanel, IScrollInfo
         int lastIndex = Math.Min(itemCount - 1, (lastRow + 1) * itemsPerRow - 1);
 
         var generator = ItemContainerGenerator;
-        if (generator == null) return availableSize;
+        // WPF can measure before the item generator is attached, with infinite scroll space.
+        // DesiredSize must always be finite, including this first layout pass.
+        if (generator == null) return new Size(width, Math.Min(totalHeight, _viewport.Height));
 
         GeneratorPosition startPos = generator.GeneratorPositionFromIndex(firstIndex);
         int childIndex = (startPos.Offset == 0) ? startPos.Index : startPos.Index + 1;

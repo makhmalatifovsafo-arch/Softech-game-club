@@ -255,3 +255,90 @@
 }
 
 
+
+/* Consistent controls and content layout across server screens. */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+button, input, select, textarea { font: inherit; }
+button { touch-action: manipulation; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #38bdf8; outline-offset: 3px;
+}
+button:disabled { cursor: not-allowed; opacity: .55; }
+#liquidNavPill { display: none; }
+#sidebarNav { display: flex; flex-direction: column; gap: 6px; }
+#sidebarNav > .sidebar-nav-btn { margin: 0; height: 54px; min-height: 54px; padding: 12px; border: 1px solid transparent !important; border-radius: 12px; }
+#sidebarNav > .sidebar-nav-btn.active { background: rgba(56,189,248,.09) !important; border-color: rgba(56,189,248,.32) !important; }
+#sidebarNav > .sidebar-nav-btn:hover { background: rgba(255,255,255,.045) !important; }
+#sidebarNav .nav-icon { width: 24px; flex: 0 0 24px; text-align: center; transform: none !important; }
+#sidebarNav .nav-label { white-space: nowrap; transform: none !important; }
+#leftSidebar { width: 232px; }
+#leftSidebar > div:first-of-type { min-height: 0; }
+#sidebarNav { overflow-y: auto; }
+#mainContainer { min-width: 0; scrollbar-gutter: stable; }
+#mainContainer > section { min-width: 0; }
+#mainContainer > section > div:first-child { gap: 16px; flex-wrap: wrap; align-items: center; }
+#mainContainer > section > div:first-child > div { min-width: 0; }
+#mainContainer > section > div:first-child button { min-height: 40px; justify-content: center; white-space: nowrap; }
+#mainContainer input:not([type="checkbox"]):not([type="radio"]), #mainContainer select { min-height: 40px; }
+#mainContainer [id^="repTabBtn-"], #mainContainer [id^="auditFilterBtn-"], #reportPaymentFilters button { min-height: 36px; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; }
+#reportPaymentFilters { gap: 8px; }
+#reportPaymentMatrix th, #reportPaymentMatrix td { padding: 12px; white-space: nowrap; }
+#reportPaymentMatrix td:not(:first-child), #reportPaymentRows td:nth-child(n+5) { text-align: right; font-variant-numeric: tabular-nums; }
+#reportPaymentMatrix tbody tr { border-top: 1px solid var(--border-color); }
+#reportPaymentRows button { display: inline-flex; align-items: center; min-height: 36px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 8px; text-decoration: none; }
+.report-summary-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 14px; }
+.report-summary-grid > div { min-width: 0; min-height: 166px; }
+.report-summary-grid [id^="repCard"] { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.report-summary-grid > div > div:first-child { min-height: 32px; gap: 8px; }
+.report-summary-grid > div > div:first-child > span:first-child { line-height: 1.5; }
+#view-bar > div:first-child { display: flex; flex-direction: column; align-items: stretch; }
+#view-bar > div:first-child > div:last-child { display: flex; gap: 10px; align-items: center; }
+#view-bar > div:first-child > div:last-child > .relative { flex: 1 1 200px; }
+#barSearchInput { width: 100%; }
+#view-bar .bar-cat-btn { min-height: 32px; }
+#view-bar > div:first-child > div:last-child > div:not(.relative) { min-height: 40px; }
+#barCatalogCardsView { grid-template-columns: repeat(auto-fill,minmax(172px,1fr)); align-items: stretch; }
+#barCatalogCardsView > div { display: flex; flex-direction: column; min-width: 0; }
+#barCatalogCardsView > div > div:last-child { margin-top: auto; padding-top: 12px; gap: 8px; flex-wrap: wrap; }
+#barCatalogCardsView button { min-height: 36px; white-space: nowrap; }
+#mainContainer [id^="view-"] > div:first-child p { max-width: 65ch; line-height: 1.6; }
+@media (max-width: 1399px) {
+  .report-summary-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .app-header .header-metrics { display: none !important; }
+}
+@media (max-width: 1100px) {
+  #leftSidebar { width: 232px; }
+  #mainContainer { padding: 20px 16px; }
+  #view-reports > div:first-child { flex-direction: column; align-items: stretch; }
+  #view-bar > .grid { grid-template-columns: minmax(0,1fr); }
+  #view-bar > .grid > div { grid-column: auto; }
+}
+@media (max-width: 800px) {
+  #leftSidebar { width: 76px; }
+  #sidebarNav { padding-inline: 8px; }
+  #sidebarNav .nav-label, #sidebarNav .sidebar-nav-btn > span:last-child { display: none; }
+  #sidebarNav .sidebar-nav-btn { justify-content: center; }
+  #leftSidebar > div > div:not(:first-child), #leftSidebar > div:last-child { display: none; }
+  #leftSidebar > div:first-of-type { overflow: visible; }
+  .report-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spa-view, .liquid-pill { animation: none !important; transition: none !important; }
+}
+
+#sidebarNav .sidebar-nav-btn > span:last-child { flex-shrink: 0; white-space: nowrap; }
+#mainContainer #view-bar > div:first-child { align-items: stretch; }
+#view-bar > div:first-child > div:last-child { display: grid; grid-template-columns: minmax(160px,1fr) auto auto auto; gap: 8px; }
+#mainContainer #view-bar > div:first-child > div:last-child > div:not(.relative) button { min-height: 30px; height: 30px; }
+#barCatalogCardsView > div > div:last-child { display: grid; grid-template-columns: minmax(0,1fr); }
+#barCatalogCardsView > div > div:last-child button { width: 100%; justify-content: center; }
+.report-date-toolbar > div:first-child { height: 40px; }
+.report-date-toolbar > div:first-child button { height: 30px; white-space: nowrap; }
+.report-date-toolbar > div:last-child > div { height: 40px; padding-block: 3px; }
+#mainContainer .report-date-toolbar input { min-height: 32px; height: 32px; }
+.report-date-toolbar > div:last-child > button { height: 40px; }
+@media (max-width: 1399px) {
+  #view-bar > div:first-child > div:last-child { grid-template-columns: minmax(0,1fr) auto auto; }
+  #view-bar > div:first-child > div:last-child > .relative { grid-column: 1 / -1; }
+}

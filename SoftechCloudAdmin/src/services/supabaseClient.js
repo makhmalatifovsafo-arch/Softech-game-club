@@ -1,3 +1,6 @@
+import { deliverCommands } from './commandDelivery.js';
+import { ManagerAccountService } from './managerAccountService.js';
+import { verifyTelemetryLicense } from './telemetryAuth.js';
 /**
  * Softech Super Admin — Central Supabase Client & PostgreSQL Data Engine
  * Location: SoftechCloudAdmin/src/services/supabaseClient.js
@@ -14,7 +17,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 export class SupabaseCloudService {
   static client = null;
@@ -104,7 +107,7 @@ export class SupabaseCloudService {
 
   static async getAllClubs() {
     const client = this.getClient();
-    if (!client) return null;
+    if(!client)throw Object.assign(Error('Bulut bazasi sozlanmagan.'),{statusCode:503});
 
     try {
       const { data, error } = await client
@@ -124,13 +127,13 @@ export class SupabaseCloudService {
       });
     } catch (err) {
       console.warn('⚠️ [Supabase] Klublar ro\'yxatini olishda xatolik:', err.message);
-      return null;
+      throw Object.assign(Error('Bulut bazasini o‘qib bo‘lmadi.'),{statusCode:503});
     }
   }
 
   static async getClubById(clubId) {
     const client = this.getClient();
-    if (!client) return null;
+    if(!client)throw Object.assign(Error('Bulut bazasi sozlanmagan.'),{statusCode:503});
 
     try {
       const { data, error } = await client
@@ -139,13 +142,13 @@ export class SupabaseCloudService {
         .eq('id', clubId)
         .maybeSingle();
 
-      if (error || !data) return null;
+      if(error)throw error;if(!data)return null;
       return {
         ...data,
         is_online_now: this.isHeartbeatOnline(data.last_heartbeat_at || data.last_heartbeat)
       };
     } catch (err) {
-      return null;
+      throw Object.assign(Error('Bulut bazasini o‘qib bo‘lmadi.'),{statusCode:503});
     }
   }
 
@@ -220,31 +223,7 @@ export class SupabaseCloudService {
   }
 
   static async clearAllDemoClubs() {
-    const client = this.getClient();
-    if (client) {
-      try {
-        await client.from('club_workstations_cache').delete().neq('id', 0);
-        await client.from('club_metrics').delete().neq('id', 0);
-        await client.from('remote_commands').delete().neq('id', 0);
-        await client.from('subscription_payments').delete().neq('id', 0);
-        await client.from('clubs').delete().neq('id', 0);
-      } catch (err) {
-        console.warn('⚠️ [Supabase] clearAllDemoClubs xatosi:', err.message);
-      }
-    }
-
-    try {
-      const { db } = await import('../db/connection.js');
-      if (db && typeof db.prepare === 'function') {
-        db.prepare('DELETE FROM club_workstations_cache').run();
-        db.prepare('DELETE FROM club_metrics').run();
-        db.prepare('DELETE FROM remote_commands').run();
-        db.prepare('DELETE FROM subscription_payments').run();
-        db.prepare('DELETE FROM clubs').run();
-      }
-    } catch (e) {}
-
-    return true;
+    throw Object.assign(new Error('Namuna klublari alohida belgilab saqlanmagan. Haqiqiy klublarni saqlash uchun ommaviy tozalash o‘chirildi; kerakli klubni alohida tanlang.'),{statusCode:409});
   }
 
   // ==========================================================================
@@ -253,21 +232,22 @@ export class SupabaseCloudService {
 
   static async ingestHeartbeat(tokenOrClubId, payload) {
     const client = this.getClient();
-    if (!client) return null;
+    if (!client) throw Object.assign(new Error('Bulut bazasi sozlanmagan.'),{statusCode:503});
 
     const nowIso = new Date().toISOString();
 
     try {
       // 1. Klubni aniqlash
-      let query = client.from('clubs').select('*');
-      if (typeof tokenOrClubId === 'number' || !isNaN(Number(tokenOrClubId))) {
-        query = query.eq('id', Number(tokenOrClubId));
-      } else {
-        query = query.eq('api_secret_token', String(tokenOrClubId).trim());
+      const proof=verifyTelemetryLicense(payload.signedLicense);
+      let query=client.from('clubs').select('*');
+      if(proof) query=query.eq('id',proof.clubId).eq('hardware_fingerprint',proof.hardwareFingerprint);
+      else {
+        if(!tokenOrClubId || /^\d+$/.test(String(tokenOrClubId))) throw Object.assign(new Error('Klub tokeni yoki imzolangan litsenziya kerak.'),{statusCode:401});
+        query=query.eq('api_secret_token',String(tokenOrClubId));
       }
-
-      const { data: club, error: findError } = await query.maybeSingle();
-      if (findError || !club) return { success: false, error: 'Klub topilmadi yoki token xato' };
+      const {data:club,error:findError}=await query.maybeSingle();
+      if(findError)throw Object.assign(new Error('Bulut bazasi xatosi.'),{statusCode:503});
+      if(!club || (payload.clubId && Number(payload.clubId)!==Number(club.id)))throw Object.assign(new Error('Klub autentifikatsiyasi noto‘g‘ri.'),{statusCode:401});
 
       // 2. Ko'rsatkichlarni yangilash
       const updateData = {
@@ -276,15 +256,21 @@ export class SupabaseCloudService {
         server_version: payload.appVersion || club.server_version,
         online_pcs: parseInt(payload.onlinePcsCount, 10) || 0,
         occupied_pcs: parseInt(payload.occupiedPcsCount, 10) || 0,
-        today_revenue: parseFloat(payload.todayRevenue) || club.today_revenue,
+        today_revenue: Number.isFinite(Number(payload.todayRevenue)) ? Number(payload.todayRevenue) : club.today_revenue,
         updated_at: nowIso
       };
 
       if (payload.serverLanIp) updateData.server_lan_ip = payload.serverLanIp;
-      if (payload.hardwareFingerprint) updateData.hardware_fingerprint = payload.hardwareFingerprint;
 
-      await client.from('clubs').update(updateData).eq('id', club.id);
 
+      const {error:updateError}=await client.from('clubs').update(updateData).eq('id',club.id);
+      if(updateError)throw Object.assign(new Error('Telemetriyani saqlab bo‘lmadi.'),{statusCode:503});
+
+      const recordDate=/^\d{4}-\d{2}-\d{2}$/.test(payload.reportDate||'')?payload.reportDate:nowIso.slice(0,10);
+      const prior=await client.from('club_metrics').select('peak_concurrent_pcs').eq('club_id',club.id).eq('record_date',recordDate).maybeSingle();
+      if(prior.error)throw new Error('Kunlik ko‘rsatkichlar o‘qilmadi.');
+      const metrics=await client.from('club_metrics').upsert({club_id:club.id,record_date:recordDate,total_daily_revenue:Number(payload.todayRevenue)||0,bar_revenue:Number(payload.barRevenue)||0,total_sessions_count:Math.max(0,Number(payload.totalSessionsCount)||0),peak_concurrent_pcs:Math.max(Number(prior.data?.peak_concurrent_pcs)||0,updateData.occupied_pcs)},{onConflict:'club_id,record_date'});
+      if(metrics.error)throw new Error('Kunlik ko‘rsatkichlar saqlanmadi.');
       // 3. Kutilayotgan buyruqlarni olish (PENDING)
       const { data: pendingCommands } = await client
         .from('remote_commands')
@@ -295,13 +281,15 @@ export class SupabaseCloudService {
       // 4. Kompyuterlar matritsasini yangilash
       if (Array.isArray(payload.workstations)) {
         for (const ws of payload.workstations) {
-          await client.from('club_workstations_cache').upsert({
+          const cached=await client.from('club_workstations_cache').upsert({
             club_id: club.id,
-            pc_number: ws.pc,
+            pc_number: String(ws.pc),
+            zone_name: ws.zone || 'STANDARD',
             status: ws.status || 'AVAILABLE',
             minutes_left: ws.minutesLeft || 0,
             updated_at: nowIso
           }, { onConflict: 'club_id,pc_number' });
+          if(cached.error)throw new Error('Kompyuterlar holati saqlanmadi.');
         }
       }
 
@@ -309,11 +297,14 @@ export class SupabaseCloudService {
         status: 'OK',
         clubId: club.id,
         clubStatus: club.status,
+        signedCommands: await deliverCommands({client},club,payload.commandResults),
+      managerAccount: await new ManagerAccountService({client}).delivery(club,payload.managerRevision),
+      administratorAccount: await new ManagerAccountService({client,role:'administrator'}).delivery(club,payload.administratorRevision),
         pendingCommands: pendingCommands || []
       };
     } catch (err) {
       console.warn('⚠️ [Supabase Telemetry] Heartbeat ingestion xatosi:', err.message);
-      return { success: false, error: err.message };
+      throw err;
     }
   }
 
@@ -326,22 +317,24 @@ export class SupabaseCloudService {
     const nowIso = new Date().toISOString();
 
     if (!client) {
-      return { success: true, clubId, status: 'BLOCKED', isMock: true };
+      throw Object.assign(new Error('Supabase bazasi sozlanmagan.'), { statusCode: 503 });
     }
 
     try {
       // 1. Statusni BLOCKED qilish
-      await client
+      const { data: updated, error: updateError } = await client
         .from('clubs')
         .update({
           status: 'BLOCKED',
           block_reason: reason,
           updated_at: nowIso
         })
-        .eq('id', clubId);
+        .eq('id', clubId).select('id').maybeSingle();
+      if (updateError) throw Object.assign(new Error(updateError.message), { statusCode: 503 });
+      if (!updated) throw Object.assign(new Error('Klub topilmadi.'), { statusCode: 404 });
 
       // 2. remote_commands ga LOCK_DOWN kiritish
-      const { data: cmdData } = await client
+      const { data: cmdData, error: commandError } = await client
         .from('remote_commands')
         .insert({
           club_id: clubId,
@@ -358,7 +351,7 @@ export class SupabaseCloudService {
         .single();
 
       console.log(`🚨 [Supabase Kill-Switch] Klub #${clubId} BLOCKED qilindi!`);
-      return { success: true, clubId, status: 'BLOCKED', commandId: cmdData?.id };
+      return { success: true, clubId, status: 'BLOCKED', commandId: cmdData?.id, commandQueued: !commandError };
     } catch (err) {
       console.error('⚠️ [Supabase] blockClub xatosi:', err.message);
       throw err;
@@ -368,14 +361,16 @@ export class SupabaseCloudService {
   static async unblockClub(clubId, days = 30) {
     const client = this.getClient();
     const nowIso = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
+    days=Number(days);if(!Number.isInteger(days)||days<1||days>3650)throw Object.assign(Error('Kunlar soni noto‘g‘ri.'),{statusCode:400});
+    const existing=await this.getClubById(clubId);if(!existing)throw Object.assign(Error('Klub topilmadi.'),{statusCode:404});
+    const expiresAt = new Date(Math.max(Date.now(),Date.parse(existing.license_expires_at)||0) + days * 86400000).toISOString();
 
     if (!client) {
-      return { success: true, clubId, status: 'ACTIVE', expiresAt, isMock: true };
+      throw Object.assign(new Error('Supabase bazasi sozlanmagan.'), { statusCode: 503 });
     }
 
     try {
-      await client
+      const { data: updated, error: updateError } = await client
         .from('clubs')
         .update({
           status: 'ACTIVE',
@@ -383,9 +378,11 @@ export class SupabaseCloudService {
           block_reason: null,
           updated_at: nowIso
         })
-        .eq('id', clubId);
+        .eq('id', clubId).select('id').maybeSingle();
+      if (updateError) throw Object.assign(new Error(updateError.message), { statusCode: 503 });
+      if (!updated) throw Object.assign(new Error('Klub topilmadi.'), { statusCode: 404 });
 
-      const { data: cmdData } = await client
+      const { data: cmdData, error: commandError } = await client
         .from('remote_commands')
         .insert({
           club_id: clubId,
@@ -402,7 +399,7 @@ export class SupabaseCloudService {
         .single();
 
       console.log(`✅ [Supabase Kill-Switch] Klub #${clubId} QAYTA FAOLLASHTIRILDI!`);
-      return { success: true, clubId, status: 'ACTIVE', expiresAt, commandId: cmdData?.id };
+      return { success: true, clubId, status: 'ACTIVE', expiresAt, commandId: cmdData?.id, commandQueued: !commandError };
     } catch (err) {
       console.error('⚠️ [Supabase] unblockClub xatosi:', err.message);
       throw err;

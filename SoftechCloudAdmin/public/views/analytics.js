@@ -85,7 +85,7 @@ export function renderAnalyticsView() {
     totalRevenue: 0,
     avgDailyRevenue: 0,
     topClub: '—',
-    peakHour: '20:00 (99%)'
+    peakHour: 'Ma‘lumot yo‘q'
   };
 
   container.innerHTML = `
@@ -272,6 +272,7 @@ export function renderAnalyticsView() {
         <!-- Canvas Container -->
         <div class="relative w-full h-64">
           <canvas id="peakHoursAreaChart"></canvas>
+          ${(analyticsState.data?.hourlyPeakOccupancy || []).length ? '' : '<p class="absolute inset-0 flex items-center justify-center text-xs text-zinc-400 text-center px-4">Soatlik bandlik ma‘lumotlari hali yig‘ilmagan.</p>'}
         </div>
       </div>
     </div>

@@ -984,6 +984,8 @@ async function loadFinancialReports() {
     const repBarSubDirect = document.getElementById('repBarSubDirect');
     const repBarSubTotal = document.getElementById('repBarSubTotal');
 
+    const salesTotal = document.getElementById('repCardSalesRevenue');
+    if (salesTotal) salesTotal.textContent = formatUzs(sum.salesRevenue || 0);
     if (repTotal) repTotal.textContent = formatUzs(sum.totalRevenue);
     if (repGame) repGame.textContent = formatUzs(sum.gameRevenue);
     if (repGameCash) repGameCash.textContent = formatUzs(sum.gameCash);
@@ -1007,6 +1009,7 @@ async function loadFinancialReports() {
     if (cShifts) cShifts.textContent = data.shifts?.length || 0;
 
     // 2. Jadvallar va Top Tovarlarni chizish
+    renderPaymentDetails();
     renderReportSessionsTable(data.sessions || []);
     renderTopSellingBarItems(data.topSellingItems || []);
     renderReportBarTable(data.barSales || []);
@@ -1203,7 +1206,7 @@ function renderReportShiftsTable(shifts) {
  */
 function switchReportTab(tab) {
   reportActiveTab = tab;
-  ['sessions', 'bar', 'shifts'].forEach(t => {
+  ['sessions', 'bar', 'shifts', 'payments'].forEach(t => {
     const cont = document.getElementById(`reportTabContent-${t}`);
     const btn = document.getElementById(`repTabBtn-${t}`);
     if (cont) {
@@ -1393,7 +1396,7 @@ function exportReportsCSV() {
   let csv = '\uFEFF'; // UTF-8 BOM for Excel
   csv += `Softech OS - Moliyaviy Hisobot (${from} dan ${to} gacha)\n\n`;
   csv += `MOLIYAVIY XULOSA\n`;
-  csv += `Jami Sof Tushum,${sum.totalRevenue || 0}\n`;
+  csv += `Kassaga kelgan pul,${sum.totalRevenue || 0}\n`;
   csv += `O'yin Seanslari Tushumi,${sum.gameRevenue || 0}\n`;
   csv += `Naqd O'yinlar,${sum.gameCash || 0}\n`;
   csv += `Karta O'yinlar,${sum.gameCard || 0}\n`;
@@ -3322,6 +3325,14 @@ function initAdminWebSocket() {
           timestamp: Date.now()
         }));
       } catch {}
+      fetch('/api/bar/orders?limit=500',{headers:{Authorization:'Bearer '+(typeof authToken!=='undefined'?authToken:localStorage.getItem('softech_token')||'')}})
+        .then(r=>r.ok?r.json():null).then(data=>{
+          for(const order of data?.orders || []) if(order.approvalStatus==='PENDING' && order.paymentStatus!=='CANCELLED') {
+            handleIncomingBarOrder({...order,orderId:order.id,pcNumber:'PC-'+order.computerId,
+              paymentOption:order.paymentMethod==='CLIENT_BALANCE'?'FROM_MEMBER_BALANCE':order.paymentMethod,
+              items:order.items.map(it=>({name:it.item_name,quantity:it.quantity,price:it.unit_price}))});
+          }
+        }).catch(()=>{});
     };
 
     adminWebSocket.onmessage = (event) => {
@@ -3366,8 +3377,13 @@ function initAdminWebSocket() {
 /**
  * Yangi Bar Buyurtmasi kelganda chiroyli ovoz va suzuvchi xabarnoma (Order Toast) chiqarish
  */
+const displayedBarOrders = new Set();
 function handleIncomingBarOrder(order) {
-  if (!order) return;
+  if (!order || displayedBarOrders.has(order.orderId)) return;
+  displayedBarOrders.add(order.orderId);
+  const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  order={...order,note:safe(order.note),pcNumber:safe(order.pcNumber),
+    items:(order.items||[]).map(it=>({...it,name:safe(it.name || it.itemName)}))};
 
   // 1. Web Audio API Two-Tone Chime
   playBarOrderChime();
@@ -3489,6 +3505,7 @@ function handleIncomingBarOrder(order) {
   });
 
   const closeToast = () => {
+    displayedBarOrders.delete(orderId);
     toast.classList.add('opacity-0', 'translate-y-[-16px]');
     setTimeout(() => toast.remove(), 300);
   };
@@ -3612,4 +3629,64 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initAdminWebSocket);
 } else {
   initAdminWebSocket();
+}
+
+const paymentSections = [
+  ['GAME_PAID','Oddiy seanslar',r=>r.category==='GAME' && r.paymentMethod!=='BALANCE'],
+  ['GAME_BALANCE','O‘yin — mijoz balansi',r=>r.category==='GAME' && r.paymentMethod==='BALANCE'],
+  ['TOPUP','Balans to‘ldirish',r=>r.category==='TOPUP'],
+  ['GAME_TOPUP','Oddiy seans + balans to‘ldirish',r=>r.category==='TOPUP' || (r.category==='GAME' && r.paymentMethod!=='BALANCE')],
+  ['BAR_CASH','Bar — naqd',r=>r.category==='BAR' && r.paymentMethod==='CASH'],
+  ['BAR_CARD','Bar — karta',r=>r.category==='BAR' && r.paymentMethod==='CARD'],
+  ['BAR_BALANCE','Bar — mijoz balansi',r=>r.category==='BAR' && r.paymentMethod==='BALANCE'],
+  ['BAR_PAID','Bar mahsulotlari — naqd/karta',r=>r.category==='BAR' && r.paymentMethod!=='BALANCE'],
+  ['BAR_PENDING','To‘lanmagan bar qarzlari',r=>r.category==='BAR_PENDING'],
+  ['OTHER','Qaytarish va boshqa amallar',r=>r.category==='OTHER']
+];
+let paymentSection = 'GAME_PAID';
+function selectedPaymentRows() {
+  const filter=paymentSections.find(s=>s[0]===paymentSection)[2];
+  return (reportDataCache?.breakdown?.rows || []).filter(filter);
+}
+function renderPaymentDetails(section) {
+  if (section) paymentSection=section;
+  const matrix=document.getElementById('reportPaymentMatrix');
+  if (!matrix) return;
+  const b=reportDataCache?.breakdown;
+  const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  if (!b) { matrix.textContent='To‘lovlar tafsiloti mavjud emas.'; return; }
+  const labels={GAME:'Kompyuter seanslari',BAR:'Bar savdosi',TOPUP:'Mijoz balansini to‘ldirish',OTHER:'Qaytarish / boshqa'};
+  matrix.innerHTML='<table class="w-full text-left text-sm"><thead><tr><th class="p-2">Kassaga kirim</th><th>Naqd</th><th>Karta / Click / Payme</th><th>Jami</th></tr></thead><tbody>'+
+    Object.entries(b.receipts).map(([k,v])=>'<tr><td class="p-2">'+labels[k]+'</td><td>'+formatUzs(v.CASH)+'</td><td>'+formatUzs(v.CARD)+'</td><td>'+formatUzs(v.CASH+v.CARD)+'</td></tr>').join('')+
+    '<tr class="font-bold"><td class="p-2">Jami kassa</td><td>'+formatUzs(b.cash)+'</td><td>'+formatUzs(b.card)+'</td><td>'+formatUzs(b.total)+'</td></tr></tbody></table>'+
+    '<p class="text-sm mt-3">Oddiy seanslar + balans to‘ldirish: <strong>'+formatUzs(b.sessionsAndTopups)+'</strong></p>';
+  const filters=document.getElementById('reportPaymentFilters'); filters.replaceChildren();
+  for (const [key,label] of paymentSections) {
+    const button=document.createElement('button'); button.type='button'; button.textContent=label;
+    button.className='px-3 py-2 rounded-xl text-xs border '+(key===paymentSection?'bg-white text-black':'text-zinc-300 border-zinc-700');
+    button.onclick=()=>renderPaymentDetails(key); filters.appendChild(button);
+  }
+  const rows=selectedPaymentRows(), methods={CASH:'Naqd',CARD:'Karta',BALANCE:'Mijoz balansi'};
+  document.getElementById('reportPaymentTotal').textContent=rows.length+' ta yozuv · '+formatUzs(rows.reduce((sum,r)=>sum+r.amount,0));
+  document.getElementById('reportPaymentRows').innerHTML=rows.map(r=>'<tr class="border-t border-zinc-800">'+
+    [r.createdAt,[r.customerName,r.computerName].filter(Boolean).join(' / ') || '—',r.description,methods[r.paymentMethod]||r.paymentMethod,r.quantity,formatUzs(r.unitPrice),formatUzs(r.amount)]
+      .map(v=>'<td class="p-3">'+escape(v)+'</td>').join('')+
+    (r.category==='BAR_PENDING'?`<td><button class="underline mr-3" onclick="payReportBarDebt(${Number(r.orderId)},'CASH')">Naqd</button><button class="underline" onclick="payReportBarDebt(${Number(r.orderId)},'CARD')">Karta</button></td>`:'')+'</tr>').join('') || '<tr><td colspan="7" class="p-5 text-zinc-400">Bu davrda yozuv yo‘q.</td></tr>';
+}
+function exportPaymentDetails() {
+  const cell=v=>'"'+String(v??'').replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"';
+  const rows=[['Sana','Mijoz','Kompyuter','Tafsilot','To‘lov','Soni','Narxi','Summa'],
+    ...selectedPaymentRows().map(r=>[r.createdAt,r.customerName,r.computerName,r.description,r.paymentMethod,r.quantity,r.unitPrice,r.amount])];
+  const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(cell).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob), link=document.createElement('a');
+  link.href=url;link.download='hisobot-'+paymentSection+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function payReportBarDebt(orderId,paymentMethod) {
+  if(!confirm('Buyurtmaning to‘liq puli '+(paymentMethod==='CASH'?'naqd':'karta')+' orqali olindimi?'))return;
+  try{
+    const response=await fetch('/api/bar/orders/'+orderId+'/pay',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(typeof authToken!=='undefined'?authToken:localStorage.getItem('softech_token')||'')},body:JSON.stringify({paymentMethod})});
+    const data=await response.json();if(!response.ok)throw new Error(data.error||'To‘lov bajarilmadi.');
+    await loadFinancialReports();
+  }catch(error){alert(error.message);}
 }

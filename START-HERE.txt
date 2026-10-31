@@ -15,11 +15,63 @@ Softech Game Club - local development
 Existing admin passwords/PINs are not overwritten. Old JWT sessions require a new login.
 There is no fallback admin password or master PIN. Vercel uses real Supabase accounts;
 configure SUPERADMIN_JWT_SECRET and REFRESH_SECRET in its environment before deploying.
-Each JWT secret must be at least 32 bytes. Local development generates temporary
-secrets if omitted; sessions then expire on restart.
+Each JWT secret must be at least 32 bytes. Authentication requires configured secrets; missing values return a clear setup error.
 
 Windows kiosk, watchdog recovery and power commands require a dedicated client PC
 for end-to-end testing. The automated checks do not lock or restart this computer.
 
 For local server-to-cloud development set SOFTECH_CLOUD_URL=http://127.0.0.1:7000
 in .env. An explicit environment URL takes precedence over NetCafeServer/config.json.
+
+Klub serverini yangi o'rnatish:
+- Super admin web panel: Klublar > kerakli klub > Administrator akkaunti / Menejer akkaunti.
+- Ikkala akkauntga alohida login va alohida parol belgilang. Parollar Telegram botga kiritilmaydi.
+- Menejer joyida bo'lmasa, avval administratorni yarating: u o'z akkaunti bilan ish boshlaydi.
+- Administrator seans va bar savdosini yuritadi; menejer akkauntini/huquqlarini boshqara olmaydi.
+- Login: 3–40 ta lotin harfi/raqam/nuqta/pastki chiziq/defis; parol: 12–128 belgi.
+- Klub serverini litsenziya kaliti bilan faollashtiring. Internet orqali belgilangan xodim akkauntlari keladi.
+- Panelda 'Klub serverida qo‘llandi' chiqqach shu login-parol bilan kiring.
+- Server oflayn bo'lsa sozlama kutadi; yangi parol server olguncha eski parol amal qiladi.
+- Tasodifiy parol va yangi parol fayli yaratilmaydi. Mavjud akkaunt super admin sozlaganda yangilanadi.
+- Kassa, mijozlar va bar mahsulotlari bo'sh boshlanadi. Namuna pullar faqat avtomatik testda yaratiladi.
+- Mavjud bazalar o'chirilmaydi. Eski o'rnatishdagi standart parollarni almashtiring.
+- Markaziy .env va Supabase service-role kalitini klublarga bermang.
+
+Hisobot > To'lovlar tafsiloti:
+- Bar: naqd, karta, mijoz balansi; mahsulot soni/narxi alohida.
+- O'yin: oddiy to'lov va mijoz balansidan sarflangan pul alohida.
+- Balans to'ldirish va "oddiy seanslar + balans to'ldirish" alohida.
+- Kassa jadvali naqd/kartani o'yin, bar, balans to'ldirish va qaytimga ajratadi.
+- Tanlangan bo'limni CSV formatida yuklash mumkin.
+- Mijoz tanlagan daqiqalar puli boshida yechiladi; erta chiqishda ishlatilmagan vaqt qaytariladi.
+- Bardan qarzga olingan mahsulot to'langandan keyin tushumga kiradi.
+
+Internet yo'qolganda: oxirgi tasdiqdan 72 soat; avval olingan ban restartdan keyin ham saqlanadi.
+Ban faqat aloqa bor paytda yangi buyruq sifatida yetib keladi.
+Bir kompyuterda avtomatik sinov: npm test. Bazalar .test-output ichida ajratiladi.
+Clientni --dev bilan ishga tushirish Windowsni o'chirish/qayta yoqish buyrug'ini bajarmaydi.
+
+Latest locally verified installers: Releases/v1.0.15 (server and client).
+
+Mijoz balansidan o‘yin (yakuniy qoida):
+- Kioskda daqiqa tanlanadi; pul seans boshida oldindan yechiladi.
+- Erta chiqishda ishlatilmagan vaqt puli balansga qaytadi; kassa tushumiga qayta qo‘shilmaydi.
+- Client xizmat oynasida klub menejeri login-parolidan foydalaning; klub serveri yoqilgan bo‘lsin.
+- Server papkasini topish: o‘rnatilgan Softech Server yorlig‘ida Open file location.
+
+Yangi klubni ishga tushirish ketma-ketligi:
+1. Server dasturini o‘rnating va internetga ulang. Aktivatsiya so‘rovi yuboriladi.
+2. Telegram bot sozlangan bo‘lsa xabar keladi; Tasdiqlash litsenziyani faollashtiradi.
+3. Telefonda super admin web paneliga kiring va klub uchun Administrator akkauntini belgilang.
+4. 'Klub serverida qo‘llandi' holatidan so‘ng administrator o‘z login-paroli bilan ishlaydi.
+5. Menejer akkauntini ham alohida belgilang; uning parolini faqat menejer/egasiga bering.
+6. Oflayn sozlamalar internet qaytganda yetkaziladi. Oldingi parol shungacha amal qiladi.
+Kelajakdagi klub egasi uchun alohida 4-dastur bu relizga kirmaydi.
+
+2026-10-31 AUDIT: AUDIT-RESULTS.txt ni o'qing. Vercelga chiqarishdan oldin
+Softech Supabase SQL Editorida migrations/20261031_cloud_audit.sql ni bajaring.
+Yangi Supabase admin kerak bo'lsa: node --env-file=.env scripts/prepare-cloud-admin.mjs
+Bu buyruq faqat maxfiy mahalliy SQL yaratadi; bazaga o'zi ulanmaydi.
+
+4-dastur: Softech Club mobil PWA tayyor. MOBILE-START-HERE.txt ni o'qing.
+Yangi server paketi: Releases/v1.0.16. Mobil kirish: /mobile/?club=KLUB_RAQAMI.

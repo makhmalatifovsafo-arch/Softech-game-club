@@ -1,3 +1,4 @@
+import { ensureLocalOwner } from './services/localOwnerSetup.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,7 +27,9 @@ export function initDatabase() {
     console.log('✅ [Database] SQLite multi-tenant sxemasi tekshirildi va tayyorlandi.');
   }
 
+  migrateFinancialSchema();
   seedInitialData();
+  if (process.env.NODE_ENV !== 'test') ensureLocalOwner(db, path.dirname(DB_FILE));
 }
 
 /**
@@ -522,6 +525,8 @@ function migrateSchemaToMultiTenant() {
 }
 
 function seedInitialData() {
+  const demo = process.env.NODE_ENV === 'test';
+  if (demo) {
   // 1. Super Admin (Platform Owner)
   const superAdmin = db.prepare("SELECT id FROM users WHERE role = 'superadmin' OR username = 'superadmin'").get();
   if (!superAdmin) {
@@ -569,6 +574,7 @@ function seedInitialData() {
     console.log('🎮 [Database] Boshlang\'ich Client yaratildi (gamer1 / gamer123, Balans: 50,000 UZS).');
   }
 
+  }
   // 4. Boshlang'ich tariflar
   const tariffExists = db.prepare('SELECT id FROM tariffs WHERE id = ?').get('trf_standard_1h');
   if (!tariffExists) {
@@ -598,7 +604,7 @@ function seedInitialData() {
 
   // 8. Boshlang'ich Bar tovarlari (Bar Items)
   const barCountRow = db.prepare('SELECT COUNT(*) as count FROM bar_items WHERE club_id = 1').get();
-  if (!barCountRow || Number(barCountRow.count) === 0) {
+  if (demo && (!barCountRow || Number(barCountRow.count) === 0)) {
     const insertBar = db.prepare(`
       INSERT INTO bar_items (club_id, name, category, buy_price, sell_price, stock_quantity, is_active)
       VALUES (1, ?, ?, ?, ?, ?, 1)
@@ -624,7 +630,7 @@ function seedInitialData() {
 
   // 9. Boshlang'ich Ochiq Smena (Current Open Shift)
   const openShiftRow = db.prepare('SELECT id FROM shifts WHERE club_id = 1 AND is_closed = 0').get();
-  if (!openShiftRow) {
+  if (demo && !openShiftRow) {
     db.prepare(`
       INSERT INTO shifts (club_id, opened_by_user_id, start_cash, is_closed)
       VALUES (1, 1, 250000.0, 0)
@@ -754,3 +760,25 @@ export function deleteZoneSafely(zoneId, clubId = 1) {
 
 
 
+
+function migrateFinancialSchema() {
+    const clientTxColumns = db.prepare('PRAGMA table_info(client_transactions)').all().map(c => c.name);
+    if (!clientTxColumns.includes('category')) db.exec("ALTER TABLE client_transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'GAME'");
+    const barColumns = db.prepare('PRAGMA table_info(bar_orders)').all().map(c => c.name);
+    if (!barColumns.includes('approval_status')) db.exec("ALTER TABLE bar_orders ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'CONFIRMED'");
+    if (!barColumns.includes('paid_at')) {
+      db.exec("ALTER TABLE bar_orders ADD COLUMN paid_at TEXT");
+      db.exec("UPDATE bar_orders SET paid_at = created_at WHERE payment_status='PAID'");
+    }
+    const lineColumns = db.prepare('PRAGMA table_info(bar_order_items)').all().map(c => c.name);
+    if (!lineColumns.includes('buy_price')) db.exec('ALTER TABLE bar_order_items ADD COLUMN buy_price REAL');
+
+    for (const [table,column,type] of [
+      ['sessions','prepaid_rate_plan','TEXT'], ['sessions','prepaid_settled_at','TEXT'],
+      ['sessions','billing_last_at','TEXT'], ['sessions','billing_remainder','REAL NOT NULL DEFAULT 0'],
+      ['client_transactions','session_id','TEXT'], ['bar_orders','request_id','TEXT']
+    ]) {
+      if (!db.prepare('PRAGMA table_info('+table+')').all().some(c=>c.name===column)) db.exec('ALTER TABLE '+table+' ADD COLUMN '+column+' '+type);
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS bar_order_request ON bar_orders(club_id,request_id) WHERE request_id IS NOT NULL');
+}

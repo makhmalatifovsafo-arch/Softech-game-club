@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <!-- PWA & Responsive Viewport (iOS Notch, Dynamic Island & Home Indicator safe-area) -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   
   <title>Softech Master Cockpit — Mobile Super Admin</title>
 
@@ -29,10 +29,10 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Chart.js 4.x CDN (Touch-Friendly Charts) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/vendor/chart-4.4.7.js"></script>
 
   <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/vendor/tailwind-3.4.17.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -142,6 +142,7 @@
       animation: shake 0.4s ease-in-out;
     }
   </style>
+  <link rel="stylesheet" href="/layout.css">
 </head>
 <body class="flex flex-col">
 
@@ -744,7 +745,7 @@
         <button type="button" onclick="handleAuthPinInput('7')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">7</span></button>
         <button type="button" onclick="handleAuthPinInput('8')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">8</span></button>
         <button type="button" onclick="handleAuthPinInput('9')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">9</span></button>
-        <button type="button" onclick="showToast('Standart PIN: 7777')" class="h-14 rounded-2xl flex items-center justify-center text-sky-400 active:scale-90 font-mono text-xs">PIN: 7777</button>
+        <span class="h-14" aria-hidden="true"></span>
         <button type="button" onclick="handleAuthPinInput('0')" class="glass-btn h-14 rounded-2xl flex flex-col items-center justify-center"><span class="text-xl font-bold font-mono text-white">0</span></button>
         <button type="button" onclick="handleAuthPinDelete()" class="h-14 rounded-2xl flex items-center justify-center text-zinc-400 active:scale-90 text-sm">⌫</button>
       </div>

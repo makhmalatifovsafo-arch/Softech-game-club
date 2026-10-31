@@ -1,0 +1,112 @@
+SOFTECH CLUB — 4-DASТUR, MOBIL PWA
+Joriy versiya: 1.0.17 | 2026-10-31
+
+SIZ TASDIQLAGAN TARTIB
+- Klub serveridagi mavjud menejer/administrator login-paroli ishlaydi.
+- Telefon va serverdagi huquqlar bir xil, har amal serverda qayta tekshiriladi.
+- Klub egasi hozircha menejer akkauntidan kiradi.
+
+HOZIR ISHLAYDIGAN FUNKSIYALAR
+- Kompyuterlar: onlayn/oflayn, band/bo'sh, seans va qolgan vaqt, joriy tarif.
+- Daqiqa bo'yicha seans ochish, vaqt qo'shish, seansni yakunlash/qaytim.
+- Quvvat: Wake-on-LAN, o'chirish, qayta yoqish, ekran qulfi.
+  Faol seansda katta ogohlantirish: Seansni yopish / Seansni yopmayman.
+  Ikkinchi tanlovda seans saqlanadi, vaqt yurishda davom etadi.
+  Seans ochilganda ulanmagan kompyuterga avtomatik Wake-on-LAN yuboriladi.
+  MAC manzili hamda BIOS/tarmoq kartasida Wake-on-LAN sozlangan bo'lishi kerak.
+  Administratorga menejer serverdagi Sozlamalar > Xodimlar bo'limida
+  "Kompyuter quvvati (server va mobil)" huquqini beradi/olib tashlaydi.
+- Kassa: smena, boshlang'ich naqd, naqd/karta tushumi, kutilayotgan naqd,
+  smena ochish/yopish. Jismoniy naqd pulni sanash hali kassirning vazifasi.
+- Hisobot: sana oralig'i, naqd/karta manbalari, seans va bar,
+  balans to'ldirish va balansdan sarflarni alohida bo'limlar, qarz/qaytim,
+  tovar nomi, miqdori, narxi, summasi; tanlangan bo'limni CSVga yuklash.
+- Bar: mavjud mahsulotlar, qoldiq, naqd/kartaga savdo.
+- Android/iPhone asosiy ekraniga qo'shish; mustaqil ilova oynasi.
+- Super adminning menejer/administrator oynasida shu klub mobil havolasi bor.
+
+ISHGA TUSHIRISH (JONLI BULUT HALI O'ZGARTIRILMAGAN)
+1. Aynan Softech Supabase loyihangizning SQL Editorida:
+   - Oldin bajarilmagan bo'lsa migrations/20261031_cloud_audit.sql
+   - Keyin migrations/20261031_mobile_relay.sql
+   Yangi migratsiya ikki marta ishlatilganda ham tekshiruvdan o'tgan.
+2. GitHub commit va pushni o'zingiz bajarasiz. Yangi kod Vercelga chiqqan,
+   Vercel env qiymatlari to'g'ri bo'lgan bo'lishi kerak. Boshqa Vercel hisobiga
+   ulanish yoki deploy bajarilmadi; .env ichidagi qiymatlar ko'chirilmadi.
+3. Klub serverini 1.0.17 yoki undan yangi versiyaga yangilang. Yangi server
+   ichida mobil aloqa agenti bor. Routerda kiruvchi port ochish shart emas.
+4. Telefon: https://softech-game-club.vercel.app/mobile/
+   Bu manzil yangi kod deploy qilingandan KEYIN ishlaydi.
+   Boshqa domen ishlatsangiz: o'sha domen + /mobile/.
+5. Klub raqami, mavjud login va parol bilan kiring.
+   Masalan /mobile/?club=12 — klub raqami oldindan to'ldirilgan havola.
+6. Android: O'rnatish tugmasi yoki brauzer menyusi > Ilovani o'rnatish.
+   iPhone: Safari > Ulashish > Asosiy ekranga qo'shish.
+   Jonli manzil HTTPS bo'lishi kerak. Localhost faqat ishlab chiqish uchun.
+
+ARXITEKTURA VA TO'G'RILIK
+- Telefon -> HTTPS bulut relay -> klub serveridan chiqadigan so'rov.
+- Klubning RSA-OAEP kaliti bilan so'rov AES-GCM kaliti o'raladi; so'rov va
+  javoblar shifrlanadi. Bulut navbatida ochiq parol, token, kassa/hisobot yo'q.
+- Klub agentining RSA shaxsiy kaliti faqat mahalliy netcafe.db da saqlanadi;
+  telefon va bulutga public kalit beriladi. Bazani odatdagi kabi himoyalang.
+- Telefonda alohida pul hisoblash algoritmi yo'q: mavjud lokal server API
+  hisobotlari va amallari ishlatiladi. RBAC, litsenziya va blok holati saqlanadi.
+- Seanslar bir martalik request ID bilan yuboriladi. Bir xil so'rov takrori
+  yangi savdo/to'lov ochmaydi; server bajarishdan avval receipt saqlaydi.
+- Server o'chib qolib natija noma'lum bo'lsa amal avtomatik takrorlanmaydi;
+  holatni tekshirish kerak. Telefon ham noaniq qayta urinishda shu ID ni saqlaydi.
+- Yangi buyruq 30 soniyadan keyin bajarilmaydi. Oldin boshlangan amal javobini
+  kutish uchun qo'shimcha vaqt bor. Uzoq oflayndan so'ng eski shutdown kelmaydi.
+- Server faol mobil so'rovlarda har 2 soniya, bekor turganda har 20 soniya
+  bulutni tekshiradi. Birinchi ulanish taxminan 20 soniyagacha kutishi mumkin.
+- Kompyuterlar ko'rinishi faol ekranda davriy yangilanadi; oxirgi server javobi
+  vaqti ko'rsatiladi. Bu uzluksiz WebSocket translyatsiyasi emas.
+- Oflaynda sahifa qobig'i ochiladi; buyruqlar yuborilmaydi, eski ma'lumot
+  "aloqa uzildi" deb belgilanadi. API javoblari PWA keshiga yozilmaydi.
+- Bu oddiy serverless polling ulanishi; katta klub tarmog'ida Vercel/Supabase
+  so'rov sarfi va yukini pilotdan keyin o'lchab, ulanishni optimallashtirish kerak.
+
+TEKSHIRUVLAR
+- 53/53 Node testi o'tdi; oldingi server/client/cloud testlari saqlangan.
+- Haqiqiy ajratilgan cloud+server: mobil login, huquq berish/olib tashlash,
+  seans ochish/uzaytirish/qaytim, karta bar savdosi, bir xil so'rovni qaytarish,
+  faol PCni tanlovsiz o'chirishni rad etish, seansni saqlab/yopib o'chirish,
+  qayta ulanishda seansni tiklash, eskirgan seans tasdig'ini rad etish, logout.
+- Mobil va to'g'ridan-to'g'ri server hisobotining summary, breakdown va shifts
+  qiymatlari aynan bir xil ekanligi avtomatik solishtirildi.
+- PostgreSQL: yangi migratsiya, service_role API, duplicate ID,
+  javob tasdig'i va anon foydalanuvchiga jadvallar yopiq ekanligi tekshirildi.
+- Chrome: 320/390/1280 px, 5 ekran; login, haqiqiy formadan seans va savdo,
+  bar-karta filtri va yig'indisi, administrator cheklovlari va oflayn holat.
+- Chrome Page.getInstallabilityErrors: bo'sh ro'yxat (o'rnatilish xatosi yo'q).
+- Quvvat ogohlantirishi: 320/390/1280 px; yopish, saqlash, bekor qilish;
+  tugmalar ekran ichida, mobil boshqaruv oynasi ustida ham ishlaydi.
+- Dalillar: .test-output/power-final-tests.log, power-warning-*.png, mobile-*.png.
+- Haqiqiy Android/iPhonega o'rnatish va ikki fizik PCdagi power/Wake-on-LAN
+  sinovi bajarilmadi. Brauzer sinovida virtual WebSocket client ishlatildi.
+
+BIRINCHI VERSIYA CHEGARALARI
+- Server o'chiq yoki interneti yo'q bo'lsa mobil orqali yangi amal/hisobot yo'q.
+- Wake-on-LAN uchun client BIOS va tarmoq kartasi sozlangan bo'lishi kerak.
+- Mobil dastur butun server interfeysining nusxasi emas. Hozir mijoz yaratish,
+  balans topupini bajarish, murakkab bar savatchasi, mahsulot/tarif tahriri,
+  bron tahriri va zal chizmasi klub serverida qolgan. Ularning hisobotlari ko'rinadi.
+- Yangi postpaid/member seansi ochish mobil formaga hali qo'shilmagan;
+  mavjud bunday seanslarni kuzatish/yakunlash server qoidalari bilan ishlaydi.
+- Telefon sessiyasi brauzer sessiyasida saqlanadi; ilovani to'liq yopganda
+  qayta kirish so'ralishi mumkin. Parol telefonda saqlanmaydi.
+- Hisobot juda katta bo'lsa sana oralig'ini qisqartiring; javob chegarasi 2 MB.
+
+FAYLLAR
+public/mobile/ — telefon ilovasi, root Vercel uchun.
+SoftechCloudAdmin/public/mobile/ — standalone cloud nusxasi.
+src/services/mobileRelay.js — bulut API/navbat.
+NetCafeServer/src/services/mobileAgent.js — klub serveri ulanishi.
+migrations/20261031_mobile_relay.sql — Supabase o'zgarishi.
+tests/mobile-flow.mjs, mobile-relay.test.mjs, mobile-pwa.test.mjs — sinovlar.
+
+QAYTA TEST
+npm test
+node tests/postgres-api-audit.mjs (PGlite .tools/postgres-test da kerak)
+node tests/release-artifacts.mjs 1.0.16 (paket yig'ilgach)

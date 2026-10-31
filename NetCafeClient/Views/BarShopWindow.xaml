@@ -58,6 +58,7 @@
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="MinHeight" Value="40"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type RadioButton}">
@@ -147,7 +148,8 @@
     </Window.Resources>
 
     <!-- Outer Container Border with Cyber Shadow -->
-    <Border Background="#0C0D15"
+    <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
+    <Border Width="1060" Height="700" Background="#0C0D15"
             BorderBrush="#00F0FF"
             BorderThickness="1.5"
             CornerRadius="20"
@@ -209,7 +211,7 @@
                             Background="#1E202E"
                             BorderBrush="#2C3042"
                             BorderThickness="1"
-                            Width="34" Height="34"
+                            Width="40" Height="40"
                             Cursor="Hand"
                             Click="BtnClose_Click">
                         <Button.Template>
@@ -501,7 +503,7 @@
 
                                                 <!-- Boshqaruv [-] [soni] [+] va Jami -->
                                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Button Content="-" Width="24" Height="24" Background="#1E202E" Foreground="White" Tag="{Binding}" Click="BtnMinusCart_Click" Cursor="Hand"/>
+                                                    <Button Content="-" Width="32" Height="32" Background="#1E202E" Foreground="White" Tag="{Binding}" Click="BtnMinusCart_Click" Cursor="Hand"/>
                                                     <TextBlock Text="{Binding OrderQuantity}" Width="26" TextAlignment="Center" FontSize="12" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
                                                     <Button Content="+" Width="24" Height="24" Background="#0284C7" Foreground="White" Tag="{Binding}" Click="BtnPlusCart_Click" Cursor="Hand"/>
 
@@ -691,4 +693,5 @@
             </Grid>
         </Grid>
     </Border>
+    </Viewbox>
 </Window>

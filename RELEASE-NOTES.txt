@@ -1,3 +1,79 @@
+2026-10-31: 1.0.17 active-session power controls and automatic Wake-on-LAN
+- Large desktop/mobile warning offers close session, keep session, or cancel.
+- Closing uses the existing checkout ledger; keeping preserves the session and its running clock.
+- Confirmation is bound to the current session ID; permission checks still apply.
+- Session creation wakes disconnected PCs using actual connection state, including batch sessions.
+- 53 regression tests pass, including reconnect restoration and localhost UDP magic packets.
+- Physical power/Wake-on-LAN requires configured client hardware and remains a deployment check.
+
+2026-10-31: 1.0.16 Softech Club mobile PWA
+- Separate installable /mobile/ app for existing manager and administrator accounts.
+- Encrypted relay reuses authoritative club APIs for sessions, power, cash, reports and bar sales.
+- Request deduplication, expiry, role checks, password-attempt limits and offline-safe PWA caching.
+- Mobile financial report parity verified against the local server; 51 regression tests pass.
+- Requires migrations/20261031_mobile_relay.sql and an updated club server.
+- See MOBILE-START-HERE.txt for deployment steps and first-version scope.
+
+2026-10-31: 1.0.15 functional audit and regression fixes
+- Hardened request parsing, booking validation, staff permissions and client reconnect handling.
+- Restored cloud billing/analytics/inspector APIs with real recorded metrics.
+- Atomic idempotent subscription payments; restricted database grants and removed default admin seed.
+- Signed, acknowledged, deduplicated remote messages and restart commands.
+- Requires migrations/20261031_cloud_audit.sql in the Softech Supabase project before deployment.
+- 46 regression tests, PostgreSQL/API checks, native protocol/updater and browser checks passed.
+- See AUDIT-RESULTS.txt for coverage and real-device limitations.
+
+2026-10-31: 1.0.14 independent administrator provisioning
+- Super admin assigns distinct manager and administrator credentials from the phone web panel.
+- A fresh club can start with the administrator account before the manager is available.
+- Separate signed delivery, acknowledgements and password rotation preserve the other account.
+- Cashiers can operate sessions and bar sales; owner/account administration stays restricted.
+- Telegram activation confirmation explains the next web-panel account setup step.
+- Fixed local-cloud save response and preserved exact password input in the login form.
+- Verified: 43 Node tests, live local HTTP cashier operations and Chrome mobile/desktop checks.
+
+2026-10-31: 1.0.13 super-admin managed club credentials
+- Super admin assigns each club manager login and password from the club card or detail view.
+- Fresh installs wait for activation and signed account delivery; no random password file is generated.
+- Existing account IDs and balances are preserved; old sessions are revoked after credential changes.
+- Offline servers receive the latest settings on reconnection; applied status requires acknowledgement.
+- Cloud records use encrypted password hashes; delivery is signed and bound to the club and hardware.
+- Fixed initial heartbeat ordering so saved licenses are loaded before account synchronization.
+- Verified: 42 Node tests and Chrome mobile form/save checks. See TEST-RESULTS.txt for scope.
+
+2026-10-31: 1.0.12 confirmed billing and manager setup policy
+- Kiosk member selects purchased minutes; balance debited once at session start.
+- Unused prepaid time returns to the member balance on early close/logout/ban, once only.
+- Minute prices persist through restarts and later tariff edits; extensions debit balance.
+- Zero remaining balance still retains member UI identity and purchased game time.
+- Fresh club installs generate unique manager credentials in data/manager-credentials.txt.
+- Existing passwords are preserved; credentials are excluded from source and release packages.
+- Kiosk maintenance authenticates the club manager; fixed master-password bypasses removed.
+- Verified: 39 Node tests, WPF render/build checks, installer integrity and bundled server start.
+
+2026-10-31: 1.0.11 frontend consistency and first-start fixes
+- Equal server navigation buttons, aligned report filters, responsive summary and bar cards.
+- Mobile admin navigation, action buttons, forms and club metadata fit narrow screens.
+- Client header adapts to smaller displays; bar fits the available work area.
+- WPF initial layout no longer returns infinite size before the item generator attaches.
+- Financial schema migration runs after tables exist on fresh installations.
+- Analytics reads recorded metrics without inserting demo clubs or invented sales.
+- PWA serves fresh UI online and cached shell offline; API authority is never cached.
+- Local chart/style assets are included in cloud deployments.
+- Verified: 38 Node tests, WPF render checks, Chrome desktop/mobile layouts,
+  release integrity and bundled server startup. See TEST-RESULTS.txt for limits.
+
+2026-10-31: club operations and reporting verification
+- Separate cash/card/balance reports and per-product rows with CSV export.
+- Atomic stock, checkout, topup and batch session operations; repeated settlement is rejected.
+- Member play debits elapsed usage, with persisted billing checkpoints and remaining balance.
+- Client bar catalog and acknowledgement use the local server; confirmed orders alone are charged.
+- Persistent ban, business API gate, client lockdown, 72-hour offline boundary and signed recovery.
+- Authenticated cloud telemetry uses the same local receipt totals.
+- Fresh installs require a local owner account and contain no demo balances/stock/cash.
+- Local chart/style libraries support operation without internet.
+- Existing databases are preserved; prior incorrect historical entries are not silently rewritten.
+
 Licensing and activation fixes:
 - Server activation reports success only after verifying and saving the signed license.
 - Activation input survives status polling; cloud errors are shown accurately.

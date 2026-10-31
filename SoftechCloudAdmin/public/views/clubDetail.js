@@ -88,7 +88,7 @@ function renderOverviewHeader(club) {
     isOnline = Boolean(club.is_online_now);
   }
 
-  const daysLeft = club.license_days_left !== undefined ? club.license_days_left : 15;
+  const daysLeft = club.license_days_left ?? 0;
   const rawPhone = club.owner_phone || '+998901112233';
   const cleanPhone = rawPhone.replace(/[^\d+]/g, '');
   const telegramUsername = rawPhone.replace(/[^\d]/g, '');
@@ -152,7 +152,7 @@ function renderOverviewHeader(club) {
           <span class="text-zinc-600">•</span>
           <span>v${club.server_version || '1.0.1'}</span>
           <span class="text-zinc-600">•</span>
-          <span class="text-emerald-400">Ping: ${isOnline ? (club.ping_ms || 18) + 'ms' : 'Uzilgan'}</span>
+          <span class="text-emerald-400">Ping: ${isOnline ? (club.ping_ms == null ? 'O‘lchanmagan' : club.ping_ms + 'ms') : 'Uzilgan'}</span>
         </p>
       </div>
 
@@ -218,6 +218,8 @@ function renderOverviewHeader(club) {
           </span>
         </div>
 
+        <button type="button" onclick="openManagerAccount(${club.id})" class="w-full py-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 font-semibold">Menejer login-paroli</button>
+        <button type="button" onclick="openAdministratorAccount(${club.id})" class="w-full py-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 font-semibold">Administrator login-paroli</button>
         <!-- Kill Switch Action Buttons -->
         <div class="pt-2 border-t border-zinc-800 flex items-center gap-2">
           ${club.status === 'BLOCKED' || club.status === 'SUSPENDED' || club.status === 'SUSPENDED_PAYMENT' || club.license_status === 'LOCKED_BY_ADMIN' ? `
@@ -406,7 +408,7 @@ function renderWorkstationsMatrix(workstations) {
             badgeDot = 'bg-sky-400 shadow-[0_0_6px_#38bdf8] animate-pulse';
             textStatus = 'BAND';
             const gamer = pc.session?.gamerName || 'Mijoz';
-            const mins = pc.session?.playedMinutes || 35;
+            const mins = pc.session?.playedMinutes ?? '—';
             playerSubtitle = `
               <div class="text-[9px] font-mono text-white font-bold truncate mt-1">${gamer}</div>
               <div class="text-[8px] font-mono text-sky-300">${mins} daq</div>
@@ -521,15 +523,15 @@ function renderWorkstationSessionModal() {
             </div>
             <div class="flex justify-between items-center pt-1.5 border-t border-zinc-800/80">
               <span class="text-zinc-400">O'ynalgan davomiylik:</span>
-              <span class="font-mono text-sky-400 font-bold">${session.playedMinutes} daqiqa</span>
+              <span class="font-mono text-sky-400 font-bold">${session.playedMinutes ?? '—'} daqiqa</span>
             </div>
             <div class="flex justify-between items-center pt-1.5 border-t border-zinc-800/80">
               <span class="text-zinc-400">Tarif stavkasi:</span>
-              <span class="font-mono text-zinc-300">${(session.hourlyRate || 15000).toLocaleString()} UZS / soat</span>
+              <span class="font-mono text-zinc-300">${session.hourlyRate == null ? '—' : session.hourlyRate.toLocaleString()} UZS / soat</span>
             </div>
             <div class="flex justify-between items-center pt-2 border-t border-zinc-800 text-sm font-bold">
               <span class="text-zinc-200">Hisoblangan summa:</span>
-              <span class="font-mono text-emerald-400">${(session.spentAmount || 0).toLocaleString()} UZS</span>
+              <span class="font-mono text-emerald-400">${session.spentAmount == null ? '—' : session.spentAmount.toLocaleString()} UZS</span>
             </div>
           </div>
         ` : (isAvailable ? `

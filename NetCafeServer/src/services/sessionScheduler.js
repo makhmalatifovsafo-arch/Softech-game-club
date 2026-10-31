@@ -1,3 +1,4 @@
+import { settleMemberUsage } from './memberBilling.js';
 import { db } from '../db.js';
 import { ClientManager } from './clientManager.js';
 
@@ -71,37 +72,14 @@ export class SessionScheduler {
    * Klient balansi hisobidan o'ynayotgan sessiyani har daqiqa yangilash
    */
   static handleLiveBalanceSession(session, clientId, now) {
-    try {
-      const user = db.prepare('SELECT id, balance, username FROM users WHERE id = ?').get(clientId);
-      if (!user || user.balance <= 0) {
-        console.log(`🛑 [SessionScheduler] Klient #${clientId} balansi tugadi! PC #${session.pc_number} qulflanmoqda.`);
-        this.expireSession(session);
-        return;
-      }
-
-      const endsAtEpoch = new Date(session.ends_at).getTime();
-      const diffSeconds = Math.max(0, Math.floor((endsAtEpoch - now.getTime()) / 1000));
-
-      // Har bir intervalda Client Agent ga real-time signal yuborish
-      ClientManager.send(session.computer_id, 'CLIENT_BALANCE_UPDATE', {
-        sessionId: session.id,
-        clientId: user.id,
-        username: user.username,
-        currentBalance: user.balance,
-        remainingSeconds: diffSeconds,
-        endsAt: endsAtEpoch,
-        message: `Mijoz balansi: ${user.balance.toLocaleString()} UZS`
-      });
-
-      if (diffSeconds <= 0) {
-        this.expireSession(session);
-      }
-    } catch (err) {
-      console.error('❌ [SessionScheduler] handleLiveBalanceSession xatosi:', err);
-    }
+    const result=settleMemberUsage(session.id,now);
+    if (!result) return;
+    ClientManager.send(session.computer_id,'CLIENT_BALANCE_UPDATE',{sessionId:session.id,clientId,...result});
+    if(result.exhausted) this.expireSession(session);
   }
 
   static expireSession(session) {
+    settleMemberUsage(session.id,new Date(),true);
     console.log(`🛑 [SessionScheduler] Sessiya #${session.id} (PC #${session.pc_number}) vaqti tugadi! Bloklanmoqda...`);
 
     // Ushbu seansga tegishli to'lanmagan bar buyurtmalari mavjudligini tekshirish
@@ -169,8 +147,13 @@ export class SessionScheduler {
       `).all();
 
       for (const session of activeSessions) {
-        db.prepare("UPDATE sessions SET status = 'COMPLETED', ended_at = CURRENT_TIMESTAMP WHERE id = ?").run(session.id);
+        db.exec('BEGIN IMMEDIATE');
+        try {
+        settleMemberUsage(session.id,new Date(),true,true);
+        db.prepare("UPDATE sessions SET status = 'COMPLETED', ends_at = CURRENT_TIMESTAMP WHERE id = ?").run(session.id);
         db.prepare("UPDATE computers SET status = 'LOCKED', current_session_id = NULL WHERE id = ?").run(session.computer_id);
+        db.exec('COMMIT');
+        } catch(error) {db.exec('ROLLBACK');throw error;}
         
         ClientManager.send(session.computer_id, 'STOP_SESSION', {
           sessionId: session.id,

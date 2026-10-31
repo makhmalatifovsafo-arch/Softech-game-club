@@ -203,7 +203,7 @@ function renderClubCard(club) {
               📍 ${club.city || 'Toshkent'}
             </span>
           </div>
-          <p class="text-[11px] text-zinc-400 mt-0.5 truncate flex items-center gap-2">
+          <p class="club-owner-line text-[11px] text-zinc-400 mt-0.5 flex items-center gap-2">
             <span>Rahbar: <strong class="text-zinc-300 font-medium">${club.owner_name}</strong></span>
             <span class="text-zinc-600">•</span>
             <span class="font-mono text-zinc-500">${club.server_lan_ip || '192.168.1.100'}</span>
@@ -219,7 +219,7 @@ function renderClubCard(club) {
       <div class="mt-3.5 pt-3 border-t border-zinc-800/80 grid grid-cols-2 gap-2.5">
         <!-- 🖥️ Bandlik Metric with Mini Progress Bar -->
         <div class="bg-zinc-900/60 rounded-xl p-2.5 border border-zinc-800/50">
-          <div class="flex items-center justify-between text-[11px]">
+          <div class="club-occupancy-line flex items-center justify-between text-[11px]">
             <span class="text-zinc-400 flex items-center gap-1">
               <span>🖥️</span>
               <span>Bandlik:</span>
@@ -251,8 +251,10 @@ function renderClubCard(club) {
         </div>
       </div>
 
+      <button type="button" onclick="openManagerAccount(${club.id})" class="w-full py-2 px-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs font-semibold">Menejer akkaunti</button>
+      <button type="button" onclick="openAdministratorAccount(${club.id})" class="w-full py-2 px-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs font-semibold">Administrator akkaunti</button>
       <!-- Additional Telemetry: Cashier & Server Health -->
-      <div class="mt-2.5 px-1 flex items-center justify-between text-[11px] text-zinc-400">
+      <div class="club-metadata mt-2.5 px-1 flex items-center justify-between text-[11px] text-zinc-400">
         <div class="flex items-center gap-1.5 truncate">
           <span class="text-xs">👤</span>
           <span class="text-zinc-500">Navbatchi kassir:</span>
@@ -516,7 +518,7 @@ export function renderClubsDirectoryView() {
   container.innerHTML = `
     <div class="space-y-4 pb-20 animate-fade-in">
       <!-- Top Title & Live Counter -->
-      <div class="flex items-center justify-between pt-1">
+      <div class="club-directory-heading flex items-center justify-between pt-1">
         <div>
           <h2 class="text-base font-extrabold text-white tracking-tight flex items-center gap-2">
             <span>Klublar Katalogi</span>
@@ -532,7 +534,7 @@ export function renderClubsDirectoryView() {
         <div class="flex items-center gap-2">
           <button 
             type="button" 
-            onclick="clearDemoClubsPrompt()" 
+            disabled title="Klublarni kerak bo‘lsa alohida tanlab o‘chiring"
             class="py-2 px-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 text-rose-400 border border-rose-500/30 font-semibold text-xs flex items-center gap-1 transition shadow-sm"
             title="Namunaviy / soxta klublarni tozalash"
           >

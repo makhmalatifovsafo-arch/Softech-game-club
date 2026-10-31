@@ -501,7 +501,7 @@ export class ActivationService {
 
     db.prepare(`
       INSERT INTO remote_commands (club_id, command_type, payload, status)
-      VALUES (?, 'ACTIVATE_CLUB_LICENSE', ?, 'PENDING')
+      VALUES (?, 'UNLOCK_CLUB_LICENSE', ?, 'PENDING')
     `).run(clubId, JSON.stringify({ days, expiresAt: newExpIso, timestamp: Date.now() }));
 
     const hwidKey = club.hardware_fingerprint ? `hwid:${club.hardware_fingerprint}` : null;

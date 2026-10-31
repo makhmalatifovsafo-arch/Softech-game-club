@@ -1,0 +1,100 @@
+SOFTECH GAME CLUB — YAKUNIY AUDIT
+Sana: 2026-10-31
+Loyiha: C:/Users/user/Documents/GitHub/Softech-game-club
+Yangi mahalliy paket: Releases/v1.0.15
+
+XULOSA
+Uchala dasturda topilgan xatolar tuzatildi. Quyidagi sinovlar o'tdi.
+Bu barcha mumkin bo'lgan xatolar yo'qligiga kafolat emas. Jonli Vercel,
+Supabase va ikki fizik kompyuterda yakuniy o'rnatish sinovi hali kerak.
+Faqat shu Softech loyihasi o'zgartirildi; commit/push/deploy bajarilmadi.
+
+TOPILGAN VA TUZATILGAN XATOLAR
+1. Server: noto'g'ri JSON, katta so'rov va noto'g'ri WebSocket paketi bilan
+   jarayonning to'xtashi; tushunarli 400/413/404 javoblari va hajm chegaralari.
+2. Huquqlar: boshqa klub xodimi ruxsatlarini o'zgartirish, bron statusiga
+   takroriy himoyasiz route, buzilgan ruxsatlar bilan ortiqcha huquq olish.
+3. Bron: noto'g'ri vaqt, boshqa klub PC si, vaqt zonasi va band vaqt kesishishi.
+4. Client: qayta HELLO da ulanishni uzish, seansni ikki marta yuborish,
+   litsenziyadagi PC chegarasi va noto'g'ri klub raqamini qabul qilish.
+5. Bulut: Vercelda billing/analitika route va javob formatlari; haqiqiy
+   hisoblangan tushumlar, nol narxli tarif, litsenziya muddati ko'rsatkichlari.
+6. To'lov: requestId bilan takror yuborishdan himoya; pul yozilishi va muddat
+   uzayishi bitta tranzaksiya; xatoda ikkalasi ham bekor bo'ladi.
+7. Bazadagi ochiq anon/authenticated ruxsatlar yopildi; eski umumiy admin
+   paroli/PIN urug'i olib tashlandi. Service role faqat bulutda ishlatiladi.
+8. Telemetriya: ulangan PC soni litsenziya hajmini kamaytirmaydi; bar/seans
+   ko'rsatkichlari saqlanadi; yo'q kompyuter va tasodifiy mijoz/ping/qaytim
+   ko'rsatkichlari yasalmaydi. Mavjud bo'lmagan ma'lumot — deb ko'rsatiladi.
+9. Masofaviy xabar/restart: imzolangan, klub/HWID ga bog'langan, bir marta
+   bajariladigan buyruqlar; band seansda majburiy bo'lmagan restart kutadi.
+   Qo'llanmaydigan buyruq muvaffaqiyatli deb ko'rsatilmaydi.
+10. "Demo tozalash" haqiqiy klublarni ham o'chirishi mumkin edi: ommaviy
+    tozalash bloklandi, klubni alohida tanlab o'chirish saqlangan.
+
+BAJARILGAN TESTLAR
+- npm test: 46/46. Node 22.16 parallel test runneridagi transport xatosi
+  sabab testlar ketma-ket bajariladigan qilindi; shu rejim to'liq o'tdi.
+- Aktivatsiya, HWID, ban/unban, restartda ban saqlanishi; 72 soat oflayn
+  chegarasi, vaqtni orqaga surish va mijoz biznes API larining bloklanishi.
+- Seans, naqd/karta/balans savdosi, topup, tovar qoldig'i, qarz yopish,
+  oldindan daqiqa to'lovi, qolgan pulni bir marta qaytarish, hisobot ajratmalari.
+- Menejer va administrator mustaqil loginlari, huquqlari, parol yangilanishi.
+- PGlite PostgreSQL: schema va migratsiya ikki marta; to'lov takrori,
+  ataylab yozish xatosida rollback, anon/authenticated ruxsatlari rad qilinishi.
+- Vercel handler + PostgreSQL adapter: obuna, tarif, analitika, telemetriya,
+  klub tafsiloti, xodim akkaunti, buyruq ACK, ban/unban. Jonli Supabase emas.
+- Haqiqiy C# WebSocket service: handshake, bo'lingan paket, nol balansli
+  to'langan seans, vaqt, config, lock/stop, uzilish/qayta ulanish, ban.
+  Power buyrug'i faqat event sifatida tekshirildi; kompyuter o'chirilmadi.
+- Native idle/update policy; updater cancel/concurrent/corrupt/success/rollback.
+- Client WPF ekranlari: 1024, 1366, 1920 kenglikdagi shell; login va bar.
+- Chrome: serverning 6 asosiy menyusi 1280 px; mobil adminning 5 menyusi
+  320/390/1280 px; klub tafsiloti; xodim formasi validation/save; admin huquqlari.
+- 112 JavaScript/HTML script sintaksisi; root va SoftechCloudAdmin nusxalari mos.
+- .env: URL, service role, Telegram token/id va JWT sirlarining formatlari mos.
+  Qiymatlar chiqarilmadi; bu tekshiruv tokenning jonli yaroqliligini tasdiqlamaydi.
+- 1.0.15 client/server release yig'ildi; hash/manifest tekshirildi;
+  paketdagi Node va dependencylar bilan server ishga tushdi.
+- PostgreSQL va C# protokol testlari avtomatik release workflowga qo'shildi.
+
+JONLI ISHGA TUSHIRISHDAN OLDIN
+1. Aynan Softech Supabase loyihasining SQL Editor bo'limida
+   migrations/20261031_cloud_audit.sql ni bajaring. Bu mavjud Softech schema
+   uchun migratsiya. Yangi bazada avval supabase_schema.sql, keyin migratsiya.
+   Markaziy jadvallar anon/public kalitga ochiq qolmasligi kerak.
+2. Vercel environment: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY va ikki JWT
+   siri (.env dagi mos qiymatlar) sozlangan bo'lsin. Lokal .env Vercelga o'zi bormaydi.
+3. Agar Supabase superadmin akkaunti yo'q bo'lsa yoki parolini almashtirsangiz:
+   node --env-file=.env scripts/prepare-cloud-admin.mjs
+   Hosil bo'lgan .test-output/private-cloud-admin.sql ni o'z SQL Editorida
+   bajaring. Bu admin akkauntining parol/PINini yangilaydi; faylni tarqatmang.
+4. GitHub commit/pushni foydalanuvchi bajaradi. CI o'tgach reliz tarqaladi.
+5. Pilot klub: server + alohida client, haqiqiy telefon bilan Telegram
+   tasdiqlash, administrator login, seans/bar, ban, internet uzilishi,
+   o'yin band paytda update kutishi va kioskdan chiqish cheklovlarini sinang.
+
+CHEGARALAR
+- Haqiqiy Telegram xabari, jonli Vercel deploy, real Supabase write bajarilmadi.
+- Fizik o'yin jarayoni, kiosk/watchdog, shutdown/reboot va installer GUI ni
+  real klub muhitida boshidan oxirigacha sinash uchun alohida test PC kerak.
+- HMAC litsenziya sxemasi saqlangan; bu to'liq anti-piracy/penetration audit emas.
+- Oldingi noto'g'ri tarixiy savdo yozuvlari avtomatik qayta yozilmadi.
+- Internet uzilgan klub yangi banni ololmaydi; olingan ban saqlanadi.
+- Ulash tezligi va Windows diskiga qarab update davomiyligi farq qiladi;
+  1 soniyada qayta ishga tushish kafolatlanmaydi.
+
+QAYTA TEKSHIRISH
+npm test
+npm install --prefix .tools/postgres-test --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.13
+node tests/postgres-audit.mjs
+node tests/postgres-api-audit.mjs
+dotnet build tests/ClientProtocol/ClientProtocol.csproj
+node tests/client-protocol-audit.mjs (DOTNET_EXE yoki .tools/dotnet/dotnet.exe)
+dotnet run --project tests/UpdatePolicy
+dotnet run --project tests/UiLayout
+node tests/updater-transaction.mjs
+node tests/release-artifacts.mjs 1.0.15
+
+Dalillar: .test-output/audit-final-tests.log, audit-release-build.log,
+audit-*.png va administrator-mobile-*.png. Bu mahalliy fayllar Gitga kirmaydi.

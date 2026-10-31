@@ -1,3 +1,5 @@
+using System.Net.Http;
+using System.Text.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -45,6 +47,8 @@ public partial class BarShopWindow : Window
     public BarShopWindow(WebSocketClientService? wsService = null, int pcNumber = 1, string memberUsername = "Mehmon", double memberBalance = 0, bool isMember = false)
     {
         InitializeComponent();
+        Width = Math.Min(1060, Math.Max(320, SystemParameters.WorkArea.Width - 24));
+        Height = Math.Min(700, Math.Max(320, SystemParameters.WorkArea.Height - 24));
 
         _wsService = wsService;
         _pcNumber = pcNumber;
@@ -63,7 +67,7 @@ public partial class BarShopWindow : Window
         };
 
         UpdateHeaderInfo();
-        InitializeCatalog();
+        Loaded += async (_, _) => await InitializeCatalogAsync();
         ApplyFilter();
         UpdateCartSummary();
     }
@@ -98,279 +102,32 @@ public partial class BarShopWindow : Window
     // =========================================================================
     // 1. BAR KATALOGINI TO'LDIRISH
     // =========================================================================
-    private void InitializeCatalog()
+    private async Task InitializeCatalogAsync()
     {
         _allProducts.Clear();
-
-        var products = new List<SnackItem>
+        try
         {
-            // --- ENERGETIKLAR ---
-            new()
+            if (_wsService == null) throw new InvalidOperationException("Server bilan aloqa yoq.");
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var json = await http.GetStringAsync(_wsService.ServerHttpUrl + "/api/client/bar/catalog");
+            using var doc = JsonDocument.Parse(json);
+            foreach (var item in doc.RootElement.GetProperty("items").EnumerateArray())
             {
-                Id = 1,
-                Name = "Red Bull Energy Drink",
-                Category = "Energetik",
-                Volume = "250 ml",
-                Price = 22000,
-                IconEmoji = "⚡",
-                Badge = "XIT",
-                BadgeColor = "#F59E0B",
-                GradientStart = "#1E293B",
-                GradientEnd = "#0F172A",
-                Description = "Klassik quvvat baxsh etuvchi energetik ichimlik."
-            },
-            new()
-            {
-                Id = 2,
-                Name = "Flash Up Energy",
-                Category = "Energetik",
-                Volume = "450 ml",
-                Price = 12000,
-                IconEmoji = "🔋",
-                Badge = "HOT",
-                BadgeColor = "#EF4444",
-                GradientStart = "#450A0A",
-                GradientEnd = "#1C1917",
-                Description = "Katta hajm va kofeinli quvvat."
-            },
-            new()
-            {
-                Id = 3,
-                Name = "Monster Energy Ultra",
-                Category = "Energetik",
-                Volume = "500 ml",
-                Price = 28000,
-                IconEmoji = "👹",
-                Badge = "PREMIUM",
-                BadgeColor = "#10B981",
-                GradientStart = "#064E3B",
-                GradientEnd = "#022C22",
-                Description = "Shakarsiz yengil muzdek energetik."
-            },
-            new()
-            {
-                Id = 4,
-                Name = "Gorilla Energy Drink",
-                Category = "Energetik",
-                Volume = "450 ml",
-                Price = 14000,
-                IconEmoji = "🦍",
-                Badge = "HOT",
-                BadgeColor = "#D97706",
-                GradientStart = "#451A03",
-                GradientEnd = "#18181B",
-                Description = "Portlovchi kiber quvvat."
-            },
-
-            // --- SALQIN ICHIMLIKLAR ---
-            new()
-            {
-                Id = 5,
-                Name = "Coca-Cola Classic",
-                Category = "Ichimlik",
-                Volume = "0.5 L",
-                Price = 9000,
-                IconEmoji = "🥤",
-                Badge = "KLASSIKA",
-                BadgeColor = "#DC2626",
-                GradientStart = "#450A0A",
-                GradientEnd = "#1C1917",
-                Description = "Muzday klassik gazlangan ichimlik."
-            },
-            new()
-            {
-                Id = 6,
-                Name = "Fanta Orange",
-                Category = "Ichimlik",
-                Volume = "0.5 L",
-                Price = 9000,
-                IconEmoji = "🍊",
-                Badge = "APELSIN",
-                BadgeColor = "#EA580C",
-                GradientStart = "#431407",
-                GradientEnd = "#1C1917",
-                Description = "Yorqin apelsin ta'mi."
-            },
-            new()
-            {
-                Id = 7,
-                Name = "Sprite Lemon-Lime",
-                Category = "Ichimlik",
-                Volume = "0.5 L",
-                Price = 9000,
-                IconEmoji = "🍋",
-                Badge = "MUZDAY",
-                BadgeColor = "#16A34A",
-                GradientStart = "#14532D",
-                GradientEnd = "#052E16",
-                Description = "Chanqovbosdi limon va laym."
-            },
-            new()
-            {
-                Id = 8,
-                Name = "Suv Nestlé Pure Life",
-                Category = "Ichimlik",
-                Volume = "0.5 L",
-                Price = 4000,
-                IconEmoji = "💧",
-                Badge = "TOZA",
-                BadgeColor = "#0284C7",
-                GradientStart = "#0C4A6E",
-                GradientEnd = "#082F49",
-                Description = "Gazsiz toza tog' suvi."
-            },
-
-            // --- GAZAKLAR & CHIPSLAR ---
-            new()
-            {
-                Id = 9,
-                Name = "Lays Maxx Cheese & Onion",
-                Category = "Snack",
-                Volume = "120 g",
-                Price = 16000,
-                IconEmoji = "🥔",
-                Badge = "XIT",
-                BadgeColor = "#EAB308",
-                GradientStart = "#713F12",
-                GradientEnd = "#1C1917",
-                Description = "Qovurg'ali pishloqli qarsildoq chips."
-            },
-            new()
-            {
-                Id = 10,
-                Name = "Doritos Nacho Cheese",
-                Category = "Snack",
-                Volume = "100 g",
-                Price = 18000,
-                IconEmoji = "🔺",
-                Badge = "XIT",
-                BadgeColor = "#EA580C",
-                GradientStart = "#451A03",
-                GradientEnd = "#1C1917",
-                Description = "Makkajo'xori qarsildog'i va nacho sousi."
-            },
-            new()
-            {
-                Id = 11,
-                Name = "Pringles Original",
-                Category = "Snack",
-                Volume = "165 g",
-                Price = 32000,
-                IconEmoji = "🥫",
-                Badge = "PREMIUM",
-                BadgeColor = "#DC2626",
-                GradientStart = "#450A0A",
-                GradientEnd = "#18181B",
-                Description = "Naychada joylashgan qarsildoq kartoshka."
-            },
-            new()
-            {
-                Id = 12,
-                Name = "Krutonlar Xrusteam Baget",
-                Category = "Snack",
-                Volume = "60 g",
-                Price = 8000,
-                IconEmoji = "🥖",
-                Badge = "ARZON",
-                BadgeColor = "#6366F1",
-                GradientStart = "#1E1B4B",
-                GradientEnd = "#0F172A",
-                Description = "Yumshoq xushbo'y quritilgan nonlar."
-            },
-
-            // --- FAST-FOOD & SENDVICHLAR ---
-            new()
-            {
-                Id = 13,
-                Name = "Klab Sendvich Tovuqli",
-                Category = "FastFood",
-                Volume = "Katta",
-                Price = 28000,
-                IconEmoji = "🥪",
-                Badge = "TO'YIMLI",
-                BadgeColor = "#16A34A",
-                GradientStart = "#14532D",
-                GradientEnd = "#052E16",
-                Description = "Qovurilgan tovuq go'shti, pishloq va sous."
-            },
-            new()
-            {
-                Id = 14,
-                Name = "Hot-Dog Dabl Sosiska",
-                Category = "FastFood",
-                Volume = "Standart",
-                Price = 22000,
-                IconEmoji = "🌭",
-                Badge = "ISSICHIQ",
-                BadgeColor = "#E11D48",
-                GradientStart = "#4C0519",
-                GradientEnd = "#1C1917",
-                Description = "Ikkita sersuv sosiska va xantal sousi."
-            },
-            new()
-            {
-                Id = 15,
-                Name = "Burger Go'shtli (Klassik)",
-                Category = "FastFood",
-                Volume = "1 dona",
-                Price = 34000,
-                IconEmoji = "🍔",
-                Badge = "XIT",
-                BadgeColor = "#D97706",
-                GradientStart = "#451A03",
-                GradientEnd = "#1C1917",
-                Description = "100% mol go'shti va qovurilgan bulochka."
-            },
-
-            // --- QAYNOQ KOFE & CHOY ---
-            new()
-            {
-                Id = 16,
-                Name = "Kofe Americano (Issiq)",
-                Category = "Kofe",
-                Volume = "250 ml",
-                Price = 10000,
-                IconEmoji = "☕",
-                Badge = "QAYNOQ",
-                BadgeColor = "#78350F",
-                GradientStart = "#451A03",
-                GradientEnd = "#1C1917",
-                Description = "Yangi tuyilgan donalardan tayyorlangan kofe."
-            },
-            new()
-            {
-                Id = 17,
-                Name = "Kofe Cappuccino (Ko'pikli)",
-                Category = "Kofe",
-                Volume = "300 ml",
-                Price = 14000,
-                IconEmoji = "🥛",
-                Badge = "SUTLI",
-                BadgeColor = "#B45309",
-                GradientStart = "#451A03",
-                GradientEnd = "#1C1917",
-                Description = "Qalin sut ko'pigi bilan xushbo'y espresso."
-            },
-            new()
-            {
-                Id = 18,
-                Name = "Ko'k Choy Limon Bilan",
-                Category = "Kofe",
-                Volume = "Choynak",
-                Price = 8000,
-                IconEmoji = "🍵",
-                Badge = "CHANQOV",
-                BadgeColor = "#15803D",
-                GradientStart = "#14532D",
-                GradientEnd = "#052E16",
-                Description = "Issiq xushbo'y damlangan ko'k choy."
+                _allProducts.Add(new SnackItem {
+                    Id = item.GetProperty("id").GetInt32(),
+                    Name = item.GetProperty("name").GetString() ?? "",
+                    Price = item.GetProperty("sell_price").GetDouble(),
+                    Category = item.GetProperty("category").GetString()?.ToUpperInvariant() switch {
+                        "SNACKS" or "SNACK" => "Snack", "ENERGY" or "ENERGETIK" => "Energetik",
+                        "FASTFOOD" or "FAST_FOOD" or "FOOD" => "FastFood", "COFFEE" or "KOFE" => "Kofe", _ => "Ichimlik"
+                    },
+                    IconEmoji = "🛒", GradientStart = "#1E293B", GradientEnd = "#0F172A",
+                    Description = "Klub omboridagi mahsulot"
+                });
             }
-        };
-
-        foreach (var p in products)
-        {
-            _allProducts.Add(p);
+            ApplyFilter();
         }
+        catch (Exception ex) { WpfMessageBox.Show("Bar menyusi yuklanmadi: " + ex.Message); }
     }
 
     // =========================================================================
@@ -558,18 +315,19 @@ public partial class BarShopWindow : Window
             total = c.TotalCost
         }).ToList();
 
-        // 1. WebSocket orqali serverga jo'natish
-        if (_wsService != null)
+        BtnSubmitOrder.IsEnabled = false;
+        try
         {
-            try
-            {
-                await _wsService.SendBarOrderAsync(pcNumberStr, itemsPayload, totalAmount, paymentOption, note);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[BarShop] WebSocket jo'natishda xato: {ex.Message}");
-            }
+            if (_wsService == null) throw new InvalidOperationException("Server bilan aloqa yoq.");
+            await _wsService.SendBarOrderAsync(pcNumberStr, itemsPayload, totalAmount, paymentOption, note);
         }
+        catch (Exception ex)
+        {
+            WpfMessageBox.Show("Buyurtma qabul qilinmadi: " + ex.Message);
+            BtnSubmitOrder.IsEnabled = true;
+            return;
+        }
+        paymentDisplayName = "Kassir tasdiqlashi kutilmoqda";
 
         // 2. Hodisani chaqirish
         string summaryText = string.Join(", ", _cartItems.Select(c => $"{c.Name} x{c.OrderQuantity}"));

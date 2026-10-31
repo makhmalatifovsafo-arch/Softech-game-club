@@ -1,3 +1,9 @@
+import { autoWakeComputer } from './services/autoWake.js';
+import { MobileAgent } from './services/mobileAgent.js';
+import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
+import { createBooking, updateBookingStatus } from './services/bookingService.js';
+import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage } from './services/memberBilling.js';
+import { confirmClientBarOrder, payPendingBarOrder } from './services/clientBarOrders.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,11 +54,15 @@ initDatabase();
 // OTA Avtomatik yangilanish tizimi
 ServerUpdater.startPeriodicChecks();
 
-// Supabase Cloud Realtime Litsenziya va Kill-Switch servisi
-CloudLicenseService.init();
+// Cloud synchronization starts after the local license has been loaded.
 
 // 2. HTTP Server va REST API
-const server = http.createServer((req, res) => {
+const server = http.createServer((req,res)=>{
+  try { handleRequest(req,res); }
+  catch(error){console.error('[HTTP]',error.message);if(!res.headersSent)sendJson(res,500,{error:'So‘rovni bajarib bo‘lmadi.'});else res.destroy();}
+});
+function handleRequest(req, res) {
+  req.res = res; // Body-parser callbacks need the response on Node IncomingMessage.
   const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
   if (ServerUpdater.applying && mutating) {
     res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '2' });
@@ -122,9 +132,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // A banned/unactivated installation cannot operate through any business API.
+  if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') &&
+      !url.pathname.startsWith('/api/updates/') &&
+      (CloudLicenseService.isBlocked() || !LicenseManager.isOperational())) {
+    sendJson(res, 403, { success: false, error: LicenseManager.lockMessage || 'Litsenziya faol emas.', lockReason: LicenseManager.lockReason });
+    return;
+  }
+
+  if (url.pathname === '/api/client/bar/catalog' && req.method === 'GET') {
+    const items = db.prepare('SELECT id, name, category, sell_price, stock_quantity FROM bar_items WHERE club_id=1 AND is_active=1 AND stock_quantity>0 ORDER BY name').all();
+    sendJson(res, 200, { success: true, items }); return;
+  }
+
   // ==========================================================================
   // AUTH & RBAC REST API ENDPOINTS
   // ==========================================================================
+
+  if (url.pathname === '/api/auth/setup') {
+    if(req.method==='GET')return sendJson(res,200,{required:!db.prepare("SELECT id FROM users WHERE club_id=1 AND role IN ('club_owner','manager','administrator') LIMIT 1").get(),managedBy:'superadmin'});
+    return sendJson(res,403,{error:'Boshlang‘ich xodim login-parolini faqat super admin belgilaydi.'});
+  }
 
   // 1. POST /api/auth/login (Multi-Tenant & SaaS Login)
   if (url.pathname === '/api/auth/login' && req.method === 'POST') {
@@ -407,11 +435,11 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      db.prepare(`
-        UPDATE users 
-        SET permissions = ? 
-        WHERE id = ?
-      `).run(JSON.stringify(permissions), targetUserId);
+      const target=req.user.role==='superadmin'?db.prepare('SELECT id,role FROM users WHERE id=?').get(targetUserId):db.prepare('SELECT id,role FROM users WHERE id=? AND club_id=?').get(targetUserId,req.user.clubId);
+      if(!target)return sendJson(res,404,{error:'Xodim topilmadi.'});
+      if(target.role==='superadmin' && req.user.role!=='superadmin')return sendJson(res,403,{error:'Ruxsat yo‘q.'});
+      if(permissions.some(p=>typeof p!=='string'||p.length>80))return sendJson(res,400,{error:'Ruxsatlar yaroqsiz.'});
+      db.prepare('UPDATE users SET permissions=? WHERE id=?').run(JSON.stringify(permissions),targetUserId);
 
       sendJson(res, 200, { success: true, userId: targetUserId, permissions });
     });
@@ -1169,36 +1197,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 12. PUT /api/bookings/:id/status — Booking holatini o'zgartirish (Tasdiqlash / Bekor qilish)
-  if (url.pathname.startsWith('/api/bookings/') && url.pathname.endsWith('/status') && req.method === 'PUT') {
-    if (!authenticate(req, res)) return;
-    const segments = url.pathname.split('/');
-    const bookingId = parseInt(segments[3], 10);
-
-    if (!bookingId) {
-      sendJson(res, 400, { error: 'Noto\'g\'ri booking ID.' });
-      return;
-    }
-
-    readBody(req, (body) => {
-      const { status } = body;
-      if (!['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'].includes(status)) {
-        sendJson(res, 400, { error: 'Noto\'g\'ri status (PENDING, CONFIRMED, CANCELLED, COMPLETED).' });
-        return;
-      }
-
-      if (req.user.role === 'superadmin') {
-        db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, bookingId);
-      } else {
-        db.prepare('UPDATE bookings SET status = ? WHERE id = ? AND club_id = ?').run(status, bookingId, req.user.clubId);
-      }
-      broadcastAdminUpdate();
-      sendJson(res, 200, { success: true, bookingId, status });
-    });
-    return;
-  }
-
-
   // 9. PUT /api/admin/tariffs — Tariflarni yangilash
   if (url.pathname === '/api/admin/tariffs' && req.method === 'PUT') {
     if (!authenticate(req, res, { roles: ['superadmin', 'club_owner'], permission: 'tariffs:manage' })) return;
@@ -1480,7 +1478,7 @@ const server = http.createServer((req, res) => {
         remainingSeconds = Math.max(0, Math.floor((new Date(pc.ends_at).getTime() - now) / 1000));
       }
       const isPostpaid = Boolean(pc.notes && pc.notes.includes('POSTPAID'));
-      const isMember = Boolean(pc.notes && pc.notes.includes('CLIENT_BALANCE_LIVE:'));
+      const isMember = isMemberSession(pc);
       const barPending = Number(pc.bar_pending_amount || 0);
       const gameAmount = Number(pc.total_amount || 0);
       const pcZoneId = pc.zone_id ?? null;
@@ -1790,7 +1788,7 @@ const server = http.createServer((req, res) => {
     const currentUserId = req.user.id;
     const clubId = req.user.clubId || 1;
 
-    readBody(req, (data) => {
+    readBody(req, async (data) => {
       try {
         const {
           computerId,
@@ -1806,7 +1804,13 @@ const server = http.createServer((req, res) => {
 
         const pcNum = /^\d+$/.test(String(computerId || '').trim()) ? parseInt(computerId, 10) : -999999;
         const targetPcRow = db.prepare('SELECT id, status, mac_address, name, pc_number, zone, zone_id FROM computers WHERE id = ? OR name = ? OR pc_number = ?').get(String(computerId), String(computerId), pcNum);
-        const resolvedCompId = targetPcRow ? targetPcRow.id : computerId;
+        if (!targetPcRow) { sendJson(res, 404, { error: 'Kompyuter topilmadi.' }); return; }
+        const activeSession = db.prepare("SELECT id FROM sessions WHERE computer_id = ? AND status = 'ACTIVE'").get(targetPcRow.id);
+        if (activeSession) { sendJson(res, 409, { error: 'Kompyuterda faol seans mavjud.' }); return; }
+        if (!Number.isFinite(Number(durationMinutes)) || Number(durationMinutes) <= 0 || !Number.isFinite(Number(amount)) || Number(amount) < 0) {
+          sendJson(res, 400, { error: 'Vaqt yoki summa notogri.' }); return;
+        }
+        const resolvedCompId = targetPcRow.id;
         const pcZoneId = targetPcRow?.zone_id || resolveZoneIdForComputer(resolvedCompId, clubId);
 
         let finalDuration = durationMinutes;
@@ -1851,16 +1855,13 @@ const server = http.createServer((req, res) => {
         const tariff = (tariffId && db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE id = ?').get(tariffId)) || defaultTariff;
 
         const sessionId = `ses_${Date.now().toString(36)}`;
-        const notes = isPostpaidReq ? 'POSTPAID' : (mode === 'client' ? `CLIENT_ID:${customerId}` : mode);
+        const notes = paymentType === 'BALANCE' ? 'CLIENT_BALANCE_PREPAID:'+customerId : isPostpaidReq ? 'POSTPAID' : (mode === 'client' ? `CLIENT_ID:${customerId}` : mode);
 
-        // Agar balansdan to'lansa, mijoz balansini kamaytirish
-        if (mode === 'client' && customerId && paymentType === 'BALANCE') {
-          const clientRow = db.prepare('SELECT balance FROM users WHERE id = ?').get(customerId)
-            || db.prepare('SELECT balance FROM customers WHERE id = ?').get(customerId);
-          if (clientRow && clientRow.balance >= finalAmount) {
-            db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(finalAmount, customerId);
-            db.prepare('INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method) VALUES (?, ?, ?, "SESSION_DEDUCT", "BALANCE")').run(clubId, customerId, finalAmount);
-          }
+        db.exec('BEGIN');
+        if (paymentType === 'BALANCE') {
+          const debit = db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(finalAmount,customerId,clubId,finalAmount);
+          if (debit.changes !== 1) throw new Error('Mijoz balansi yetarli emas yoki mijoz topilmadi.');
+          db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME')").run(clubId,customerId,finalAmount);
         }
 
         // 1. Sessiya yaratish (club_id bilan)
@@ -1882,7 +1883,7 @@ const server = http.createServer((req, res) => {
         );
 
         // 2. Tranzaksiya yozish (agar postpaid bo'lmasa va pul to'langan bo'lsa)
-        if (!isPostpaidReq && finalAmount > 0) {
+        if (!isPostpaidReq && finalAmount > 0 && paymentType !== 'BALANCE') {
           const validPayType = ['CASH', 'CARD', 'CLICK', 'PAYME'].includes(paymentType) ? paymentType : 'CASH';
           db.prepare(`
             INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by)
@@ -1891,7 +1892,7 @@ const server = http.createServer((req, res) => {
         }
 
         // 3. Kompyuter holatini yangilash
-        const wasOffline = !targetPcRow || targetPcRow.status === 'OFFLINE';
+        const wasOffline = !ClientManager.isConnected(resolvedCompId);
 
         db.prepare(`
           UPDATE computers 
@@ -1899,17 +1900,8 @@ const server = http.createServer((req, res) => {
           WHERE id = ?
         `).run(sessionId, resolvedCompId);
 
-        // Agar kompyuter o'chiq bo'lsa, avtomatik ravishda Wake-on-LAN (Power ON) Magic Packet yuborib yoqish
-        if (wasOffline && targetPcRow && targetPcRow.mac_address) {
-          try {
-            sendWakeOnLan(targetPcRow.mac_address).catch(err => {
-              console.warn(`[AutoWake] ${targetPcRow.name} (${targetPcRow.mac_address}) WoL xatosi:`, err.message);
-            });
-            console.log(`⚡ [AutoWake] O'chiq kompyuter (${targetPcRow.name || resolvedCompId}) uchun Wake-on-LAN Magic Packet yuborildi.`);
-          } catch (wakeErr) {
-            console.warn(`[AutoWake] Error:`, wakeErr);
-          }
-        }
+        db.exec('COMMIT');
+        const wake = await autoWakeComputer(targetPcRow,{isConnected:id=>ClientManager.isConnected(id),sendWake:sendWakeOnLan});
 
         // 4. Client Agent ga START_SESSION yuborish
         const sessionPayload = {
@@ -1924,6 +1916,7 @@ const server = http.createServer((req, res) => {
           endsAt: finalEndsAt.getTime(),
           remainingSeconds: isPostpaid ? -1 : Math.round(finalDuration * 60),
           customerName: customerName || 'Mijoz',
+          clientBalance: paymentType === 'BALANCE' ? db.prepare('SELECT balance FROM users WHERE id=? AND club_id=?').get(customerId,clubId)?.balance : null,
           isPostpaid: !!isPostpaid
         };
 
@@ -1941,8 +1934,8 @@ const server = http.createServer((req, res) => {
           pcNumber: targetPcRow?.pc_number,
           name: targetPcRow?.name,
           status: 'OCCUPIED',
-          is_online: 1,
-          isOnline: true,
+          is_online: wasOffline ? 0 : 1,
+          isOnline: !wasOffline,
           active_session: sessionPayload,
           activeSession: sessionPayload
         });
@@ -1961,6 +1954,8 @@ const server = http.createServer((req, res) => {
 
         sendJson(res, 201, {
           success: true,
+          wake,
+          message: wake.message,
           sessionId,
           mode,
           durationMinutes: finalDuration,
@@ -1968,6 +1963,7 @@ const server = http.createServer((req, res) => {
           isPostpaid: !!isPostpaid
         });
       } catch (e) {
+        try { db.exec('ROLLBACK'); } catch {}
         sendJson(res, 500, { error: e.message });
       }
     });
@@ -1976,139 +1972,11 @@ const server = http.createServer((req, res) => {
 
   // POST /api/sessions/stop (Tenant scoped)
   if (url.pathname === '/api/sessions/stop' && req.method === 'POST') {
-    if (!authenticate(req, res, { permission: 'session:manage' })) return;
-    const currentUserId = req.user.id;
-    const clubId = req.user.clubId || 1;
-
-    readBody(req, (data) => {
-      try {
-        const { computerId, paymentType = 'CASH' } = data;
-        const pc = db.prepare('SELECT current_session_id FROM computers WHERE id = ?').get(computerId);
-
-        let finalBill = 0;
-        let isPostpaidSession = false;
-
-        if (pc?.current_session_id) {
-          const session = db.prepare(`
-            SELECT s.*, t.price_per_hour 
-            FROM sessions s 
-            LEFT JOIN tariffs t ON s.tariff_id = t.id 
-            WHERE s.id = ?
-          `).get(pc.current_session_id);
-
-          if (session) {
-            const started = new Date(session.started_at).getTime();
-            const nowTime = Date.now();
-            const playedMinutes = Math.max(1, Math.ceil((nowTime - started) / 60000));
-
-            let pendingBarTotal = 0;
-            const barPendingRow = db.prepare(`
-              SELECT COALESCE(SUM(total_amount), 0) as total 
-              FROM bar_orders 
-              WHERE (session_id = ? OR (computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT'))
-                AND payment_status = 'PENDING_AT_CHECKOUT'
-            `).get(pc.current_session_id, pc.pc_number || computerId);
-
-            if (barPendingRow && Number(barPendingRow.total) > 0) {
-              pendingBarTotal = Number(barPendingRow.total);
-              db.prepare(`
-                UPDATE bar_orders 
-                SET payment_status = 'PAID' 
-                WHERE (session_id = ? OR (computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT'))
-                  AND payment_status = 'PENDING_AT_CHECKOUT'
-              `).run(pc.current_session_id, pc.pc_number || computerId);
-
-              // Kassa tranzaksiyasiga yozish
-              const validPayType = ['CARD', 'CLICK', 'PAYME'].includes(paymentType) ? 'CARD' : 'CASH';
-              db.prepare(`
-                INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by, notes)
-                VALUES (?, ?, ?, ?, ?, ?, 'BAR_SALE', ?, 'BAR_SALE_CHECKOUT')
-              `).run(`tx_bar_chk_${Date.now().toString(36)}`, session.club_id || clubId, pc.current_session_id, pendingBarTotal, validPayType, validPayType, String(currentUserId));
-            }
-
-            let gameBill = 0;
-            if (session.notes === 'POSTPAID' || session.paid_amount === 0) {
-              isPostpaidSession = true;
-              const settings = getClubSettings(session.club_id || clubId);
-
-              if (settings.vip_pricing_mode === 'CUSTOM') {
-                gameBill = Math.round((playedMinutes / 60) * (settings.vip_custom_price || 15000));
-              } else {
-                const intervalCalc = calculateIntervalPrice(session.started_at, new Date(nowTime), true, session.club_id || clubId);
-                gameBill = Math.round(intervalCalc.totalAmount);
-              }
-              finalBill = gameBill + pendingBarTotal;
-
-              db.prepare(`
-                UPDATE sessions 
-                SET status = 'COMPLETED', ends_at = CURRENT_TIMESTAMP, total_amount = ?, paid_amount = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE id = ?
-              `).run(finalBill, finalBill, pc.current_session_id);
-
-              if (gameBill > 0) {
-                const validPayType = ['CARD', 'CLICK', 'PAYME'].includes(paymentType) ? 'CARD' : 'CASH';
-                db.prepare(`
-                  INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by, notes)
-                  VALUES (?, ?, ?, ?, ?, ?, 'POSTPAID_SETTLEMENT', ?, ?)
-                `).run(`tx_postpaid_${Date.now().toString(36)}_${Math.random().toString(36).substring(2,6)}`, session.club_id || clubId, pc.current_session_id, gameBill, validPayType, validPayType, String(currentUserId), `VIP_POSTPAID_${settings.vip_pricing_mode}`);
-              }
-            } else {
-              db.prepare(`UPDATE sessions SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(pc.current_session_id);
-            }
-
-            db.prepare(`UPDATE computers SET status = 'LOCKED', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(computerId);
-
-            ClientManager.send(computerId, 'STOP_SESSION', {
-              sessionId: pc?.current_session_id || '',
-              reason: 'ADMIN_TERMINATED',
-              forceKillApps: true,
-              message: 'Seans to\'xtatildi.'
-            });
-            ClientManager.send(computerId, 'LOCK_SCREEN', {
-              reason: 'ADMIN_LOCK',
-              message: 'Kompyuter administrator tomonidan bloklandi.'
-            });
-
-            broadcastAdminUpdate();
-            logAuditEvent(clubId, null, 'SESSION_STOP', {
-              sessionId: pc?.current_session_id || null,
-              computerId,
-              finalBill,
-              gameBill,
-              barBill: pendingBarTotal,
-              isPostpaid: isPostpaidSession
-            });
-
-            sendJson(res, 200, { success: true, finalBill, gameBill, barBill: pendingBarTotal, isPostpaid: isPostpaidSession });
-            return;
-          }
-        }
-
-        db.prepare(`UPDATE computers SET status = 'LOCKED', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(computerId);
-
-        ClientManager.send(computerId, 'STOP_SESSION', {
-          sessionId: pc?.current_session_id || '',
-          reason: 'ADMIN_TERMINATED',
-          forceKillApps: true,
-          message: 'Seans to\'xtatildi.'
-        });
-        ClientManager.send(computerId, 'LOCK_SCREEN', {
-          reason: 'ADMIN_LOCK',
-          message: 'Kompyuter administrator tomonidan bloklandi.'
-        });
-
-        broadcastAdminUpdate();
-        logAuditEvent(clubId, null, 'SESSION_STOP', {
-          sessionId: pc?.current_session_id || null,
-          computerId,
-          finalBill: 0,
-          isPostpaid: isPostpaidSession
-        });
-
-        sendJson(res, 200, { success: true, finalBill: 0, isPostpaid: isPostpaidSession });
-      } catch (e) {
-        sendJson(res, 500, { error: e.message });
-      }
+    if (!authenticate(req,res,{permission:'session:manage'})) return;
+    readBody(req,data=>{
+      try { sendJson(res,200,BarLedgerService.executeSessionCheckout({target:data.sessionId||data.computerId,
+        paymentMethod:data.paymentType||'CASH',cashierUserId:req.user.id,clubId:getTenantClubId(req)||1,broadcastUpdate:broadcastAdminUpdate})); }
+      catch(error){sendJson(res,400,{error:error.message});}
     });
     return;
   }
@@ -2161,6 +2029,11 @@ const server = http.createServer((req, res) => {
           return;
         }
 
+        if (isMemberSession(sessionRow) || sessionRow.notes === 'POSTPAID') {
+          const result=BarLedgerService.executeSessionCheckout({target:sessionRow.id,clubId:sessionRow.club_id,
+            paymentMethod:data.paymentType||'CASH',cashierUserId:currentUserId,broadcastUpdate:broadcastAdminUpdate});
+          sendJson(res,200,{...result,refundAmount:result.refundAmount || 0,usedAmount:result.gameBill}); return;
+        }
         const compId = sessionRow.computer_id;
         const startedAt = new Date(sessionRow.started_at);
         const now = new Date();
@@ -2180,9 +2053,10 @@ const server = http.createServer((req, res) => {
           refundAmount = Math.max(0, Math.round(totalPaid - usedAmount));
         }
 
+        db.exec('BEGIN IMMEDIATE');
         // Agar bu a'zo (member) hisobidan yechilgan bo'lsa, balansiga qaytarish
-        if (sessionRow.notes && sessionRow.notes.includes('CLIENT_BALANCE_LIVE:')) {
-          const matchLive = sessionRow.notes.match(/CLIENT_BALANCE_LIVE:(\d+)/);
+        if (sessionRow.notes && sessionRow.notes.includes('CLIENT_BALANCE_PREPAID:')) {
+          const matchLive = sessionRow.notes.match(/CLIENT_BALANCE_PREPAID:(\d+)/);
           const memberId = matchLive ? parseInt(matchLive[1], 10) : null;
           if (memberId && refundAmount > 0) {
             db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(refundAmount, memberId);
@@ -2213,6 +2087,7 @@ const server = http.createServer((req, res) => {
           WHERE id = ?
         `).run(compId);
 
+        db.exec('COMMIT');
         // Klient agentga WebSocket signallari
         ClientManager.send(compId, 'STOP_SESSION', {
           sessionId: sessionRow.id,
@@ -2252,6 +2127,7 @@ const server = http.createServer((req, res) => {
           refundAmount
         });
       } catch (err) {
+        try { db.exec('ROLLBACK'); } catch {}
         sendJson(res, 500, { error: 'Seansni muddatidan oldin to\'xtatishda xatolik: ' + err.message });
       }
     });
@@ -2329,6 +2205,14 @@ const server = http.createServer((req, res) => {
 
         const newEnd = new Date(currentEnd + addMins * 60 * 1000);
 
+        if (!Number.isInteger(addMins) || addMins<=0 || addMins>1440 || !Number.isFinite(addAmt) || addAmt<0)
+          throw new Error('Qo‘shimcha vaqt va summa noto‘g‘ri.');
+        if (isPrepaidMember(sessionRow)) {
+          const extension=extendPrepaidMember(sessionRow.id,addMins);
+          addAmt=extension.amount;
+        } else {
+          db.exec('BEGIN IMMEDIATE');
+          try {
         // Bazada seans vaqtini yangilash
         db.prepare(`
           UPDATE sessions 
@@ -2343,6 +2227,10 @@ const server = http.createServer((req, res) => {
             INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
             VALUES (?, ?, ?, ?, ?, ?, 'SESSION_EXTEND')
           `).run(`tx_${Date.now().toString(36)}`, sessionRow.club_id || 1, sessionRow.id, addAmt, validPayType, String(currentUserId));
+        }
+
+          db.exec('COMMIT');
+          } catch(error) {db.exec('ROLLBACK');throw error;}
         }
 
         // Klient agentiga yangilangan qolgan vaqtni yuborish
@@ -2449,7 +2337,7 @@ const server = http.createServer((req, res) => {
         const now = Date.now();
         const endsAtMs = new Date(session.ends_at).getTime();
         const remainingSeconds = Math.max(1, Math.floor((endsAtMs - now) / 1000));
-        const isPostpaid = session.notes === 'POSTPAID' || session.paid_amount === 0;
+        const isPostpaid = !isMemberSession(session) && (session.notes === 'POSTPAID' || session.paid_amount === 0);
 
         // 1. Bazada seansni yangi kompyuterga biriktirish
         db.prepare(`
@@ -2491,6 +2379,7 @@ const server = http.createServer((req, res) => {
           endsAt: endsAtMs,
           remainingSeconds: isPostpaid ? -1 : remainingSeconds,
           customerName: session.customer_name || 'Mijoz',
+          clientBalance: isMemberSession(session) ? db.prepare('SELECT balance FROM users WHERE id=? AND club_id=?').get(session.user_id,session.club_id)?.balance : null,
           isPostpaid
         });
 
@@ -2525,7 +2414,7 @@ const server = http.createServer((req, res) => {
   // ==========================================================================
   const powerMatch = url.pathname.match(/^\/api\/computers\/([^/]+)\/power$/);
   if ((powerMatch || url.pathname === '/api/computers/power') && req.method === 'POST') {
-    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner'], permission: 'computers:manage' })) return;
+    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner', 'administrator'], permission: 'computers:manage' })) return;
     const clubId = getTenantClubId(req);
 
     readBody(req, async (data) => {
@@ -2554,11 +2443,25 @@ const server = http.createServer((req, res) => {
         const cmd = action.toUpperCase();
 
         if (['SHUTDOWN', 'REBOOT', 'LOCK', 'UNLOCK'].includes(cmd)) {
-          ClientManager.send(pcId, 'REMOTE_COMMAND', { command: cmd, action: cmd });
-          ClientManager.send(pcId, 'POWER_COMMAND', { command: cmd, action: cmd });
+          if (!ClientManager.isConnected(pcId)) return sendJson(res,409,{error:'Client bilan aloqa yo‘q. Yoqish uchun Wake-on-LAN amalini tanlang.'});
+          let settlement = null;
+          const active = db.prepare("SELECT id,customer_name FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pcId);
+          if (['SHUTDOWN','REBOOT'].includes(cmd) && active) {
+            if (!['close','keep'].includes(data.sessionDecision) || data.sessionId !== active.id) {
+              const preview = BarLedgerService.getSessionCheckoutPreview(active.id,pc.club_id);
+              return sendJson(res,409,{code:'ACTIVE_SESSION_CONFIRMATION_REQUIRED',error:'Faol seans uchun tanlov kerak.',session:{sessionId:active.id,computerName:pc.name,customerName:active.customer_name,amountToCollect:preview.amountToCollect}});
+            }
+            if (data.sessionDecision === 'close') {
+              if (!authenticate(req,res,{permission:'session:manage'})) return;
+              settlement=BarLedgerService.executeSessionCheckout({target:active.id,paymentMethod:data.paymentMethod||'CASH',cashierUserId:req.user.id,clubId:pc.club_id,broadcastUpdate:broadcastAdminUpdate});
+            }
+          } else if (['SHUTDOWN','REBOOT'].includes(cmd) && data.sessionId) {
+            return sendJson(res,409,{error:'Seans holati o‘zgargan. Kompyuter holatini yangilab, qayta tanlang.'});
+          }
+          if (!ClientManager.send(pcId, 'POWER_COMMAND', { command: cmd, action: cmd })) return sendJson(res,409,{error:'Clientga buyruq yuborilmadi.'});
 
           if (cmd === 'SHUTDOWN') {
-            db.prepare("UPDATE computers SET status = 'OFFLINE', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(pcId);
+            db.prepare("UPDATE computers SET status = 'OFFLINE', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(pcId);
           } else if (cmd === 'LOCK') {
             db.prepare("UPDATE computers SET status = 'LOCKED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(pcId);
           } else if (cmd === 'UNLOCK') {
@@ -2577,6 +2480,8 @@ const server = http.createServer((req, res) => {
             success: true,
             computerId: pcId,
             action: cmd,
+            sessionDecision: active ? data.sessionDecision : null,
+            settlement,
             message: `${pc.name || pcId} ga ${cmd} masofaviy buyrug'i muvaffaqiyatli jo'natildi.`
           });
           return;
@@ -2639,7 +2544,7 @@ const server = http.createServer((req, res) => {
     const currentUserId = req.user.id;
     const clubId = req.user.clubId || 1;
 
-    readBody(req, (data) => {
+    readBody(req, async (data) => {
       try {
         const {
           computerIds = [],
@@ -2699,7 +2604,7 @@ const server = http.createServer((req, res) => {
           endsAt = new Date(calc.endTime);
         }
 
-        const results = [];
+        const results = [], notifications = [];
         const totalAmountAllPcs = perPcAmount * computerIds.length;
 
         // Helper to resolve PC identifier (e.g. "pc_1", 1, "PC-01")
@@ -2712,21 +2617,20 @@ const server = http.createServer((req, res) => {
           return str;
         };
 
+        if (!Number.isFinite(perPcAmount) || perPcAmount < 0 || !Number.isFinite(perPcDurationMins) || perPcDurationMins <= 0) throw new Error('Summa yoki vaqt noto‘g‘ri.');
+        const resolvedIds=computerIds.map(resolvePcId);
+        if (new Set(resolvedIds).size!==resolvedIds.length) throw new Error('Kompyuter takroran tanlangan.');
+        for(const pcId of resolvedIds) {
+          if(!db.prepare('SELECT id FROM computers WHERE id=? AND club_id=?').get(pcId,clubId)) throw new Error('Kompyuter topilmadi.');
+          if(db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pcId)) throw new Error('Kompyuter band.');
+        }
+        db.exec('BEGIN IMMEDIATE');
         // Agar CLIENT bo'lsa va balansdan to'lansa
-        if (normalizedMode === 'CLIENT' && customerId && paymentType === 'BALANCE') {
-          const clientRow = db.prepare('SELECT id, balance FROM users WHERE id = ?').get(customerId) 
-            || db.prepare('SELECT id, balance FROM customers WHERE id = ?').get(customerId);
-          if (!clientRow || clientRow.balance < totalAmountAllPcs) {
-            sendJson(res, 400, {
-              error: `Mijoz balansi (${clientRow?.balance || 0} UZS) jami guruh to'lovi (${totalAmountAllPcs} UZS) uchun yetarli emas.`
-            });
-            return;
-          }
-          db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(totalAmountAllPcs, clientRow.id);
-          db.prepare(`
-            INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method)
-            VALUES (?, ?, ?, 'SESSION_DEDUCT', 'BALANCE')
-          `).run(clubId, clientRow.id, totalAmountAllPcs);
+        if (paymentType === 'BALANCE') {
+          if(isPostpaid) throw new Error('Postpaid guruhni balansdan oldindan to‘lab bo‘lmaydi.');
+          const debit=db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(totalAmountAllPcs,customerId,clubId,totalAmountAllPcs);
+          if(debit.changes!==1)throw new Error('Mijoz balansi yetarli emas.');
+          db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME')").run(clubId,customerId,totalAmountAllPcs);
         }
 
         // Standart soatlik tarif
@@ -2736,7 +2640,7 @@ const server = http.createServer((req, res) => {
         for (const rawId of computerIds) {
           const pcId = resolvePcId(rawId);
           const sessionId = `ses_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-          const notes = isPostpaid ? 'POSTPAID' : `BATCH_${normalizedMode}`;
+          const notes = paymentType === 'BALANCE' ? 'CLIENT_BALANCE_PREPAID:'+customerId : isPostpaid ? 'POSTPAID' : `BATCH_${normalizedMode}`;
 
           // 1. Sessiya (club_id bilan)
           db.prepare(`
@@ -2757,7 +2661,7 @@ const server = http.createServer((req, res) => {
           );
 
           // 2. Tranzaksiya (club_id bilan)
-          if (!isPostpaid && perPcAmount > 0) {
+          if (!isPostpaid && perPcAmount > 0 && paymentType !== 'BALANCE') {
             const validPayType = ['CASH', 'CARD', 'CLICK', 'PAYME'].includes(paymentType) ? paymentType : 'CASH';
             db.prepare(`
               INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by)
@@ -2767,7 +2671,6 @@ const server = http.createServer((req, res) => {
 
           // 3. Kompyuter statusi
           const targetBatchPc = db.prepare('SELECT id, status, mac_address, name FROM computers WHERE id = ?').get(pcId);
-          const wasBatchOffline = !targetBatchPc || targetBatchPc.status === 'OFFLINE';
 
           db.prepare(`
             UPDATE computers 
@@ -2775,12 +2678,9 @@ const server = http.createServer((req, res) => {
             WHERE id = ?
           `).run(sessionId, pcId);
 
-          if (wasBatchOffline && targetBatchPc && targetBatchPc.mac_address) {
-            try {
-              sendWakeOnLan(targetBatchPc.mac_address).catch(() => {});
-              console.log(`⚡ [AutoWake] Guruh seansida o'chiq kompyuter (${targetBatchPc.name || pcId}) uchun WoL Magic Packet yuborildi.`);
-            } catch {}
-          }
+          notifications.push(async () => {
+          const wake=await autoWakeComputer({...targetBatchPc,id:pcId},{isConnected:id=>ClientManager.isConnected(id),sendWake:sendWakeOnLan});
+          const result=results.find(r=>r.computerId===pcId);if(result)result.wake=wake;
 
           // 4. WebSocket signal Client Agent ga
           ClientManager.send(pcId, 'START_SESSION', {
@@ -2793,6 +2693,7 @@ const server = http.createServer((req, res) => {
             isPostpaid: !!isPostpaid
           });
 
+          });
           results.push({
             computerId: pcId,
             sessionId,
@@ -2800,6 +2701,8 @@ const server = http.createServer((req, res) => {
           });
         }
 
+        db.exec('COMMIT');
+        await Promise.all(notifications.map(notify=>notify()));
         broadcastAdminUpdate();
         sendJson(res, 201, {
           success: true,
@@ -2813,6 +2716,7 @@ const server = http.createServer((req, res) => {
           results
         });
       } catch (err) {
+        try { db.exec('ROLLBACK'); } catch {}
         sendJson(res, 500, { error: 'Guruh seansini ochishda xatolik: ' + err.message });
       }
     });
@@ -2832,9 +2736,9 @@ const server = http.createServer((req, res) => {
     readBody(req, (data) => {
       try {
         const { userId, amount, paymentMethod = 'CASH' } = data;
-        const numAmount = parseFloat(amount);
+        const numAmount = Number(amount);
 
-        if (!userId || isNaN(numAmount) || numAmount <= 0) {
+        if (!userId || !Number.isFinite(numAmount) || numAmount <= 0) {
           sendJson(res, 400, { error: 'Foydalanuvchi ID va to\'g\'ri summa kiritilishi shart.' });
           return;
         }
@@ -2851,6 +2755,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
+        db.exec('BEGIN IMMEDIATE');
         const newBalance = Number(user.balance || 0) + numAmount;
         db.prepare('UPDATE users SET balance = ? WHERE id = ?').run(newBalance, userId);
 
@@ -2866,6 +2771,7 @@ const server = http.createServer((req, res) => {
           VALUES (?, ?, null, ?, ?, ?, ?)
         `).run(`tx_topup_${Date.now().toString(36)}`, user.club_id || clubId, numAmount, validMethod, String(currentUserId), `CLIENT_TOPUP:${user.username}`);
 
+        db.exec('COMMIT');
         broadcastAdminUpdate();
         sendJson(res, 200, {
           success: true,
@@ -2876,6 +2782,7 @@ const server = http.createServer((req, res) => {
           paymentMethod: validMethod
         });
       } catch (err) {
+        try { db.exec('ROLLBACK'); } catch {}
         sendJson(res, 500, { error: 'Balans to\'ldirishda xatolik: ' + err.message });
       }
     });
@@ -2884,139 +2791,14 @@ const server = http.createServer((req, res) => {
 
   // POST /api/clients/login-session — Klient kompyuteridan kelgan so'rov: login va parol bilan avtomatik o'z balansi hisobidan seans boshlash
   if (url.pathname === '/api/clients/login-session' && req.method === 'POST') {
-    readBody(req, (data) => {
+    readBody(req,data=>{
       try {
-        const { computerId, username, password } = data;
-
-        if (!computerId || !username || !password) {
-          sendJson(res, 400, { error: 'computerId, username va password majburiy.' });
-          return;
-        }
-
-        const pcId = String(computerId).startsWith('pc_') ? computerId : `pc_${computerId}`;
-        const pc = db.prepare('SELECT * FROM computers WHERE id = ?').get(pcId);
-        if (!pc) {
-          sendJson(res, 404, { error: 'Kompyuter topilmadi.' });
-          return;
-        }
-
-        if (pc.status === 'OCCUPIED') {
-          sendJson(res, 400, { error: 'Ushbu kompyuter hozirda band.' });
-          return;
-        }
-
-        const clubId = pc.club_id || 1;
-
-        // Klub obunasini tekshirish
-        const club = db.prepare('SELECT is_active, expires_at FROM clubs WHERE id = ?').get(clubId);
-        if (club) {
-          if (!club.is_active || new Date(club.expires_at).getTime() < Date.now()) {
-            sendJson(res, 403, { error: 'Klub obuna muddati tugagan. Seans ochish imkonsiz.' });
-            return;
-          }
-        }
-
-        const user = db.prepare("SELECT * FROM users WHERE (username = ? OR phone_number = ?) AND role = 'client' AND (club_id = ? OR club_id IS NULL)").get(username, username, clubId);
-        if (!user) {
-          sendJson(res, 401, { error: 'Mijoz topilmadi yoki login noto\'g\'ri.' });
-          return;
-        }
-
-        const isValid = verifyPassword(password, user.password_hash);
-        if (!isValid) {
-          sendJson(res, 401, { error: 'Parol noto\'g\'ri.' });
-          return;
-        }
-
-        if (user.balance <= 0) {
-          sendJson(res, 402, {
-            error: `Balans yetarli emas. Joriy balansingiz: ${user.balance} UZS. Kassadan to'ldiring.`
-          });
-          return;
-        }
-
-        // Dinamik vaqt hisoblash (clubId bilan)
-        const startedAt = new Date();
-        const calcResult = calculateTimeFromAmount(startedAt, user.balance, false, clubId);
-
-        if (calcResult.totalMinutes <= 0) {
-          sendJson(res, 402, { error: 'Balansingiz 1 daqiqa o\'yin uchun ham yetarli emas.' });
-          return;
-        }
-
-        const endsAt = new Date(startedAt.getTime() + calcResult.totalMinutes * 60 * 1000);
-        const sessionId = `ses_${Date.now().toString(36)}`;
-        const defaultTariff = db.prepare('SELECT id, name FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
-          || db.prepare('SELECT id, name FROM tariffs ORDER BY price_per_hour ASC LIMIT 1').get();
-
-        // 1. Sessiya yaratish (club_id bilan)
-        db.prepare(`
-          INSERT INTO sessions (id, club_id, computer_id, tariff_id, user_id, customer_name, started_at, ends_at, total_amount, paid_amount, status, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-        `).run(
-          sessionId,
-          clubId,
-          pcId,
-          defaultTariff?.id || 'trf_standard_1h',
-          user.id,
-          user.username,
-          startedAt.toISOString(),
-          endsAt.toISOString(),
-          calcResult.totalAmount,
-          calcResult.totalAmount,
-          `CLIENT_BALANCE_LIVE:${user.id}`
-        );
-
-        // 2. Kompyuter holatini yangilash
-        db.prepare(`
-          UPDATE computers 
-          SET status = 'OCCUPIED', current_session_id = ? 
-          WHERE id = ?
-        `).run(sessionId, pcId);
-
-        // 3. WebSocket orqali Client Agent ga signallar
-        ClientManager.send(pcId, 'CLIENT_LOGIN_SUCCESS', {
-          sessionId,
-          username: user.username,
-          balance: user.balance,
-          totalMinutes: calcResult.totalMinutes,
-          endsAt: endsAt.getTime()
-        });
-
-        ClientManager.send(pcId, 'START_SESSION', {
-          sessionId,
-          tariffName: 'Mijoz Balansi',
-          startedAt: startedAt.getTime(),
-          endsAt: endsAt.getTime(),
-          remainingSeconds: calcResult.totalMinutes * 60,
-          customerName: user.username,
-          isPostpaid: false,
-          clientBalance: user.balance
-        });
-
-        broadcastAdminUpdate();
-        logAuditEvent(clubId, null, 'SESSION_START', {
-          sessionId,
-          computerId: pcId,
-          customerName: user.username,
-          mode: 'CLIENT_BALANCE',
-          durationMinutes: calcResult.totalMinutes,
-          amount: calcResult.totalAmount,
-          isPostpaid: false,
-          tariffName: 'Mijoz Balansi'
-        });
-
-        sendJson(res, 200, {
-          success: true,
-          sessionId,
-          username: user.username,
-          balance: user.balance,
-          durationMinutes: calcResult.totalMinutes,
-          endsAt: endsAt.toISOString()
-        });
-      } catch (err) {
-        sendJson(res, 500, { error: 'Seansni boshlashda xatolik: ' + err.message });
-      }
+        const pcId=resolvePcId(data.computerId);
+        const result=startMemberSession(pcId,data.username,data.password,data.durationMinutes);
+        ClientManager.send(pcId,'CLIENT_LOGIN_SUCCESS',result);
+        ClientManager.send(pcId,'START_SESSION',result);
+        broadcastAdminUpdate();sendJson(res,200,{success:true,...result});
+      } catch(error){sendJson(res,400,{error:error.message});}
     });
     return;
   }
@@ -3237,6 +3019,7 @@ const server = http.createServer((req, res) => {
           sessionId: ord.session_id,
           userId: ord.user_id,
           totalAmount: Number(ord.total_amount || 0),
+          approvalStatus: ord.approval_status,
           paymentStatus: ord.payment_status,
           paymentMethod: ord.payment_method,
           createdAt: ord.created_at,
@@ -3283,9 +3066,9 @@ const server = http.createServer((req, res) => {
           // 1. Tovar mavjudligi va qoldig'ini tekshirish
           for (const itemRequest of items) {
             const bItemId = parseInt(itemRequest.barItemId || itemRequest.id, 10);
-            const reqQty = parseInt(itemRequest.quantity || itemRequest.count || 1, 10);
+            const reqQty = Number(itemRequest.quantity ?? itemRequest.count ?? 1);
 
-            if (!bItemId || reqQty <= 0) {
+            if (!bItemId || !Number.isInteger(reqQty) || reqQty <= 0) {
               throw new Error('Noto\'g\'ri tovar yoki miqdor tanlangan.');
             }
 
@@ -3307,6 +3090,7 @@ const server = http.createServer((req, res) => {
               itemName: barProduct.name,
               quantity: reqQty,
               unitPrice,
+              buyPrice: Number(barProduct.buy_price || 0),
               totalPrice: lineTotal
             });
           }
@@ -3322,15 +3106,15 @@ const server = http.createServer((req, res) => {
             }
             db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(calculatedTotal, userId);
             db.prepare(`
-              INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method)
-              VALUES (?, ?, ?, 'SESSION_DEDUCT', 'BALANCE')
+              INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method, category)
+              VALUES (?, ?, ?, 'SESSION_DEDUCT', 'BALANCE', 'BAR')
             `).run(clubId, userId, calculatedTotal);
           }
 
           // 3. Ombor qoldiqlarini kamaytirish (stock_quantity = stock_quantity - quantity)
-          const updateStockStmt = db.prepare('UPDATE bar_items SET stock_quantity = stock_quantity - ? WHERE id = ?');
+          const updateStockStmt = db.prepare('UPDATE bar_items SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
           for (const pItem of processedItems) {
-            updateStockStmt.run(pItem.quantity, pItem.barItemId);
+            if (updateStockStmt.run(pItem.quantity, pItem.barItemId, pItem.quantity).changes !== 1) throw new Error('Omborda yetarli mahsulot yoq.');
           }
 
           // 4. bar_orders jadvaliga yozish
@@ -3357,31 +3141,32 @@ const server = http.createServer((req, res) => {
           `);
           const orderRes = insertOrderStmt.run(clubId, orderNum, targetCompNum, targetSessionId, userId || null, calculatedTotal, effectivePayStatus, validPayMethod);
           const orderId = Number(orderRes.lastInsertRowid);
+          if (effectivePayStatus === 'PAID') db.prepare('UPDATE bar_orders SET paid_at=CURRENT_TIMESTAMP WHERE id=?').run(orderId);
 
           // 5. bar_order_items jadvaliga har bir tovar tarkibini yozish
           const insertItemStmt = db.prepare(`
-            INSERT INTO bar_order_items (order_id, bar_item_id, item_name, quantity, unit_price, total_price)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO bar_order_items (order_id, bar_item_id, item_name, quantity, unit_price, total_price, buy_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
           `);
           for (const pItem of processedItems) {
-            insertItemStmt.run(orderId, pItem.barItemId, pItem.itemName, pItem.quantity, pItem.unitPrice, pItem.totalPrice);
+            insertItemStmt.run(orderId, pItem.barItemId, pItem.itemName, pItem.quantity, pItem.unitPrice, pItem.totalPrice, pItem.buyPrice);
           }
 
           // 6. Kassa tranzaksiyasiga kiritish (agar naqd yoki karta bilan PAID bo'lsa)
           if (effectivePayStatus === 'PAID' && (validPayMethod === 'CASH' || validPayMethod === 'CARD')) {
             db.prepare(`
-              INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(`tx_bar_${Date.now().toString(36)}`, clubId, targetSessionId, calculatedTotal, validPayMethod, String(currentUserId), `BAR_SALE:${orderNum}`);
+              INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by, notes)
+              VALUES (?, ?, ?, ?, ?, ?, 'BAR_SALE', ?, ?)
+            `).run(`tx_bar_${Date.now().toString(36)}`, clubId, targetSessionId, calculatedTotal, validPayMethod, validPayMethod, String(currentUserId), `BAR_SALE:${orderNum}`);
           }
 
           // 7. Agar kompyuter seansiga (ON_PC_SESSION) yozilgan bo'lsa, sessiyaga qo'shish
           if (validPayMethod === 'ON_PC_SESSION' && targetSessionId) {
             db.prepare(`
               UPDATE sessions 
-              SET total_amount = total_amount + ?, notes = notes || ' | BAR:' || ? 
+              SET notes = COALESCE(notes, '') || ' | BAR:' || ? 
               WHERE id = ?
-            `).run(calculatedTotal, orderNum, targetSessionId);
+            `).run(orderNum, targetSessionId);
           }
 
           db.exec('COMMIT;');
@@ -3408,7 +3193,7 @@ const server = http.createServer((req, res) => {
               orderNumber: orderNum,
               totalAmount: calculatedTotal,
               paymentMethod: validPayMethod,
-              paymentStatus: validPayStatus,
+              paymentStatus: effectivePayStatus,
               computerId,
               sessionId,
               items: processedItems
@@ -3425,6 +3210,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const barPayMatch=url.pathname.match(/^\/api\/bar\/orders\/(\d+)\/pay$/);
+  if(barPayMatch && req.method==='POST'){
+    if(!authenticate(req,res,{roles:['superadmin','club_owner','administrator']}))return;
+    readBody(req,data=>{
+      try{
+        const result=payPendingBarOrder(Number(barPayMatch[1]),req.user.clubId||1,data.paymentMethod,req.user.id);
+        broadcastAdminUpdate();sendJson(res,200,result);
+      }catch(error){sendJson(res,400,{error:error.message});}
+    });return;
+  }
+
   // 3b. POST /api/bar/orders/confirm (Mijozning bar buyurtmasini tasdiqlash)
   if (url.pathname === '/api/bar/orders/confirm' && req.method === 'POST') {
     if (!authenticate(req, res, { roles: ['superadmin', 'club_owner', 'administrator'] })) return;
@@ -3434,63 +3230,17 @@ const server = http.createServer((req, res) => {
     readBody(req, (body) => {
       try {
         const { orderId, orderNumber, pcNumber } = body;
-        const order = db.prepare('SELECT * FROM bar_orders WHERE (id = ? OR order_number = ?) AND (club_id = ? OR club_id IS NULL)').get(orderId, orderNumber, clubId);
+        const order = db.prepare('SELECT * FROM bar_orders WHERE (id = ? OR order_number = ?) AND (club_id = ? OR club_id IS NULL)').get(orderId ?? null, orderNumber ?? null, clubId);
 
         if (!order) {
           sendJson(res, 404, { error: 'Buyurtma topilmadi.' });
           return;
         }
 
-        db.exec('BEGIN TRANSACTION;');
         try {
-          // 1. To'lov usuliga qarab sessiya yoki kassa hisobiga yozish
-          let pcNum = order.computer_id;
-          if (!pcNum && pcNumber) {
-            const m = String(pcNumber).match(/\d+/);
-            if (m) pcNum = parseInt(m[0], 10);
-          }
-
-          const pcRow = db.prepare('SELECT id, current_session_id, pc_number FROM computers WHERE pc_number = ? OR id = ?').get(pcNum, `pc_${pcNum}`);
-          const activeSessionId = order.session_id || pcRow?.current_session_id;
-
-          if (order.payment_method === 'ON_PC_SESSION') {
-            db.prepare("UPDATE bar_orders SET payment_status = 'PENDING_AT_CHECKOUT' WHERE id = ?").run(order.id);
-            if (activeSessionId) {
-              db.prepare(`
-                UPDATE sessions 
-                SET total_amount = total_amount + ?, notes = COALESCE(notes, '') || ' | BAR:' || ?
-                WHERE id = ?
-              `).run(order.total_amount, order.order_number, activeSessionId);
-            }
-          } else if (order.payment_method === 'FROM_MEMBER_BALANCE') {
-            db.prepare("UPDATE bar_orders SET payment_status = 'PAID' WHERE id = ?").run(order.id);
-            if (order.user_id) {
-              db.prepare('UPDATE users SET balance = MAX(0, balance - ?) WHERE id = ?').run(order.total_amount, order.user_id);
-              db.prepare(`
-                INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method)
-                VALUES (?, ?, ?, 'SESSION_DEDUCT', 'BALANCE')
-              `).run(clubId, order.user_id, order.total_amount);
-            }
-          } else {
-            // CASH / CARD
-            db.prepare("UPDATE bar_orders SET payment_status = 'PAID' WHERE id = ?").run(order.id);
-            db.prepare(`
-              INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
-              VALUES (?, ?, ?, ?, 'CASH', ?, ?)
-            `).run(`tx_bar_${Date.now().toString(36)}`, clubId, activeSessionId, order.total_amount, String(currentUserId), `BAR_SALE:${order.order_number}`);
-          }
-
-          // 2. Ombor (sklad) qoldiqlarini kamaytirish
-          const orderItems = db.prepare('SELECT * FROM bar_order_items WHERE order_id = ?').all(order.id);
-          for (const it of orderItems) {
-            if (it.bar_item_id && it.bar_item_id > 0) {
-              db.prepare('UPDATE bar_items SET stock_quantity = MAX(0, stock_quantity - ?) WHERE id = ?').run(it.quantity, it.bar_item_id);
-            } else if (it.item_name) {
-              db.prepare('UPDATE bar_items SET stock_quantity = MAX(0, stock_quantity - ?) WHERE name LIKE ?').run(it.quantity, `%${it.item_name}%`);
-            }
-          }
-
-          db.exec('COMMIT;');
+          const pcNum = order.computer_id;
+          const pcRow = db.prepare('SELECT id FROM computers WHERE pc_number = ? AND club_id = ?').get(pcNum, clubId);
+          confirmClientBarOrder(order, clubId, currentUserId);
 
           // 3. PC-04 ga WebSocket orqali "Buyurtmangiz tasdiqlandi, eltib berilmoqda!" xabari yuboriladi
           const targetPcId = pcRow?.id || `pc_${pcNum}`;
@@ -3545,11 +3295,12 @@ const server = http.createServer((req, res) => {
     readBody(req, (body) => {
       try {
         const { orderId, orderNumber, pcNumber, reason = 'Mahsulot tugagan' } = body;
-        const order = db.prepare('SELECT * FROM bar_orders WHERE (id = ? OR order_number = ?) AND (club_id = ? OR club_id IS NULL)').get(orderId, orderNumber, clubId);
+        const order = db.prepare('SELECT * FROM bar_orders WHERE (id = ? OR order_number = ?) AND (club_id = ? OR club_id IS NULL)').get(orderId ?? null, orderNumber ?? null, clubId);
 
-        if (order) {
-          db.prepare("UPDATE bar_orders SET payment_status = 'CANCELLED' WHERE id = ?").run(order.id);
+        if (!order || order.approval_status !== 'PENDING') {
+          sendJson(res, 409, { error: 'Faqat tasdiqlanmagan buyurtmani rad etish mumkin.' }); return;
         }
+        db.prepare("UPDATE bar_orders SET payment_status='CANCELLED', approval_status='REJECTED' WHERE id=?").run(order.id);
 
         let pcNum = order?.computer_id;
         if (!pcNum && pcNumber) {
@@ -3595,7 +3346,7 @@ const server = http.createServer((req, res) => {
 
   // 4. GET /api/bookings & POST /api/bookings
   if (url.pathname === '/api/bookings' && req.method === 'GET') {
-    if (!authenticate(req, res, { allowExpiredClub: true })) return;
+    if (!authenticate(req, res, { roles: ['superadmin','club_owner','administrator'], allowExpiredClub: true })) return;
     const clubId = getTenantClubId(req);
 
     try {
@@ -3643,81 +3394,9 @@ const server = http.createServer((req, res) => {
     const currentUserId = req.user.id;
     const clubId = req.user.clubId || 1;
 
-    readBody(req, (body) => {
-      try {
-        const {
-          computerId,
-          computer_id,
-          customerName,
-          customer_name,
-          customerPhone,
-          customer_phone,
-          startTime,
-          start_time,
-          endTime,
-          end_time,
-          note = '',
-          status = 'CONFIRMED'
-        } = body;
-
-        const rawPc = computerId ?? computer_id;
-        const targetPc = typeof rawPc === 'number' ? rawPc : parseInt(String(rawPc).replace(/\D/g, ''), 10);
-        const name = String(customerName ?? customer_name ?? '').trim();
-        const phone = String(customerPhone ?? customer_phone ?? '').trim();
-        const start = startTime ?? start_time;
-        const end = endTime ?? end_time;
-
-        if (!targetPc || !name || !start || !end) {
-          sendJson(res, 400, { error: 'Kompyuter, mijoz ismi, boshlanish va tugash vaqti talab qilinadi.' });
-          return;
-        }
-
-        // Vaqt to'qnashuvini tekshirish (Overlap conflict check)
-        const conflict = db.prepare(`
-          SELECT b.*, c.name as computer_name 
-          FROM bookings b
-          LEFT JOIN computers c ON (b.computer_id = c.pc_number OR b.computer_id = c.id) AND c.club_id = b.club_id
-          WHERE b.club_id = ? 
-            AND (b.computer_id = ? OR b.computer_id = ?)
-            AND b.status IN ('CONFIRMED', 'PENDING')
-            AND NOT (b.end_time <= ? OR b.start_time >= ?)
-          LIMIT 1
-        `).get(clubId, targetPc, `pc_${targetPc}`, start, end);
-
-        if (conflict) {
-          sendJson(res, 409, {
-            error: `To'qnashuv! Ushbu vaqt oralig'ida (${conflict.start_time} — ${conflict.end_time}) ${conflict.computer_name || ('PC-' + targetPc)} allaqachon bron qilingan: "${conflict.customer_name}"!`
-          });
-          return;
-        }
-
-        const validStatus = ['CONFIRMED', 'CANCELLED', 'COMPLETED', 'PENDING'].includes(status) ? status : 'CONFIRMED';
-
-        const stmt = db.prepare(`
-          INSERT INTO bookings (club_id, computer_id, customer_name, customer_phone, start_time, end_time, note, status, created_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        const result = stmt.run(clubId, targetPc, name, phone, start, end, note, validStatus, String(currentUserId));
-        const newBookingId = Number(result.lastInsertRowid);
-
-        broadcastAdminUpdate();
-        sendJson(res, 201, {
-          success: true,
-          booking: {
-            id: newBookingId,
-            clubId,
-            computerId: targetPc,
-            customerName: name,
-            customerPhone: phone,
-            startTime: start,
-            endTime: end,
-            note,
-            status: validStatus
-          }
-        });
-      } catch (err) {
-        sendJson(res, 500, { error: 'Bron yaratishda xatolik: ' + err.message });
-      }
+    readBody(req, body => {
+      try { const booking=createBooking(db,clubId,currentUserId,body);broadcastAdminUpdate();sendJson(res,201,{success:true,booking}); }
+      catch(error){sendJson(res,error.statusCode || 500,{error:error.message});}
     });
     return;
   }
@@ -3729,26 +3408,9 @@ const server = http.createServer((req, res) => {
     const targetId = parseInt(bookingStatusMatch[1], 10);
     const clubId = getTenantClubId(req);
 
-    readBody(req, (data) => {
-      try {
-        const { status } = data;
-        const validStatuses = ['CONFIRMED', 'PENDING', 'CANCELLED', 'COMPLETED', 'ACTIVE'];
-        if (!validStatuses.includes(status)) {
-          sendJson(res, 400, { error: 'Noto\'g\'ri status: ' + status });
-          return;
-        }
-
-        if (clubId === null) {
-          db.prepare('UPDATE bookings SET status = ? WHERE id = ?').run(status, targetId);
-        } else {
-          db.prepare('UPDATE bookings SET status = ? WHERE id = ? AND club_id = ?').run(status, targetId, clubId);
-        }
-
-        broadcastAdminUpdate();
-        sendJson(res, 200, { success: true, id: targetId, status });
-      } catch (err) {
-        sendJson(res, 500, { error: 'Statusni yangilashda xatolik: ' + err.message });
-      }
+    readBody(req, data => {
+      try {const result=updateBookingStatus(db,clubId,targetId,data.status);broadcastAdminUpdate();sendJson(res,200,{success:true,...result});}
+      catch(error){sendJson(res,error.statusCode || 500,{error:error.message});}
     });
     return;
   }
@@ -3869,12 +3531,12 @@ const server = http.createServer((req, res) => {
       // Jonli hisob-kitoblar (ochilgan vaqtdan buyon)
       const cashRow = db.prepare(`
         SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-        WHERE club_id = ? AND (payment_type = 'CASH' OR payment_method = 'CASH') AND created_at >= ?
+        WHERE club_id = ? AND COALESCE(NULLIF(payment_type, ''), payment_method) = 'CASH' AND created_at >= ?
       `).get(clubId, openShift.opened_at);
 
       const cardRow = db.prepare(`
         SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-        WHERE club_id = ? AND (payment_type IN ('CARD', 'CLICK', 'PAYME') OR payment_method IN ('CARD', 'CLICK', 'PAYME')) AND created_at >= ?
+        WHERE club_id = ? AND COALESCE(NULLIF(payment_type, ''), payment_method) IN ('CARD', 'CLICK', 'PAYME') AND created_at >= ?
       `).get(clubId, openShift.opened_at);
 
       const barRow = db.prepare(`
@@ -3900,7 +3562,7 @@ const server = http.createServer((req, res) => {
       const gameRow = db.prepare(`
         SELECT COALESCE(SUM(amount), 0) as total FROM transactions
         WHERE club_id = ? AND created_at >= ?
-          AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') OR (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
+          AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
       `).get(clubId, openShift.opened_at);
 
       const sessionsRow = db.prepare(`
@@ -3993,12 +3655,12 @@ const server = http.createServer((req, res) => {
           // Kassa va kartalarni hisoblash
           const cashRow = db.prepare(`
             SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-            WHERE club_id = ? AND (payment_type = 'CASH' OR payment_method = 'CASH') AND created_at >= ?
+            WHERE club_id = ? AND COALESCE(NULLIF(payment_type, ''), payment_method) = 'CASH' AND created_at >= ?
           `).get(clubId, openShift.opened_at);
 
           const cardRow = db.prepare(`
             SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-            WHERE club_id = ? AND (payment_type IN ('CARD', 'CLICK', 'PAYME') OR payment_method IN ('CARD', 'CLICK', 'PAYME')) AND created_at >= ?
+            WHERE club_id = ? AND COALESCE(NULLIF(payment_type, ''), payment_method) IN ('CARD', 'CLICK', 'PAYME') AND created_at >= ?
           `).get(clubId, openShift.opened_at);
 
           const finalSystemCash = Number(cashRow?.total || 0);
@@ -4083,7 +3745,7 @@ const server = http.createServer((req, res) => {
                    (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as tx_payment_type
             FROM sessions s
             LEFT JOIN computers c ON (s.computer_id = c.id OR s.computer_id = c.pc_number)
-            WHERE substr(s.started_at, 1, 10) >= ? AND substr(s.started_at, 1, 10) <= ?
+            WHERE date(s.started_at, 'localtime') >= ? AND date(s.started_at, 'localtime') <= ?
             ORDER BY s.started_at DESC
           `).all(fromParam, toParam)
         : db.prepare(`
@@ -4092,7 +3754,7 @@ const server = http.createServer((req, res) => {
             FROM sessions s
             LEFT JOIN computers c ON (s.computer_id = c.id OR s.computer_id = c.pc_number)
             WHERE s.club_id = ?
-              AND substr(s.started_at, 1, 10) >= ? AND substr(s.started_at, 1, 10) <= ?
+              AND date(s.started_at, 'localtime') >= ? AND date(s.started_at, 'localtime') <= ?
             ORDER BY s.started_at DESC
           `).all(clubId, fromParam, toParam);
 
@@ -4131,7 +3793,7 @@ const server = http.createServer((req, res) => {
             FROM bar_order_items boi
             JOIN bar_orders bo ON bo.id = boi.order_id
             LEFT JOIN bar_items bi ON bi.id = boi.bar_item_id
-            WHERE substr(bo.created_at, 1, 10) >= ? AND substr(bo.created_at, 1, 10) <= ?
+            WHERE date(bo.created_at, 'localtime') >= ? AND date(bo.created_at, 'localtime') <= ?
             ORDER BY bo.created_at DESC
           `).all(fromParam, toParam)
         : db.prepare(`
@@ -4142,7 +3804,7 @@ const server = http.createServer((req, res) => {
             JOIN bar_orders bo ON bo.id = boi.order_id
             LEFT JOIN bar_items bi ON bi.id = boi.bar_item_id
             WHERE bo.club_id = ?
-              AND substr(bo.created_at, 1, 10) >= ? AND substr(bo.created_at, 1, 10) <= ?
+              AND date(bo.created_at, 'localtime') >= ? AND date(bo.created_at, 'localtime') <= ?
             ORDER BY bo.created_at DESC
           `).all(clubId, fromParam, toParam);
 
@@ -4167,7 +3829,7 @@ const server = http.createServer((req, res) => {
             SELECT sh.*, u.username as cashier_name
             FROM shifts sh
             LEFT JOIN users u ON sh.opened_by_user_id = u.id
-            WHERE substr(sh.opened_at, 1, 10) >= ? AND substr(sh.opened_at, 1, 10) <= ?
+            WHERE date(sh.opened_at, 'localtime') >= ? AND date(sh.opened_at, 'localtime') <= ?
             ORDER BY sh.opened_at DESC
           `).all(fromParam, toParam)
         : db.prepare(`
@@ -4175,7 +3837,7 @@ const server = http.createServer((req, res) => {
             FROM shifts sh
             LEFT JOIN users u ON sh.opened_by_user_id = u.id
             WHERE sh.club_id = ?
-              AND substr(sh.opened_at, 1, 10) >= ? AND substr(sh.opened_at, 1, 10) <= ?
+              AND date(sh.opened_at, 'localtime') >= ? AND date(sh.opened_at, 'localtime') <= ?
             ORDER BY sh.opened_at DESC
           `).all(clubId, fromParam, toParam);
 
@@ -4211,6 +3873,7 @@ const server = http.createServer((req, res) => {
         },
         summary,
         topSellingItems,
+        breakdown: ledgerReport.breakdown,
         sessions: formattedSessions,
         barSales: formattedBarSales,
         shifts: formattedShifts,
@@ -4285,12 +3948,12 @@ const server = http.createServer((req, res) => {
 
         // Shu kungi tushum
         const txRow = clubId === null
-          ? db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE substr(created_at, 1, 10) = ? AND amount > 0`).get(dStr)
-          : db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE club_id = ? AND substr(created_at, 1, 10) = ? AND amount > 0`).get(clubId, dStr);
+          ? db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE date(created_at, 'localtime') = ? AND amount > 0`).get(dStr)
+          : db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE club_id = ? AND date(created_at, 'localtime') = ? AND amount > 0`).get(clubId, dStr);
 
         const barRow = clubId === null
-          ? db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE substr(created_at, 1, 10) = ? AND payment_status = 'PAID'`).get(dStr)
-          : db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE club_id = ? AND substr(created_at, 1, 10) = ? AND payment_status = 'PAID'`).get(clubId, dStr);
+          ? db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE date(created_at, 'localtime') = ? AND payment_status = 'PAID'`).get(dStr)
+          : db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE club_id = ? AND date(created_at, 'localtime') = ? AND payment_status = 'PAID'`).get(clubId, dStr);
 
         dailyRevenue.push({
           date: dStr,
@@ -4305,6 +3968,7 @@ const server = http.createServer((req, res) => {
         ? db.prepare(`
             SELECT c.id, c.name, c.pc_number, c.zone,
                    COALESCE(SUM(s.total_amount), 0) as total_revenue,
+                   COALESCE(SUM(MAX(0, (julianday(CASE WHEN s.status='ACTIVE' THEN MIN(s.ends_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) ELSE s.ends_at END) - julianday(s.started_at)) * 24)), 0) as played_hours,
                    COUNT(s.id) as sessions_count
             FROM computers c
             LEFT JOIN sessions s ON (s.computer_id = c.id OR s.computer_id = c.pc_number)
@@ -4324,7 +3988,7 @@ const server = http.createServer((req, res) => {
 
       const computerStats = pcStatsQuery.map(pc => {
         const rev = Number(pc.total_revenue || 0);
-        const hours = rev > 0 ? (rev / 12000).toFixed(1) : '0.0';
+        const hours = Number(pc.played_hours || 0).toFixed(1);
         return {
           id: pc.id,
           name: pc.name,
@@ -4368,14 +4032,8 @@ const server = http.createServer((req, res) => {
         } catch (_) {}
       }
 
-      const standardProfile = [2, 1, 0, 0, 0, 0, 1, 3, 6, 8, 12, 16, 20, 24, 28, 35, 42, 50, 65, 78, 85, 75, 55, 30];
       const maxSessions = Math.max(...hourlyDistribution, 1);
-      const normalizedPeakHours = hourlyDistribution.map((cnt, idx) => {
-        if (allSessions.length > 20) {
-          return Math.min(100, Math.round((cnt / maxSessions) * 95) + 5);
-        }
-        return standardProfile[idx];
-      });
+      const normalizedPeakHours = hourlyDistribution.map(count => Math.round(count / maxSessions * 100));
 
       sendJson(res, 200, {
         success: true,
@@ -4394,12 +4052,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if(url.pathname.startsWith('/api/'))return sendJson(res,404,{error:'API manzili topilmadi.'});
   // Static files
   let filePath = path.join(PUBLIC_DIR, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!fs.existsSync(filePath)) {
     filePath = path.join(PUBLIC_DIR, 'index.html');
   }
 
+  if (!path.resolve(filePath).startsWith(path.resolve(PUBLIC_DIR)+path.sep) || !fs.statSync(filePath,{throwIfNoEntry:false})?.isFile())return sendJson(res,404,{error:'Fayl topilmadi.'});
   if (fs.existsSync(filePath)) {
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes = {
@@ -4410,13 +4070,13 @@ const server = http.createServer((req, res) => {
       '.svg': 'image/svg+xml'
     };
     res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain' });
-    fs.createReadStream(filePath).pipe(res);
+    fs.createReadStream(filePath).on('error',()=>res.destroy()).pipe(res);
     return;
   }
 
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Not Found');
-});
+}
 
 function sendJson(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -4424,14 +4084,14 @@ function sendJson(res, code, data) {
 }
 
 function readBody(req, callback) {
-  let body = '';
-  req.on('data', chunk => { body += chunk; });
-  req.on('end', () => {
-    try {
-      callback(JSON.parse(body));
-    } catch {
-      callback({});
-    }
+  let body='',bytes=0,rejected=false;
+  req.on('data',chunk=>{bytes+=chunk.length;if(bytes>1024*1024){if(!rejected){rejected=true;sendJson(req.res,413,{error:'So‘rov juda katta.'});}return;}if(!rejected)body+=chunk;});
+  req.on('error',()=>{rejected=true;});
+  req.on('end',()=>{
+    if(rejected)return;let parsed;
+    try{parsed=body?JSON.parse(body):{};if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error();}
+    catch{if(!req.res.writableEnded)sendJson(req.res,400,{error:'JSON obyekti talab qilinadi.'});return;}
+    Promise.resolve().then(()=>callback(parsed)).catch(error=>{console.error('[Request]',error.message);if(!req.res.headersSent)sendJson(req.res,500,{error:'Amalni bajarishda xatolik.'});});
   });
 }
 
@@ -4449,7 +4109,7 @@ function resolvePcId(rawId) {
   return str;
 }
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 65536 });
 ClientManager.wss = wss;
 
 // Anti-Piracy, HWID Locking & Remote Kill-Switch Initsializatsiyasi
@@ -4461,12 +4121,14 @@ LicenseManager.init({
     CloudLicenseService.init().catch(error => console.warn('[CloudLicense]', error.message));
   },
   clientBroadcaster: (payload) => {
-    ClientManager.broadcastToAll(payload);
+    ClientManager.broadcast(payload.type || payload.event, payload);
   },
   sessionDropper: () => {
     SessionScheduler.dropAllActiveSessions('LOCKED_BY_ADMIN');
   }
 });
+
+CloudLicenseService.init().catch(error => console.warn('[CloudLicense]', error.message));
 
 wss.on('connection', (socket, req) => {
   const remoteIp = req.socket?.remoteAddress?.replace('::ffff:', '') || '127.0.0.1';
@@ -4475,7 +4137,18 @@ wss.on('connection', (socket, req) => {
 
   socket.on('message', (data) => {
     if (ServerUpdater.applying) return;
-    ProtocolDispatcher.handleMessage(socket, data.toString());
+    let message;
+    try { message = JSON.parse(data.toString()); } catch { return; }
+    if(!message||typeof message!=='object'||Array.isArray(message))return;
+    if ((CloudLicenseService.isBlocked() || !LicenseManager.isOperational()) &&
+        !['CLIENT_HELLO', 'CLIENT_HANDSHAKE', 'HEARTBEAT_PING', 'PING', 'HEARTBEAT', 'CLIENT_HEARTBEAT'].includes(message.type || message.event)) {
+      socket.send(JSON.stringify({ type: 'EMERGENCY_LOCKDOWN', payload: { message: LicenseManager.lockMessage, reason: LicenseManager.lockReason } }));
+      return;
+    }
+    try{ProtocolDispatcher.handleMessage(socket, data.toString());}catch(error){console.warn('[Protocol]',error.message);socket.send(JSON.stringify({type:'REQUEST_ERROR',payload:{message:'So‘rov noto‘g‘ri.'}}));}
+    if (!LicenseManager.isOperational()) {
+      socket.send(JSON.stringify({ type: 'EMERGENCY_LOCKDOWN', payload: { message: LicenseManager.lockMessage, reason: LicenseManager.lockReason } }));
+    }
   });
 
   socket.on('close', (code, reason) => {
@@ -4504,7 +4177,9 @@ function getLocalLanIps() {
   return results;
 }
 
+const mobileAgent = new MobileAgent({db,getLicense:()=>LicenseManager.getSignedLicense(),getCloudUrl:()=>LicenseManager.cloudUrl,isOperational:()=>LicenseManager.isOperational()&&!CloudLicenseService.isBlocked(),localPort:PORT,staffSession:mobileStaffSession,logout:mobileLogout});
 server.listen(PORT, '0.0.0.0', () => {
+  mobileAgent.start();
   const lanIps = getLocalLanIps();
   console.log('================================================================');
   console.log(`🚀 NetCafe Pro Core Engine Server: http://0.0.0.0:${PORT}`);
@@ -4527,6 +4202,7 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 ServerUpdater.onShutdown = () => {
+  mobileAgent.stop();
   HeartbeatMonitor.stop();
   SessionScheduler.stop();
   db.exec('PRAGMA wal_checkpoint(TRUNCATE)');

@@ -111,7 +111,18 @@ public partial class ShellWindow : Window, System.ComponentModel.INotifyProperty
         InitializeSnackCatalog();
         ApplyFilter();
 
+        SizeChanged += (_, e) => UpdateAdaptiveLayout(e.NewSize.Width);
         Loaded += ShellWindow_Loaded;
+    }
+
+    private void UpdateAdaptiveLayout(double width)
+    {
+        bool compact = width < 1280;
+        Grid.SetRow(HeaderActions, compact ? 1 : 0);
+        Grid.SetColumn(HeaderActions, compact ? 0 : 2);
+        Grid.SetColumnSpan(HeaderActions, compact ? 3 : 1);
+        HeaderActions.HorizontalAlignment = System.Windows.HorizontalAlignment.Right;
+        HeaderActions.Margin = compact ? new Thickness(0, 12, 0, 0) : new Thickness(0);
     }
 
     private void ShellWindow_Loaded(object sender, RoutedEventArgs e)
@@ -757,7 +768,7 @@ public partial class ShellWindow : Window, System.ComponentModel.INotifyProperty
 
     public void UpdateSessionData(int remainingSeconds, string tariffName, int pcNumber, string customerName = "Mehmon", double? balance = null)
     {
-        if (balance.HasValue && balance.Value > 0)
+        if (balance.HasValue)
         {
             StartMemberSession(customerName, balance.Value, remainingSeconds, pcNumber);
         }
@@ -883,6 +894,7 @@ public partial class ShellWindow : Window, System.ComponentModel.INotifyProperty
     private void BtnOpenBar_Click(object sender, RoutedEventArgs e)
     {
         var barWindow = new BarShopWindow(
+            wsService: (System.Windows.Application.Current as App)?.WsService,
             pcNumber: _pcNumber,
             memberUsername: _customerName,
             memberBalance: _customerBalance,

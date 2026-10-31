@@ -1,3 +1,4 @@
+import { monthlyFee, licenseStatus, validatePayment } from './cloudDashboardService.js';
 /**
  * Softech Super Admin — SaaS Subscription & Billing Service
  * Location: SoftechCloudAdmin/src/services/billingService.js
@@ -14,29 +15,7 @@ export class BillingService {
    * - PER_PC: Har bir kompyuter uchun (masalan: 20 ta PC * 20 000 = 400 000 UZS/oy)
    * - FIXED: Qat'iy oylik obuna (masalan: 500 000 UZS/oy)
    */
-  static calculateMonthlyFee(club) {
-    const totalPcs = Math.max(0, parseInt(club.total_workstations, 10) || 0);
-    const tariffType = (club.tariff_type || 'PER_PC').toUpperCase();
-    const pricePerPc = parseFloat(club.tariff_price_per_pc) || 20000;
-    const fixedPrice = parseFloat(club.tariff_fixed_price) || 500000;
-
-    if (tariffType === 'FIXED') {
-      return {
-        tariffType: 'FIXED',
-        monthlyFee: fixedPrice,
-        description: `Qat'iy oylik obuna: ${fixedPrice.toLocaleString()} UZS / oy`
-      };
-    }
-
-    const calculated = totalPcs * pricePerPc;
-    return {
-      tariffType: 'PER_PC',
-      pricePerPc,
-      totalPcs,
-      monthlyFee: calculated,
-      description: `${totalPcs} PC × ${pricePerPc.toLocaleString()} UZS = ${calculated.toLocaleString()} UZS / oy`
-    };
-  }
+  static calculateMonthlyFee(club) { return monthlyFee(club); }
 
   /**
    * 2. Litsenziya Statusini hisoblash (Yashil, Sariq, Qizil)
@@ -44,47 +23,7 @@ export class BillingService {
    * - Sariq: To'lov muddati yaqinlashmoqda (3 kun qoldi)
    * - Qizil: Muddati o'tgan (Qarzdor)
    */
-  static getLicenseStatus(club) {
-    if (!club.license_expires_at) {
-      return {
-        code: 'RED',
-        daysLeft: 0,
-        label: "Muddati o'tgan (Qarzdor)",
-        badgeClass: 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-      };
-    }
-
-    const expiresMs = new Date(club.license_expires_at).getTime();
-    const now = Date.now();
-    const diffMs = expiresMs - now;
-    const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-    if (daysLeft <= 0 || club.status === 'SUSPENDED_PAYMENT') {
-      return {
-        code: 'RED',
-        daysLeft: Math.min(0, daysLeft),
-        label: "Muddati o'tgan (Qarzdor)",
-        badgeClass: 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-      };
-    }
-
-    if (daysLeft <= 3) {
-      return {
-        code: 'YELLOW',
-        daysLeft,
-        label: `To'lov yaqinlashmoqda (${daysLeft} kun qoldi)`,
-        badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
-        warningNotice: "Tizim klub egasiga avtomatik ogohlantirish chiqaradi"
-      };
-    }
-
-    return {
-      code: 'GREEN',
-      daysLeft,
-      label: `To'lov qilingan (${daysLeft} kun bor)`,
-      badgeClass: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-    };
-  }
+  static getLicenseStatus(club) { return licenseStatus(club); }
 
   /**
    * 3. Barcha klublar bo'yicha Billing umumiy xulosasi (Cockpit KPI)
@@ -168,9 +107,9 @@ export class BillingService {
         totalWorkstations: c.total_workstations,
         licenseExpiresAt: c.license_expires_at,
         tariff: {
-          type: c.tariff_type || 'PER_PC',
-          pricePerPc: Number(c.tariff_price_per_pc) || 20000,
-          fixedPrice: Number(c.tariff_fixed_price) || 500000,
+          type: feeInfo.tariffType,
+          pricePerPc: Number(c.tariff_price_per_pc ?? 20000),
+          fixedPrice: Number(c.tariff_fixed_price ?? 500000),
           monthlyFee: feeInfo.monthlyFee,
           description: feeInfo.description
         },
@@ -190,91 +129,23 @@ export class BillingService {
    * - Muddati (+1 oyga yoki ko'rsatilgan oylarga uzaytirish)
    * - Agar qulflangan bo'lsa darhol ACTIVE ga o'tkazadi va UNLOCK buyrug'ini yuboradi
    */
-  static recordPayment(clubId, {
-    amount,
-    paymentMethod = 'CLICK',
-    monthsAdded = 1,
-    notes = '',
-    recordedBy = 'superadmin'
-  }) {
-    const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId);
-    if (!club) {
-      throw new Error(`Filial topilmadi (ID: ${clubId})`);
-    }
-
-    const payAmount = parseFloat(amount);
-    if (!payAmount || payAmount <= 0) {
-      throw new Error("To'lov summasi 0 dan katta bo'lishi shart.");
-    }
-
-    const validMethods = ['CASH', 'CLICK', 'PAYME', 'BANK_TRANSFER'];
-    const method = String(paymentMethod).toUpperCase();
-    if (!validMethods.includes(method)) {
-      throw new Error(`Noto'g'ri to'lov turi: ${paymentMethod}`);
-    }
-
-    const months = Math.max(1, parseInt(monthsAdded || 1, 10));
-
-    // Yangi litsenziya muddatini hisoblash
-    const previousExpiryIso = club.license_expires_at || new Date().toISOString();
-    const prevTime = new Date(previousExpiryIso).getTime();
-    const baseTime = prevTime > Date.now() ? prevTime : Date.now();
-    const addedDays = months * 30;
-    const newExpiryDateIso = new Date(baseTime + addedDays * 24 * 3600 * 1000).toISOString();
-
-    // 1. clubs jadvalida litsenziyani uzaytirish va holatni ACTIVE qilish
-    db.prepare(`
-      UPDATE clubs
-      SET license_expires_at = ?,
-          status = 'ACTIVE',
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(newExpiryDateIso, clubId);
-
-    // 2. Tranzaksiyani subscription_payments jadvaliga yozish
-    const insertPayment = db.prepare(`
-      INSERT INTO subscription_payments (
-        club_id, amount, payment_method, months_added,
-        previous_expiry_date, new_expiry_date, notes, recorded_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = insertPayment.run(
-      clubId,
-      payAmount,
-      method,
-      months,
-      previousExpiryIso,
-      newExpiryDateIso,
-      notes || `SaaS obunasi +${months} oyga uzaytirildi`,
-      recordedBy
-    );
-
-    const paymentId = Number(result.lastInsertRowid);
-
-    // 3. Filial serveriga avtomatik UNLOCK_CLUB_LICENSE buyrug'ini navbatga qo'yish
-    TelemetryService.queueRemoteCommand(clubId, 'UNLOCK_CLUB_LICENSE', {
-      lockScreen: false,
-      newStatus: 'ACTIVE',
-      licenseExpiresAt: newExpiryDateIso,
-      paymentId,
-      message: `Obuna to'lovi qabul qilindi. Litsenziya +${months} oyga uzaytirildi.`,
-      timestamp: Date.now()
-    });
-
-    return {
-      success: true,
-      paymentId,
-      clubId,
-      clubName: club.name,
-      amount: payAmount,
-      paymentMethod: method,
-      monthsAdded: months,
-      previousExpiryDate: previousExpiryIso,
-      newExpiryDate: newExpiryDateIso,
-      status: 'ACTIVE',
-      message: `${club.name} uchun ${payAmount.toLocaleString()} UZS to'lov qabul qilindi. Litsenziya ${newExpiryDateIso.slice(0, 10)} gacha uzaytirildi.`
-    };
+  static recordPayment(clubId,input) {
+    const p=validatePayment({...input,clubId});
+    if(!db.prepare('PRAGMA table_info(subscription_payments)').all().some(c=>c.name==='request_id'))db.exec('ALTER TABLE subscription_payments ADD COLUMN request_id TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS subscription_request_id ON subscription_payments(request_id)');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const club=db.prepare('SELECT * FROM clubs WHERE id=?').get(clubId);if(!club)throw new Error('Klub topilmadi.');
+      let row=db.prepare('SELECT * FROM subscription_payments WHERE request_id=?').get(p.requestId);
+      if(row){if(row.club_id!==p.clubId||row.amount!==p.amount||row.months_added!==p.months||row.payment_method!==p.method)throw new Error('Bu requestId boshqa to‘lov uchun ishlatilgan.');}
+      else {
+        const previous=club.license_expires_at || new Date().toISOString(),base=Math.max(Date.parse(previous)||0,Date.now()),expiry=new Date(base+p.months*30*86400000).toISOString();
+        db.prepare('INSERT INTO subscription_payments (club_id,amount,payment_method,months_added,previous_expiry_date,new_expiry_date,notes,recorded_by,request_id) VALUES (?,?,?,?,?,?,?,?,?)').run(p.clubId,p.amount,p.method,p.months,previous,expiry,p.notes,input.recordedBy||'superadmin',p.requestId);
+        db.prepare("UPDATE clubs SET license_expires_at=?,status='ACTIVE',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(expiry,p.clubId);
+        row=db.prepare('SELECT * FROM subscription_payments WHERE request_id=?').get(p.requestId);
+      }
+      db.exec('COMMIT');return {success:true,paymentId:row.id,clubId:row.club_id,clubName:club.name,amount:row.amount,paymentMethod:row.payment_method,monthsAdded:row.months_added,previousExpiryDate:row.previous_expiry_date,newExpiryDate:row.new_expiry_date,status:'ACTIVE'};
+    }catch(error){db.exec('ROLLBACK');throw error;}
   }
 
   /**
@@ -284,9 +155,11 @@ export class BillingService {
     const club = db.prepare('SELECT id, name FROM clubs WHERE id = ?').get(clubId);
     if (!club) throw new Error('Filial topilmadi');
 
-    const type = ['PER_PC', 'FIXED'].includes(String(tariffType).toUpperCase()) ? String(tariffType).toUpperCase() : 'PER_PC';
-    const pcPrice = parseFloat(pricePerPc) || 20000;
-    const fixPrice = parseFloat(fixedPrice) || 500000;
+    const type = String(tariffType).toUpperCase();
+    if (!['PER_PC','FIXED'].includes(type)) throw new Error('Tarif turi yaroqsiz.');
+    const pcPrice = Number(pricePerPc);
+    const fixPrice = Number(fixedPrice);
+    if(![pcPrice,fixPrice].every(v=>Number.isFinite(v)&&v>=0&&v<=1e12))throw new Error('Tarif narxi yaroqsiz.');
 
     db.prepare(`
       UPDATE clubs

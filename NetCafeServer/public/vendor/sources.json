@@ -1,0 +1,12 @@
+[
+  {
+    "file": "tailwind-3.4.17.js",
+    "url": "https://cdn.tailwindcss.com/3.4.17",
+    "sha256": "176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15"
+  },
+  {
+    "file": "chart-4.4.7.js",
+    "url": "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.js",
+    "sha256": "2812cb8825fdc57469eb2f7bb055e9429244e599920511ee477e828499b632cb"
+  }
+]

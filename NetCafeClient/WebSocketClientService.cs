@@ -293,7 +293,7 @@ public class WebSocketClientService
             @event = "CLIENT_HANDSHAKE",
             pcNumber = _config.PcNumber,
             mac = mac,
-            clientVersion = "1.0.0",
+            clientVersion = typeof(WebSocketClientService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
             ip = localIp,
             payload = new
             {
@@ -302,7 +302,7 @@ public class WebSocketClientService
                 mac = mac,
                 macAddress = mac,
                 clientVersion = "1.0.0",
-                agentVersion = "1.0.0",
+                agentVersion = typeof(WebSocketClientService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
                 osInfo = Environment.OSVersion.VersionString
             },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -397,6 +397,12 @@ public class WebSocketClientService
 
             switch (eventName.ToUpperInvariant())
             {
+                case "BAR_ORDER_RECEIVED":
+                    _barOrderResponse?.TrySetResult(true);
+                    break;
+                case "BAR_ORDER_REJECTED":
+                    _barOrderResponse?.TrySetException(new InvalidOperationException(data.TryGetProperty("reason", out var barReason) ? barReason.GetString() : "Buyurtma rad etildi."));
+                    break;
                 // ---- SaaS Remote Kill-Switch & Anti-Piracy Lockdown ----
                 case "SUPER_ADMIN_LOCKDOWN":
                 case "EMERGENCY_LOCKDOWN":
@@ -613,7 +619,7 @@ public class WebSocketClientService
     // Outgoing Messages
     // -----------------------------------------------------------------------
 
-    public async Task SendMemberLoginAsync(string username, string password)
+    public async Task SendMemberLoginAsync(string username, string password, int durationMinutes)
     {
         var msg = new
         {
@@ -622,7 +628,8 @@ public class WebSocketClientService
             pcNumber = _config.PcNumber,
             username,
             password,
-            payload = new { pcNumber = _config.PcNumber, username, password },
+            durationMinutes,
+            payload = new { pcNumber = _config.PcNumber, username, password, durationMinutes },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
         await SendRawAsync(msg);
@@ -654,11 +661,25 @@ public class WebSocketClientService
         await SendRawAsync(msg);
     }
 
+    private TaskCompletionSource<bool>? _barOrderResponse;
+    private string? _barRetryId;
+    private string? _barRetryBody;
+    public string ServerHttpUrl
+    {
+        get { var uri = new UriBuilder(_config.ServerUrl); uri.Scheme = uri.Scheme == "wss" ? "https" : "http"; uri.Path = "/"; return uri.Uri.ToString().TrimEnd('/'); }
+    }
+
     public async Task SendBarOrderAsync(string pcNumber, object items, double totalAmount, string paymentMethod = "ON_PC_SESSION", string? note = null)
     {
         string pType = string.IsNullOrWhiteSpace(paymentMethod) ? "ON_PC_SESSION" : paymentMethod;
+        if (_barOrderResponse != null) throw new InvalidOperationException("Oldingi buyurtma javobi kutilmoqda.");
+        var fingerprint = JsonSerializer.Serialize(new { items, totalAmount, pType, note });
+        if (_barRetryId == null || _barRetryBody != fingerprint) _barRetryId = Guid.NewGuid().ToString();
+        _barRetryBody = fingerprint;
+        var requestId = _barRetryId;
         var msg = new
         {
+            requestId,
             type = "CLIENT_BAR_ORDER",
             @event = "CLIENT_BAR_ORDER",
             pcNumber = _config.PcNumber,
@@ -670,6 +691,7 @@ public class WebSocketClientService
             note,
             payload = new
             {
+                requestId,
                 pcNumber = _config.PcNumber,
                 workstationName = _config.PcNumber,
                 items,
@@ -680,7 +702,15 @@ public class WebSocketClientService
             },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
-        await SendRawAsync(msg);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _barOrderResponse = completion;
+        try
+        {
+            await SendRawAsync(msg);
+            await completion.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            _barRetryId = null; _barRetryBody = null;
+        }
+        finally { _barOrderResponse = null; }
     }
 
     public async Task SendRawAsync(object data)

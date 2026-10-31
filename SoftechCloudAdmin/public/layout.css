@@ -1,0 +1,44 @@
+
+/* Shared mobile controls, safe areas and equal navigation cells. */
+:root { color-scheme: dark; --sat: env(safe-area-inset-top,0px); --sab: env(safe-area-inset-bottom,0px); }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+body { padding-bottom: calc(92px + env(safe-area-inset-bottom,0px)); }
+body > header { padding-top: calc(16px + env(safe-area-inset-top,0px)) !important; }
+body > header > div:first-child { gap: 12px; max-width: 640px; margin-inline: auto; }
+body > header h1 { white-space: nowrap; }
+body > header button { min-width: 44px; min-height: 44px; }
+button, input, select, textarea { touch-action: manipulation; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #38bdf8; outline-offset: 3px; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+#dashboardContent { max-width: 640px; min-width: 0; }
+#dashboardContent button { min-height: 40px; }
+#dashboardContent input:not([type="checkbox"]), #dashboardContent select { min-height: 44px; }
+#dashboardContent .grid > *, #dashboardContent .flex > * { min-width: 0; }
+#dashboardContent .overflow-x-auto { scrollbar-width: none; }
+#dashboardContent .overflow-x-auto::-webkit-scrollbar { display: none; }
+#dashboardContent .overflow-x-auto > * { flex-shrink: 0; }
+body > nav { display: grid !important; grid-template-columns: repeat(5,minmax(0,1fr)); padding: 6px; gap: 2px; max-width: 616px; bottom: calc(8px + env(safe-area-inset-bottom,0px)); margin-bottom: 0 !important; }
+body > nav button[id^="navTab"] { width: 100%; min-width: 0; min-height: 56px; padding: 6px 2px; gap: 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px; }
+body > nav button[aria-current="page"] { background: rgba(56,189,248,.1); }
+body > nav button span { font-size: 10px; line-height: 1.25; white-space: nowrap; }
+body > nav svg { width: 20px; height: 20px; flex-shrink: 0; }
+#toastNotification { top: auto !important; bottom: calc(88px + env(safe-area-inset-bottom,0px)); pointer-events: none; }
+[id$="ModalContainer"] > div, #remoteCommandModal > div, #authModal > div { max-height: calc(100dvh - 24px - env(safe-area-inset-top,0px)); overflow-y: auto; overscroll-behavior: contain; }
+[id$="ModalContainer"] button, #remoteCommandModal button { min-height: 44px; }
+[id$="ModalContainer"] input, [id$="ModalContainer"] select { min-height: 44px; font-size: 16px; }
+@media (max-width: 360px) { body > header { padding-inline: 12px; } body > header h1 { font-size: 12px; } body > header h1 + span { display: none; } #dashboardContent { padding-inline: 12px; } }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+.club-directory-heading { flex-direction: column; align-items: stretch; gap: 14px; }
+.club-directory-heading > div:last-child { display: grid; grid-template-columns: 1fr 1fr 44px; }
+.club-directory-heading button { justify-content: center; white-space: nowrap; }
+.club-metadata { flex-wrap: wrap; gap: 8px; }
+.club-metadata > div:first-child { flex-wrap: wrap; }
+.club-metadata > div:first-child > span:nth-child(2) { flex-shrink: 0; }
+.club-quick-actions > a, #dashboardContent .club-quick-actions > button { min-height: 48px; }
+
+#dashboardContent .club-directory-heading { align-items: stretch; }
+#dashboardContent .club-owner-line { flex-wrap: wrap; gap: 4px 8px; }
+#dashboardContent .club-owner-line > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dashboardContent .club-occupancy-line { flex-wrap: wrap; gap: 6px; }
+#dashboardContent .club-occupancy-line > span:last-child { white-space: nowrap; }

@@ -1,3 +1,6 @@
+import { deliverCommands } from '../services/commandDelivery.js';
+import { ManagerAccountService } from '../services/managerAccountService.js';
+import { verifyTelemetryLicense } from '../services/telemetryAuth.js';
 /**
  * Softech Cloud Hub — Ingestion & Telemetry API
  * Location: SoftechCloudAdmin/src/routes/telemetry.js
@@ -83,10 +86,7 @@ export function validateClubSecretToken(clubId, token) {
   }
 
   // To'g'ridan-to'g'ri api_secret_token yoki tizimli token bilan tekshirish
-  const expectedToken = club.api_secret_token || `softech_sec_${club.slug || club.id}_token`;
-  const isFallbackMatch = token === `softech_token_club_${club.id}` || token === expectedToken;
-
-  if (token !== club.api_secret_token && !isFallbackMatch) {
+  if (!club.api_secret_token || token !== club.api_secret_token) {
     return { valid: false, error: "Ruxsat etilmagan litsenziya tokeni (Invalid Club Secret Token)." };
   }
 
@@ -115,7 +115,9 @@ export async function handleHeartbeatIngestion(req, res) {
     }
 
     // 1. Token orqali klubni tekshirish
-    const authCheck = validateClubSecretToken(clubId, bearerToken);
+    const proof=verifyTelemetryLicense(payload.signedLicense);
+    const signedClub=proof && Number(proof.clubId)===clubId ? db.prepare('SELECT * FROM clubs WHERE id=? AND hardware_fingerprint=?').get(clubId,proof.hardwareFingerprint) : null;
+    const authCheck = signedClub ? {valid:true,club:signedClub} : validateClubSecretToken(clubId, bearerToken);
     if (!authCheck.valid) {
       return sendJson(res, 401, {
         status: 'UNAUTHORIZED',
@@ -125,7 +127,7 @@ export async function handleHeartbeatIngestion(req, res) {
 
     const club = authCheck.club;
     const nowIso = new Date().toISOString();
-    const todayStr = nowIso.slice(0, 10);
+    const todayStr = /^\d{4}-\d{2}-\d{2}$/.test(payload.reportDate || '') ? payload.reportDate : nowIso.slice(0,10);
 
     // Litsenziya muddati o'tganligini tekshirish
     const isLicenseExpired = club.license_expires_at ? new Date(club.license_expires_at).getTime() < Date.now() : false;
@@ -165,7 +167,7 @@ export async function handleHeartbeatIngestion(req, res) {
           server_lan_ip = COALESCE(?, server_lan_ip),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(nextStatus, appVersion, onlinePcs, clientIp, clubId);
+    `).run(nextStatus, appVersion, club.total_workstations, clientIp, clubId);
 
     // 3. Agar kassa ko'rsatkichlari (todayRevenue, activeCashier) yuborilgan bo'lsa, saqlash
     if (payload.todayRevenue !== undefined || payload.occupiedPcsCount !== undefined) {
@@ -175,13 +177,14 @@ export async function handleHeartbeatIngestion(req, res) {
 
       db.prepare(`
         INSERT INTO club_metrics (
-          club_id, record_date, total_daily_revenue, peak_concurrent_pcs, bar_revenue
-        ) VALUES (?, ?, ?, ?, ?)
+          club_id, record_date, total_daily_revenue, peak_concurrent_pcs, bar_revenue, total_sessions_count
+        ) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(club_id, record_date) DO UPDATE SET
           total_daily_revenue = excluded.total_daily_revenue,
           peak_concurrent_pcs = MAX(club_metrics.peak_concurrent_pcs, excluded.peak_concurrent_pcs),
-          bar_revenue = CASE WHEN excluded.bar_revenue > 0 THEN excluded.bar_revenue ELSE club_metrics.bar_revenue END
-      `).run(clubId, todayStr, dailyRev, occupiedPcs, barRev);
+          bar_revenue = excluded.bar_revenue,
+          total_sessions_count = excluded.total_sessions_count
+      `).run(clubId, todayStr, dailyRev, occupiedPcs, barRev, Math.max(0, Number(payload.totalSessionsCount)||0));
     }
 
     // 4. Ishchi o'rinlari (Workstations) matritsasi keshini yangilash
@@ -207,7 +210,7 @@ export async function handleHeartbeatIngestion(req, res) {
           let sessionStart = null;
           if (status === 'OCCUPIED' && item.minutesLeft) {
             // Qolgan vaqtga qarab seans vaqtini belgilash
-            sessionStart = new Date(Date.now() - (item.playedMinutes || 30) * 60000).toISOString();
+            sessionStart = Number.isFinite(Date.parse(item.startedAt))?new Date(item.startedAt).toISOString():null;
           }
 
           upsertPcStmt.run(clubId, pcNum, zoneName, status, sessionStart);
@@ -254,6 +257,9 @@ export async function handleHeartbeatIngestion(req, res) {
       serverTime: nowIso,
       clubStatus: nextStatus,
       isLicenseExpired,
+      signedCommands: await deliverCommands({db},club,payload.commandResults),
+      managerAccount: await new ManagerAccountService({db}).delivery(club,payload.managerRevision),
+      administratorAccount: await new ManagerAccountService({db,role:'administrator'}).delivery(club,payload.administratorRevision),
       pendingCommandsCount: pendingCommands.length,
       pendingCommands
     });

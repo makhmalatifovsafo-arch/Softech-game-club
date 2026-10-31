@@ -1,0 +1,141 @@
+YANGI KENGAYTIRILGAN AUDIT: AUDIT-RESULTS.txt ni ham o'qing.
+
+SOFTECH GAME CLUB — TEKSHIRUV NATIJALARI
+Sana: 2026-10-31
+Loyiha: C:/Users/user/Documents/GitHub/Softech-game-club
+Yakuniy mahalliy paket: Releases/v1.0.15
+
+BAJARILGAN TEKSHIRUVLAR
+- npm test: 46/46 test o'tdi.
+- Izolyatsiyalangan cloud + klub server + WebSocket client:
+  aktivatsiya, litsenziya kaliti, HWID bog'lash, ban, biznes API bloklanishi,
+  clientga lockdown yetishi, restart/oflaynda ban saqlanishi va qayta faollashtirish.
+- Simulyatsiyalangan soat: 72 soat chegarasi, muddat tugagach restart bilan
+  cheklovni chetlab o'ta olmaslik, soatni orqaga surish, yangi imzo bilan tiklash.
+- Savdo: naqd/karta/balans, topup, mahsulot qoldig'i, tarixiy tannarx,
+  seans checkout, ikki martalik to'lovni rad qilish, mijoz balansi yetishmasligi.
+- Mijoz tanlagan daqiqalar puli oldindan bir marta yechilishi; erta chiqishda qoldiq qaytishi;
+  bitta mijozning bir vaqtda ikki PC da seans ochishi rad qilinishi.
+- Client bar buyurtmasi: server narxi, kassir tasdig'i, naqd/balans,
+  soxta narxni e'tiborsiz qoldirish, qayta yuborishda bir xil buyurtma ID.
+- Seans tugagandan keyin bar qarzini to'lash, ikkinchi to'lovni rad qilish.
+- Hisobot: tushumga balans sarfini ikki marta qo'shmaslik; klub chegaralari;
+  savdo sanasi va to'lov sanasining farqi; menyular va matnni HTML sifatida bajarmaslik.
+- Yangi production baza: namuna akkaunt/pul/mahsulot/smena yo'q;
+  menejer super admin belgilamaguncha yaratilmaydi; parol fayli yozilmaydi.
+- .NET client build va barcha 1.0.15 release publish amallari muvaffaqiyatli.
+- Native idle/update policy va paket yo'llari tekshiruvi o'tdi.
+- Native updater: cancel, concurrent, corrupt, success, rollback — 5/5 o'tdi.
+- Tayyor client/server arxivlari: hashlar va paket manifestlari tekshirildi.
+- Tayyor server o'z Node runtime va dependencylari bilan ishga tushdi.
+- HTML ichidagi skriptlar sintaktik tekshiruvdan o'tdi.
+- .env qiymatlari maxfiy holda format bo'yicha tekshirildi.
+  Telegram/Supabase avvalgi faqat o'qish ulanish tekshiruvlarida javob qaytargan;
+  real klub ma'lumotlari o'zgartirilmadi, haqiqiy Telegram xabari yuborilmadi.
+
+HISOBOTDAN FOYDALANISH
+Hisobot > To'lovlar tafsiloti:
+- Oddiy seanslar; o'yin — mijoz balansi.
+- Balans to'ldirish; oddiy seans + balans to'ldirish.
+- Bar — naqd; bar — karta; bar — mijoz balansi.
+- Bar mahsulotlari — naqd/karta.
+- To'lanmagan bar qarzlari (tanlangan sanadagi buyurtmalar).
+- Qaytarish va boshqa amallar.
+Kassa jadvali naqd/kartani o'yin, bar, topup va qaytimga ajratadi.
+Qarzda har bir mahsulot satri ko'rsatiladi; Naqd/Karta tugmasi shu buyurtmaning
+butun qarzini to'laydi. CSV tanlangan bo'limni eksport qiladi.
+
+AMALIY CHEGARALAR
+- Jonli Vercelga deploy, commit, push yoki GitHub Release publish qilinmadi.
+- Vercel o'z environment qiymatlaridan foydalanadi; lokal .env u yerga avtomatik ko'chmaydi.
+- Haqiqiy telefonda jonli Vercel UI, ikki fizik PC, o'yin jarayoni,
+  kiosk/watchdog, kompyuterni o'chirish va real installer GUI to'liq sinalmagan.
+  Client --dev rejimida Windows shutdown/restart buyruqlarini bajarmaydi.
+- Brauzerda asosiy server va mobil admin sahifalari ko'rildi; haqiqiy telefonda sinov o'tkazilmadi.
+- Oldingi versiyada noto'g'ri yozilgan tarixiy savdolar avtomatik qayta yozilmadi.
+- Mavjud o'rnatishlardagi standart parollar avtomatik almashtirilmadi;
+  ularni super adminning Menejer akkaunti oynasida almashtirish kerak.
+- Litsenziya mavjud HMAC moslik sxemasidan foydalanadi. Bu testlar kodni
+  qasddan o'zgartirishga qarshi to'liq anti-piracy xavfsizlik auditi emas.
+- Yangi ban internet borligida yetib keladi. Internet yo'q paytda avvalgi
+  ban saqlanadi; hali olinmagan yangi ban masofadan darhol yetmaydi.
+- Yakuniy foydalanuvchi tanlovi: oldindan tanlangan daqiqalar uchun to‘lov,
+  ishlatilmagan vaqt pulini balansga qaytarish; menejer login-parolini super admin belgilaydi.
+
+QAYTA BAJARISH
+npm.cmd test
+.tools/dotnet/dotnet.exe run --project tests/UpdatePolicy/UpdatePolicy.csproj
+node tests/updater-transaction.mjs
+node tests/release-artifacts.mjs 1.0.15
+
+Loglar .test-output ichida, test bazalari ham shu papkada ajratilgan.
+Installerlar va .test-output GitHub commitiga kirmaydi.
+Game clubga markaziy .env yoki Supabase service-role kalitini bermang.
+
+FRONTEND TEKSHIRUVI (2026-10-31)
+- Server: kompyuterlar, hisobot, bar, band qilish, statistika va amallar tarixi.
+  Chrome kengliklari: 1024, 1280, 1440; asosiy menyular 54 px balandlikda.
+- Mobil admin: boshqaruv, klublar, analitika, moliya; 320, 390, 768 px.
+  Pastki menyular 56 px; qo'ng'iroq/buyruq tugmalari 48 px. Gorizontal sahifa overflow yo'q.
+- Yangi klub (320x740) va yangi mahsulot (1024x740) oynalari ekranga sig'di.
+- Client WPF: oynani ochib kompyuterni bloklamasdan chizish sinovi.
+  Shell 1024/1366/1920x768 va bar 1000x650; rasmlar .test-output ichida.
+  Bu sinov real kiosk/watchdog yoki o'yin ishga tushirish testi emas.
+- Yangi baza birinchi ochilishidagi hisobot ustunlari migratsiyasi tuzatildi.
+- Analitika sahifasi endi klub va soxta savdolar yaratmaydi; takror ochish testi o'tdi.
+  Soatlik telemetriya yig'ilmaganida 'Ma'lumot yo'q' ko'rsatiladi.
+  Oldin yaratilgan namuna tarixiy yozuvlar haqiqiy bazadan avtomatik o'chirilmadi.
+- PWA v1.0.3: Chrome yangi oynada yangi worker faollashib, eski keshni o'chirdi.
+  Faqat test cloud jarayoni to'xtatilganda API 503, cached HTML 200 qaytardi.
+  API javoblari keshga saqlanmaydi; eski ruxsat/to'lov javobi ishlatilmaydi.
+- Tailwind/Chart fayllari server va cloud bilan mahalliy tarqatiladi.
+- Qo'shimcha WPF qayta tekshiruv:
+  .tools/dotnet/dotnet.exe run --project tests/UiLayout/UiLayout.csproj
+- 1.0.15 installerlar yaratildi; arxiv hash/manifestlari va bundled server start testi o'tdi.
+  Jonli saytga yoki GitHub Release'ga joylanmadi.
+
+FOYDALANUVCHI TASDIQLAGAN YAKUNIY TARTIB (1.0.15)
+- Kioskda 30/60/90/120/180/240 daqiqa tanlanadi. API 1–1440 butun daqiqani qabul qiladi.
+- Seans boshlanishida jami narx bir marta balansdan yechiladi; boshqa xarid vaqtni kamaytirmaydi.
+- Erta chiqish/yopish/ban: ishlatilmagan vaqt puli shu mijoz balansiga qaytadi.
+  Qaytim va seans yopilishi bir tranzaksiyada; takror yopish qo‘shimcha qaytim bermaydi.
+- Sotib olingan daqiqalar narxi saqlanadi; keyingi tarif o‘zgarishi qaytimga ta’sir qilmaydi.
+  Eski prepaid seansda narxlar kesimi yo‘q bo‘lsa, avvalgi jami narx vaqtga mutanosib bo‘linadi.
+- Mijoz prepaid seansini uzaytirish ham balansdan olinadi; naqd/karta kassasiga yozilmaydi.
+- 43/43 Node testi: HTTP va WebSocket login, darhol debit, qoldiq, restartdan keyingi qaytim,
+  takror qaytimni rad qilish, yetarli bo‘lmagan balans, to‘liq vaqt tugashi va uzaytirish.
+- Ikki alohida production o‘rnatishda menejer va namuna hisoblar yaratilmasligi tekshirildi.
+  Mahalliy /api/auth/setup akkaunt yaratishni rad qiladi; faqat super admin sozlaydi.
+  Eski fayllar/bazalar o‘chirilmaydi; yangilangan parol super admin sozlamasi kelgach amal qiladi.
+- Client xizmat oynasidagi 7777/master/umumiy parol bypasslari olib tashlandi.
+  Endi u klub serveridagi menejer login-parolini tekshiradi; serverga ulanish talab qilinadi.
+  Native xizmat oynasining haqiqiy kiosk rejimidagi interaktiv sinovi hali bajarilmagan.
+- WPF login 1366x768 ko‘rinishi ham chizilib tekshirildi; eski daqiqama-daqiqa izohi yangilandi.
+
+SUPER ADMIN ORQALI MENEJER AKKAUNTI (1.0.15)
+- SQLite cloud va klub serverining haqiqiy HTTP oqimi: saqlash, yetkazish, login,
+  eski parolni rad qilish, restartdan keyin qo‘llanganini tasdiqlash.
+- Imzo, klub/HWID bog‘lanishi, eski sozlamani qayta ishlatmaslik, sessiyalarni bekor qilish.
+- Ikkala Vercel API nusxasi mock Supabase adapterida: huquqlar, validatsiya, saqlash,
+  yetkazish, tasdiqlash va baza xatosini 503 sifatida qaytarish. Jonli baza yozilmadi.
+- Chrome 320x740 va 390x844: maydonlar bir chiziqda, gorizontal overflow yo‘q;
+  parollar mos kelmasligi, muvaffaqiyatli saqlash, parol maydonlarini tozalash sinaldi.
+- Bulutda ochiq parol saqlanmaydi; PBKDF2 xeshi shifrlangan va imzolangan holda saqlanadi.
+- SOFTECH_CLOUD_KEY mavjud litsenziya imzolash kaliti bilan mos bo‘lishi shart.
+- Avvaldan mavjud remote_commands jadvalidan foydalaniladi; ushbu funksiya yangi cloud jadval talab qilmaydi.
+- Hozirgi PWA kesh versiyasi 1.0.5; yuqoridagi offline PWA sinovi avvalgi 1.0.3 da o‘tkazilgan.
+
+MUSTAQIL ADMINISTRATOR AKKAUNTI (1.0.15)
+- Yangi production bazada avval administrator yaratildi; menejer hali mavjud emas edi.
+- Keyin menejer yaratish administrator sessiyasini bekor qilmadi.
+- Alohida parolni o‘zgartirish faqat shu xodim sessiyalarini bekor qiladi; ID/balans saqlanadi.
+- Menejer va administrator login/parollari bir xil bo‘lishi rad etiladi.
+- Lokal cloud HTTP: administratorni tayinlash, serverga yetkazish, login, seans ochish/yopish,
+  bar mahsuloti yaratish, savdo va qoldiq kamayishi tekshirildi.
+- Administrator menejer yaratish/o‘chirish, huquqlarini o‘zgartirish, tariflarni o‘zgartirish
+  va super admin API orqali akkaunt tayinlashda rad etildi. Parol/xesh foydalanuvchilar ro‘yxatida yo‘q.
+- Ikkala Vercel API nusxasida mock Supabase orqali mustaqil saqlash, yetkazish, tasdiq va auth tekshirildi.
+- Chrome 1280x900: administrator haqiqiy login formasi, bar oynasi, xodim/hisobot menyu cheklovlari.
+- Mobil super admin 320x740 va 390x844: administrator formasi, mos kelmaydigan parol, saqlash,
+  parolni oynadan tozalash va menejer sozlamasi o‘zgarmasligi tekshirildi.
+- Telegram tasdiq javobi web panelda akkaunt tayyorlashni tushuntiradi; jonli xabar yuborilmadi.

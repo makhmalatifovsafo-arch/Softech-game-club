@@ -53,7 +53,7 @@ export function hashPassword(password) {
  * Parol xeshini tekshirish
  */
 export function verifyPassword(password, storedHash) {
-  if (!storedHash || !storedHash.includes(':')) return false;
+  if(typeof password!=='string'||password.length>1024||typeof storedHash!=='string'||!/^[a-f0-9]{32}:[a-f0-9]{128}$/.test(storedHash))return false;
   const [salt, originalHash] = storedHash.split(':');
   const verifyHash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
   return crypto.timingSafeEqual(Buffer.from(originalHash, 'hex'), Buffer.from(verifyHash, 'hex'));

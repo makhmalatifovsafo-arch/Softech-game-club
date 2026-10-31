@@ -429,6 +429,9 @@ function renderStep3() {
 
       <p class="text-xs text-zinc-400">Kalitni nusxalang. Server dasturidagi “Serverni Faollashtirish” oynasiga kiriting va “Faollashtirish” tugmasini bosing.</p>
 
+      <button type="button" onclick="openManagerAccount(${club.id})" class="w-full py-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 font-semibold">Menejer login-parolini belgilash</button>
+      <button type="button" onclick="openAdministratorAccount(${club.id})" class="w-full py-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 font-semibold">Administrator login-parolini belgilash</button>
+      <p class="text-xs text-zinc-400">Yangi serverda ishlash uchun administrator yoki menejer akkauntini belgilang. Ularning login-parollari alohida bo‘lsin.</p>
       <!-- Finish Button -->
       <div class="pt-2">
         <button 

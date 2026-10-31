@@ -120,22 +120,16 @@ ALTER TABLE public.subscription_payments ENABLE ROW LEVEL SECURITY;
 
 -- Anon va Service Role kalitlari uchun ruxsatnomalar
 DROP POLICY IF EXISTS "Public access for super_admins" ON public.super_admins;
-CREATE POLICY "Public access for super_admins" ON public.super_admins FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public access for clubs" ON public.clubs;
-CREATE POLICY "Public access for clubs" ON public.clubs FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public access for club_metrics" ON public.club_metrics;
-CREATE POLICY "Public access for club_metrics" ON public.club_metrics FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public access for club_workstations_cache" ON public.club_workstations_cache;
-CREATE POLICY "Public access for club_workstations_cache" ON public.club_workstations_cache FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public access for remote_commands" ON public.remote_commands;
-CREATE POLICY "Public access for remote_commands" ON public.remote_commands FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Public access for subscription_payments" ON public.subscription_payments;
-CREATE POLICY "Public access for subscription_payments" ON public.subscription_payments FOR ALL USING (true) WITH CHECK (true);
 
 -- ==============================================================================
 -- 9. SUPABASE REALTIME REPLIKATSIYASI (KILL-SWITCH & JONLI TELEMETRIYA)
@@ -168,22 +162,10 @@ END $$;
 -- 10. BOSHLANG'ICH (SEED) MA'LUMOTLAR
 -- ==============================================================================
 
--- Super Admin foydalanuvchisi (Login: admin | Parol: admin123 | PIN: 7777)
--- Parol xeshi: PBKDF2 sha512 (admin123)
-INSERT INTO public.super_admins (
-    id, username, password_hash, pin_code, full_name, phone
-) VALUES (
-    1,
-    'admin',
-    '336df52b477bcf4d1aa41d639b7bf646:b89115fbc70f93da1fa8bb4356a5e18237279c13eeec58a8a4734ba98ee7327ef8ce6f4435889ff0430db88cf8e67fb1179ceb649dcf4615aa4d7f5518b57b98',
-    '7777',
-    'Softech Super Admin',
-    '+998 95 222 06 44'
-) ON CONFLICT (username) DO NOTHING;
-
--- Serial sanagichni to'g'rilash
-SELECT setval('public.super_admins_id_seq', (SELECT COALESCE(MAX(id), 1) FROM public.super_admins));
-
+-- Create your private super admin with scripts/prepare-cloud-admin.mjs. No shared default account.
 
 -- One server per hardware fingerprint; required for activation upserts.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clubs_hardware_unique ON public.clubs(hardware_fingerprint);
+
+-- Central tables are accessed only by the server-side service role.
+REVOKE ALL ON public.super_admins,public.clubs,public.club_metrics,public.club_workstations_cache,public.remote_commands,public.subscription_payments FROM anon,authenticated;

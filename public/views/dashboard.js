@@ -10,6 +10,7 @@ import { initBillingView } from './billing.js';
 import { initAnalyticsView } from './analytics.js';
 import './remoteControlModal.js';
 import './addClubModal.js';
+import './managerAccount.js';
 
 // Global State
 const state = {
@@ -420,7 +421,7 @@ function renderClubsList() {
             </div>
 
             <!-- One-Touch Quick Action Bar -->
-            <div class="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-zinc-800/60">
+            <div class="club-quick-actions flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-zinc-800/60">
               <a href="tel:${club.owner_phone || '+998901234567'}" onclick="triggerHaptic(10)" class="flex-1 py-1.5 px-3 rounded-xl bg-zinc-800/60 hover:bg-zinc-700 text-zinc-300 text-center text-xs font-semibold flex items-center justify-center gap-1 transition">
                 <span>📞</span>
                 <span>Qo'ng'iroq</span>
@@ -572,9 +573,10 @@ window.executeRemoteCommand = async function(commandType) {
       },
       body: JSON.stringify({ commandType, payload: { timestamp: Date.now() } })
     });
-    showToast(`✓ Buyruq navbatga qo'yildi! Server keyingi heartbeat'da bajaradi.`);
+    const data=await res.json();if(!res.ok||!data.success)throw Error(data.error||'Buyruq qabul qilinmadi.');
+    showToast(data.message || 'Buyruq navbatga qo‘yildi.');
   } catch (err) {
-    showToast(`Buyruq yuborildi (Simulyatsiya tasdiqlandi)`);
+    showToast(err.message || 'Buyruq yuborilmadi.');
   }
 };
 
@@ -594,6 +596,7 @@ window.switchTab = async function(tabName) {
   tabs.forEach(t => {
     const btn = document.getElementById(`navTab${t.charAt(0).toUpperCase() + t.slice(1)}`);
     if (btn) {
+      if (t === tabName) btn.setAttribute('aria-current','page'); else btn.removeAttribute('aria-current');
       if (t === tabName) {
         btn.className = 'flex flex-col items-center gap-1 text-sky-400 font-bold active:scale-95 transition';
       } else {

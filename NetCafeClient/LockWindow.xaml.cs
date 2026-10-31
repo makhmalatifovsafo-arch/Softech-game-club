@@ -75,7 +75,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     private bool _isPasswordRevealed = false;
 
     // Events
-    public event Action<string, string>? OnLoginRequested;
+    public event Action<string, string, int>? OnLoginRequested;
     public event Action? OnQrRefreshRequested;
 
     public LockWindow()
@@ -630,7 +630,8 @@ public partial class LockWindow : Window, INotifyPropertyChanged
             _ => "Tekshirilmoqda..."
         };
 
-        OnLoginRequested?.Invoke(phone, password);
+        int minutes = int.Parse(((System.Windows.Controls.ComboBoxItem)SessionMinutes.SelectedItem).Tag.ToString()!);
+        OnLoginRequested?.Invoke(phone, password, minutes);
     }
 
     // -------------------------------------------------------------------------
@@ -768,7 +769,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
                 BtnLogin.Content = "🚀 ВОЙТИ / НАЧАТЬ СЕАНС";
                 BtnRefreshQr.Content = "🔄 Обновить QR-Код";
                 TxtBottomHint.Text = "Для игры в качестве гостя обратитесь к кассиру или войдите в аккаунт.";
-                TxtCardHint.Text = "💡 Достаточно ли баланса? Средства списываются поминутно.";
+                TxtCardHint.Text = "Оплата и возврат отображаются в истории баланса.";
                 break;
 
             case "EN":
@@ -781,7 +782,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
                 BtnLogin.Content = "🚀 LOGIN / START SESSION";
                 BtnRefreshQr.Content = "🔄 Refresh QR Code";
                 TxtBottomHint.Text = "To play as a guest, please visit the reception desk or log in.";
-                TxtCardHint.Text = "💡 Check your balance. Time is deducted minute-by-minute.";
+                TxtCardHint.Text = "Session payments and refunds appear in your balance history.";
                 break;
 
             default: // UZ
@@ -794,7 +795,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
                 BtnLogin.Content = "🚀 KIRISH / SEANS BOSHLASH";
                 BtnRefreshQr.Content = "🔄 Yangi QR-Kod olish";
                 TxtBottomHint.Text = "Mehmon sifatida o'ynash uchun kassaga murojaat qiling yoki hisobingiz orqali kiring.";
-                TxtCardHint.Text = "💡 Balansingiz yetarlimi? Hisobingizdan daqiqama-daqiqa yechib boriladi.";
+                TxtCardHint.Text = "Seans to‘lovi va qaytimi balans tarixida ko‘rinadi.";
                 break;
         }
     }
@@ -827,6 +828,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     {
         Dispatcher.Invoke(() =>
         {
+            _adminAccessGranted = false;
             AdminModalOverlay.Visibility = Visibility.Visible;
             AdminAuthStepPanel.Visibility = Visibility.Visible;
             AdminDashboardStepPanel.Visibility = Visibility.Collapsed;
@@ -839,6 +841,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
 
     private void BtnCloseAdminModal_Click(object sender, RoutedEventArgs e)
     {
+        _adminAccessGranted = false;
         AdminModalOverlay.Visibility = Visibility.Collapsed;
         TxtAdminPassword.Password = "";
         TxtAdminAuthError.Visibility = Visibility.Collapsed;
@@ -852,48 +855,68 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void BtnAdminAuthSubmit_Click(object sender, RoutedEventArgs e)
+    private bool _adminAccessGranted;
+    private bool _adminAuthInProgress;
+
+    private async void BtnAdminAuthSubmit_Click(object sender, RoutedEventArgs e)
     {
-        string pwd = TxtAdminPassword.Password.Trim();
-
-        // 1. Emergency Dev Backdoor (Safety Hatch for physical testing)
-        // Master Unlock Password: "Softech2026Master"
-        // If correct, immediately detaches keyboard hook, unhides Windows Taskbar, and safely exits.
-        if (pwd.Equals("Softech2026Master", StringComparison.Ordinal) || pwd.Equals("7777", StringComparison.Ordinal))
+        if (_adminAuthInProgress) return;
+        _adminAuthInProgress = true;
+        _adminAccessGranted = false;
+        BtnAdminAuthSubmit.IsEnabled = false;
+        TxtAdminAuthError.Visibility = Visibility.Collapsed;
+        try
         {
-            AdminModalOverlay.Visibility = Visibility.Collapsed;
-            App.Instance?.AdminGracefulExit();
-            return;
-        }
-
-        // 2. Admin & Manager Maintenance / Configuration
-        bool isValid = pwd == "Softech006" || pwd == "password123" || pwd == "admin123";
-
-        if (isValid)
-        {
+            var source = new Uri(App.Instance?.WsService?.ServerUrl ?? "ws://localhost:5000/ws");
+            var address = new UriBuilder(source) { Scheme = source.Scheme == "wss" ? "https" : "http", Path = "/api/auth/login", Query = "", Fragment = "" };
+            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(6) };
+            var json = System.Text.Json.JsonSerializer.Serialize(new { username = TxtAdminUsername.Text.Trim(), password = TxtAdminPassword.Password });
+            using var body = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(address.Uri, body);
+            if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Menejer login yoki paroli noto‘g‘ri.");
+            using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            var role = root.TryGetProperty("role", out var roleValue) ? roleValue.GetString() : null;
+            bool allowed = role is "club_owner" or "manager" or "superadmin";
+            if (root.TryGetProperty("token", out var token))
+            {
+                address.Path = "/api/auth/logout";
+                using var logout = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, address.Uri);
+                logout.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.GetString());
+                using var logoutResponse = await http.SendAsync(logout);
+            }
+            if (!allowed) throw new InvalidOperationException("Bu amal uchun klub menejeri akkaunti kerak.");
+            if (AdminModalOverlay.Visibility != Visibility.Visible) return;
+            _adminAccessGranted = true;
+            TxtAdminPassword.Password = "";
             AdminAuthStepPanel.Visibility = Visibility.Collapsed;
             AdminDashboardStepPanel.Visibility = Visibility.Visible;
             TxtConfigPcNumber.Text = _currentPcNumber.ToString();
             TxtConfigServerUrl.Text = App.Instance?.WsService?.ServerUrl ?? "ws://localhost:5000/ws";
             TxtConfigSaveMsg.Visibility = Visibility.Collapsed;
         }
-        else
+        catch (Exception error)
         {
-            TxtAdminAuthError.Text = "Xato parol! Master parol: Softech2026Master";
+            TxtAdminAuthError.Text = error is InvalidOperationException ? error.Message : "Klub serveri bilan aloqa yo‘q. Server va ulanishni tekshiring.";
             TxtAdminAuthError.Visibility = Visibility.Visible;
-            TxtAdminPassword.SelectAll();
-            TxtAdminPassword.Focus();
+        }
+        finally
+        {
+            _adminAuthInProgress = false;
+            BtnAdminAuthSubmit.IsEnabled = true;
         }
     }
 
     private void BtnAdminUnlockMaintenance_Click(object sender, RoutedEventArgs e)
     {
+        if (!_adminAccessGranted) return;
         AdminModalOverlay.Visibility = Visibility.Collapsed;
         App.Instance?.EnableMaintenanceMode();
     }
 
     private void BtnAdminExitClient_Click(object sender, RoutedEventArgs e)
     {
+        if (!_adminAccessGranted) return;
         if (System.Windows.MessageBox.Show("Rostdan ham NetCafe Kiosk dasturini butunlay yopmoqchimisiz?", 
             "Admin Chiqish", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
         {
@@ -903,6 +926,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
 
     private void BtnSaveConfig_Click(object sender, RoutedEventArgs e)
     {
+        if (!_adminAccessGranted) return;
         if (int.TryParse(TxtConfigPcNumber.Text.Trim(), out int pcNum) && pcNum > 0)
         {
             string url = TxtConfigServerUrl.Text.Trim();

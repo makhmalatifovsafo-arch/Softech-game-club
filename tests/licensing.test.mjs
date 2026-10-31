@@ -132,6 +132,11 @@ test('local SQLite key activation respects original license and rejects hardware
   await assert.rejects(()=>ActivationService.activateByKey({licenseKey:club.api_secret_token,hardwareFingerprint:'HWID-LOCAL-OTHER'}),/boshqa/);
   db.close();
 });
+test('Vercel rejects unauthenticated telemetry and invalid license proof',async()=>{
+  cloud.client=database();
+  assert.equal((await api('/api/telemetry/heartbeat','POST',{clubId:1,todayRevenue:99999},false)).status,401);
+  assert.equal((await api('/api/telemetry/heartbeat','POST',{clubId:1,signedLicense:{payload:{clubId:1},signature:'bad'}},false)).status,401);
+});
 test('root and standalone cloud use identical licensing implementations',()=>{
   for(const file of ['api/index.js','src/services/cloudActivationService.js','src/services/activationService.js','src/services/telegramBot.js','src/services/supabaseClient.js'])
     assert.equal(readFileSync(file,'utf8'),readFileSync('SoftechCloudAdmin/'+file,'utf8'),file);

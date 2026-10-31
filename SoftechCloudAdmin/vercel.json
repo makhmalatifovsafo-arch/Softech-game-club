@@ -2,6 +2,14 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/mobile",
+      "destination": "/mobile/index.html"
+    },
+    {
+      "source": "/mobile/",
+      "destination": "/mobile/index.html"
+    },
+    {
       "source": "/login",
       "destination": "/views/login.html"
     }

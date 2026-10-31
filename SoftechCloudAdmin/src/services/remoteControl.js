@@ -19,46 +19,7 @@ export class RemoteControlService {
    * Super Admin yangi parol kiritadi yoki avtomatik xavfsiz vaqtinchalik parol hosil qilinadi.
    * Buyruq navbatga qo'yiladi va filial serveri keyingi heartbeat'da o'z bazasida yangilaydi.
    */
-  static resetAdminPassword(clubId, { newPassword, reason = "Klub egasi iltimosiga binoan parolni yangilash" } = {}) {
-    const club = db.prepare('SELECT id, name, owner_name, owner_phone FROM clubs WHERE id = ?').get(clubId);
-    if (!club) {
-      throw new Error(`Filial topilmadi (ID: ${clubId})`);
-    }
-
-    // Agar parol kiritilmagan bo'lsa, xavfsiz 8 xonali vaqtinchalik parol yaratish
-    let passwordToSet = newPassword ? String(newPassword).trim() : '';
-    if (!passwordToSet) {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$';
-      const randomBytes = crypto.randomBytes(8);
-      passwordToSet = Array.from(randomBytes).map(b => chars[b % chars.length]).join('');
-    }
-
-    if (passwordToSet.length < 6) {
-      throw new Error("Yangi parol kamida 6 ta belgidan iborat bo'lishi shart.");
-    }
-
-    const payload = {
-      action: 'RESET_ADMIN_PASSWORD',
-      targetUsername: 'admin',
-      newPassword: passwordToSet,
-      reason,
-      requestedAt: new Date().toISOString(),
-      timestamp: Date.now()
-    };
-
-    const cmd = TelemetryService.queueRemoteCommand(clubId, 'RESET_ADMIN_PASSWORD', payload);
-
-    return {
-      success: true,
-      commandId: cmd.id,
-      clubId,
-      clubName: club.name,
-      targetUsername: 'admin',
-      newPassword: passwordToSet,
-      status: 'PENDING',
-      message: `Admin parolini yangilash buyrug'i navbatga qo'yildi. ${club.name} serveri qabul qilishi bilan yangilanadi.`
-    };
-  }
+  static resetAdminPassword() {throw new Error('Menejer akkaunti oynasidan login va parolni belgilang.');}
 
   /**
    * 2. KLUB LITSENZIYASINI BLOKLASH / FAOLLASHTIRISH (Lock / Activate Club License)

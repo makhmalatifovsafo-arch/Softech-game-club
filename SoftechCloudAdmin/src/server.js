@@ -1,3 +1,6 @@
+import { handleMobileRoute } from './services/mobileRelay.js';
+import { ManagerAccountService } from './services/managerAccountService.js';
+import { db as managerDb } from './db/connection.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,6 +53,7 @@ function serveStaticFile(res, filePath, contentType) {
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
   '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -58,6 +62,17 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
+  if(await handleMobileRoute(req,res,{db:managerDb}))return;
+  const managerPath=new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
+  if(managerPath && ['GET','PUT'].includes(req.method)){
+    if(!requireSuperAdminAuth(req,res))return;
+    try {
+      const service=new ManagerAccountService({db:managerDb,role:managerPath[2]});
+      if(req.method==='GET')return sendJson(res,200,{success:true,[managerPath[2]]:await service.summary(Number(managerPath[1]))});
+      let body='';for await(const chunk of req){body+=chunk;if(body.length>8192)throw new Error('So‘rov juda katta.');}
+      return sendJson(res,200,{success:true,[managerPath[2]]:await service.save(Number(managerPath[1]),JSON.parse(body || '{}'))});
+    }catch(error){return sendJson(res,error.statusCode || 400,{success:false,error:error.message});}
+  }
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -182,11 +197,12 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { clubId, amount, paymentMethod, monthsAdded, notes } = body ? JSON.parse(body) : {};
+        const { clubId, amount, paymentMethod, monthsAdded, notes, requestId } = body ? JSON.parse(body) : {};
         const result = BillingService.recordPayment(parseInt(clubId, 10), {
           amount,
           paymentMethod,
           monthsAdded,
+          requestId,
           notes
         });
         return sendJson(res, 200, result);
@@ -262,9 +278,7 @@ const server = http.createServer(async (req, res) => {
         } else if (action === 'BROADCAST_ANNOUNCEMENT') {
           result = RemoteControlService.broadcastAnnouncement(clubId, payload);
         } else {
-          // Universal fallback
-          const cmd = TelemetryService.queueRemoteCommand(clubId, action, payload);
-          result = { success: true, command: cmd };
+          throw new Error('Bu masofaviy buyruq qo‘llab-quvvatlanmaydi.');
         }
 
         return sendJson(res, 200, result);
@@ -382,11 +396,11 @@ const server = http.createServer(async (req, res) => {
         if (action === 'UNLOCK' || action === 'ACTIVATE') {
           // A) Qulfdan chiqarish
           result = await ActivationService.liftLockdown(clubId, data);
-          await SupabaseCloudService.unblockClub(clubId, data.days || 30);
+          if (SupabaseCloudService.isConfigured()) await SupabaseCloudService.unblockClub(clubId, data.days || 30);
         } else {
           // B) Zalni bloklash (Kill-Switch)
           result = await ActivationService.dispatchKillSwitch(clubId, { ...data, reason });
-          await SupabaseCloudService.blockClub(clubId, reason);
+          if (SupabaseCloudService.isConfigured()) await SupabaseCloudService.blockClub(clubId, reason);
         }
 
         return sendJson(res, 200, result);
@@ -441,6 +455,7 @@ const server = http.createServer(async (req, res) => {
   // ==========================================================================
   // 3. STATIC FILES & PWA ROUTING
   // ==========================================================================
+  if (pathname === '/mobile' || pathname === '/mobile/') return serveStaticFile(res,path.resolve(PUBLIC_DIR,'mobile/index.html'),'text/html; charset=utf-8');
   if (pathname === '/' || pathname === '/index.html') {
     return serveStaticFile(res, path.resolve(PUBLIC_DIR, 'index.html'), 'text/html; charset=utf-8');
   }

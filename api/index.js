@@ -1,3 +1,6 @@
+import { handleMobileRoute } from '../src/services/mobileRelay.js';
+import { CloudDashboardService } from '../src/services/cloudDashboardService.js';
+import { ManagerAccountService } from '../src/services/managerAccountService.js';
 /**
  * Softech Super Admin — Central Vercel Serverless Function API Entrypoint
  * Location: api/index.js (Repo Root)
@@ -38,22 +41,10 @@ function sendJson(res, statusCode, data) {
 
 // Request Body parser
 async function getParsedBody(req) {
-  if (req.body) {
-    if (typeof req.body === 'object') return req.body;
-    try { return JSON.parse(req.body); } catch { return {}; }
-  }
-
-  return new Promise((resolve) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch {
-        resolve({});
-      }
-    });
-  });
+  let raw=req.body;
+  if(raw===undefined){let body='';for await(const chunk of req){body+=chunk;if(body.length>1024*1024)throw Object.assign(Error('So‘rov juda katta.'),{statusCode:413});}raw=body||'{}';}
+  try{const value=typeof raw==='string'?JSON.parse(raw):raw;if(!value||typeof value!=='object'||Array.isArray(value))throw Error();return value;}
+  catch{throw Object.assign(Error('JSON obyekti talab qilinadi.'),{statusCode:400});}
 }
 
 export default async function handler(req, res) {
@@ -85,6 +76,14 @@ export default async function handler(req, res) {
   }
 
   try {
+    if(await handleMobileRoute(req,res,{client:SupabaseCloudService.getClient()}))return;
+    const managerPath=pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
+    if(managerPath && ['GET','PUT'].includes(method)){
+      if(!getAuthUser(req))return sendJson(res,401,{success:false,error:'Ruxsat berilmagan'});
+      const service=new ManagerAccountService({client:SupabaseCloudService.getClient(),role:managerPath[2]});
+      const manager=method==='GET'?await service.summary(Number(managerPath[1])):await service.save(Number(managerPath[1]),await getParsedBody(req));
+      return sendJson(res,200,{success:true,[managerPath[2]]:manager});
+    }
     // ========================================================================
     // 1. AUTENTIFIKATSIYA (AUTH)
     // ========================================================================
@@ -141,14 +140,18 @@ export default async function handler(req, res) {
       const onlineClubs = clubs.filter(c => c.is_online_now).length;
       const occupiedNow = clubs.reduce((sum, c) => sum + (c.occupied_pcs || 0), 0);
       const totalNetwork = clubs.reduce((sum, c) => sum + (c.total_workstations || 0), 0);
-      const todayTotal = clubs.reduce((sum, c) => sum + (Number(c.today_revenue) || 0), 0);
+      const reportDate = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
+      const metrics = await new CloudDashboardService(SupabaseCloudService.client).rows('club_metrics',q=>q.eq('record_date',reportDate));
+      const todayTotal = metrics.reduce((sum,m)=>sum+Number(m.total_daily_revenue||0),0);
+      const sessionsCount = metrics.reduce((sum,m)=>sum+Number(m.total_sessions_count||0),0);
+      const barTotal = metrics.reduce((sum,m)=>sum+Number(m.bar_revenue||0),0);
 
       return sendJson(res, 200, {
         success: true,
         summary: {
           clubs: { total: totalClubs, onlineNow: onlineClubs, offlineNow: totalClubs - onlineClubs },
-          workstations: { occupiedNow, availableNow: Math.max(0, totalNetwork - occupiedNow), totalNetwork },
-          revenue: { todayTotal, sessionsCount: 0, barTotal: 0 }
+          workstations: { occupiedNow, availableNow: Math.max(0, clubs.filter(c=>c.is_online_now).reduce((n,c)=>n+Number(c.online_pcs||0),0) - occupiedNow), totalNetwork },
+          revenue: { todayTotal, sessionsCount, barTotal }
         }
       });
     }
@@ -184,7 +187,7 @@ export default async function handler(req, res) {
       const clubId = parseInt(clubMatch[1], 10);
       const club = await SupabaseCloudService.getClubById(clubId);
       if (!club) return sendJson(res, 404, { success: false, error: 'Klub topilmadi' });
-      return sendJson(res, 200, { success: true, club });
+      return sendJson(res, 200, await new CloudDashboardService(SupabaseCloudService.getClient()).inspector(clubId));
     }
 
     // Klubni o'chirish
@@ -240,8 +243,8 @@ export default async function handler(req, res) {
       const secretToken = authHeader.replace(/^Bearer\s+/i, '').trim();
       const body = await getParsedBody(req);
 
-      const targetId = body.clubId || secretToken;
-      if (!targetId) {
+      const targetId = secretToken;
+      if (!targetId && !body.signedLicense) {
         return sendJson(res, 401, { success: false, error: 'Autentifikatsiya kaliti (Bearer token) topilmadi.' });
       }
 
@@ -252,12 +255,16 @@ export default async function handler(req, res) {
     // ========================================================================
     // 4. MASOFADAN BOSHQARISH & KILL-SWITCH (REMOTE DISPATCHER)
     // ========================================================================
-    if (pathname === '/api/remote/execute' && method === 'POST') {
+    const commandMatch=pathname.match(/^\/api\/telemetry\/commands\/(\d+|ALL)$/i);
+    const killSwitchMatch = pathname.match(/^\/api\/telemetry\/kill-switch\/(\d+)$/);
+    if ((pathname === '/api/remote/execute' || killSwitchMatch || commandMatch) && method === 'POST') {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
 
       const body = await getParsedBody(req);
-      const { clubId, action, options = {} } = body;
+      const clubId = commandMatch ? (commandMatch[1].toUpperCase()==='ALL'?'ALL':Number(commandMatch[1])) : killSwitchMatch ? Number(killSwitchMatch[1]) : body.clubId;
+      const action = body.action || body.commandType;
+      const options = body.options || body.payload || body;
 
       if (!clubId || !action) {
         return sendJson(res, 400, { success: false, error: 'clubId va action ko\'rsatilishi shart.' });
@@ -266,51 +273,45 @@ export default async function handler(req, res) {
       // Kill-Switch Bloklash
       if (action === 'LOCK' || action === 'LOCK_CLUB_LICENSE') {
         const result = await SupabaseCloudService.blockClub(clubId, options.reason || "SaaS to'lovi muddati tugadi");
-        return sendJson(res, 200, { success: true, result });
+        return sendJson(res, 200, { success: true, result, message: "Litsenziya holati yangilandi." });
       }
 
       // Qulfdan Chiqarish
-      if (action === 'UNLOCK' || action === 'ACTIVATE') {
-        const result = await SupabaseCloudService.unblockClub(clubId, options.days || 30);
+      if (action === 'UNLOCK' || action === 'ACTIVATE' || action === 'UNLOCK_CLUB_LICENSE') {
+        const result = await SupabaseCloudService.unblockClub(clubId, options.days || options.extensionDays || 30);
         return sendJson(res, 200, { success: true, result });
       }
 
-      // Boshqa buyruqlar (RESTART_SERVER, RESET_ADMIN_PASSWORD, BROADCAST_ANNOUNCEMENT)
-      const queuedCmd = await SupabaseCloudService.queueRemoteCommand(clubId, action, options);
-      return sendJson(res, 200, { success: true, queuedCommand: queuedCmd });
+      if(action==='RESET_ADMIN_PASSWORD')return sendJson(res,400,{success:false,error:'Menejer akkaunti oynasidan login va parolni belgilang.'});
+      if(!['RESTART_SERVER','BROADCAST_ANNOUNCEMENT'].includes(action))return sendJson(res,400,{success:false,error:'Buyruq turi qo‘llab-quvvatlanmaydi.'});
+      if(action==='BROADCAST_ANNOUNCEMENT'&&!String(options.message||'').trim())return sendJson(res,400,{success:false,error:'Xabar matnini kiriting.'});
+      if(clubId==='ALL'){
+        if(action!=='BROADCAST_ANNOUNCEMENT')return sendJson(res,400,{error:'Bu buyruq faqat bitta klub uchun.'});
+        const clubs=await SupabaseCloudService.getAllClubs();for(const c of clubs)await SupabaseCloudService.queueRemoteCommand(c.id,action,options);
+        return sendJson(res,200,{success:true,messageSummary:'Xabar '+clubs.length+' klub uchun navbatga qo‘yildi.'});
+      }
+      if(!await SupabaseCloudService.getClubById(clubId))return sendJson(res,404,{error:'Klub topilmadi.'});
+      const queuedCmd=await SupabaseCloudService.queueRemoteCommand(clubId,action,options);
+      return sendJson(res,200,{success:true,queuedCommand:queuedCmd,message:'Buyruq navbatga qo‘yildi.'});
     }
 
     // ========================================================================
     // 5. SAAS BILLING
     // ========================================================================
-    if (pathname === '/api/billing/summary' && method === 'GET') {
-      const auth = getAuthUser(req);
-      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
-
-      const clubs = (await SupabaseCloudService.getAllClubs()) || [];
-      const mrr = clubs.reduce((sum, c) => {
-        if (c.tariff_type === 'FIXED_MONTHLY') {
-          return sum + (Number(c.tariff_fixed_price) || 500000);
-        }
-        return sum + ((c.total_workstations || 16) * (Number(c.tariff_price_per_pc) || 20000));
-      }, 0);
-
-      return sendJson(res, 200, {
-        success: true,
-        summary: { mrr, activeClubsCount: clubs.filter(c => c.status === 'ACTIVE').length, totalClubsCount: clubs.length }
-      });
+    if(['/api/billing/summary','/api/billing/clubs','/api/analytics/platform'].includes(pathname)&&method==='GET'){
+      if(!getAuthUser(req))return sendJson(res,401,{error:'Ruxsat berilmagan'});
+      const service=new CloudDashboardService(SupabaseCloudService.getClient());
+      if(pathname==='/api/analytics/platform')return sendJson(res,200,await service.analytics(url.searchParams.get('days')));
+      const data=await service.billing();return sendJson(res,200,{success:true,...data});
     }
-
-    if (pathname === '/api/billing/payment' && method === 'POST') {
-      const auth = getAuthUser(req);
-      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
-
-      const body = await getParsedBody(req);
-      const payment = await SupabaseCloudService.recordSubscriptionPayment(body);
-      if (body.clubId) {
-        await SupabaseCloudService.unblockClub(body.clubId, (body.monthsAdded || 1) * 30);
-      }
-      return sendJson(res, 200, { success: true, payment });
+    const tariffMatch=pathname.match(/^\/api\/billing\/tariff\/(\d+)$/);
+    if(tariffMatch&&method==='POST'){
+      if(!getAuthUser(req))return sendJson(res,401,{error:'Ruxsat berilmagan'});
+      return sendJson(res,200,await new CloudDashboardService(SupabaseCloudService.getClient()).tariff(Number(tariffMatch[1]),await getParsedBody(req)));
+    }
+    if(['/api/billing/payment','/api/billing/payments'].includes(pathname)&&method==='POST'){
+      const user=getAuthUser(req);if(!user)return sendJson(res,401,{error:'Ruxsat berilmagan'});
+      return sendJson(res,200,await new CloudDashboardService(SupabaseCloudService.getClient()).payment(await getParsedBody(req),user.username));
     }
 
     // ========================================================================

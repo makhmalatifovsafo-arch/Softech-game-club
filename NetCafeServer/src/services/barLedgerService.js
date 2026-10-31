@@ -1,3 +1,5 @@
+import { isMemberSession, settleMemberUsage } from './memberBilling.js';
+import { getFinancialBreakdown } from './financialBreakdown.js';
 import { db, getClubSettings } from '../db.js';
 import { calculateIntervalPrice } from './pricingEngine.js';
 import { ClientManager } from './clientManager.js';
@@ -32,8 +34,8 @@ export class BarLedgerService {
       FROM sessions s
       LEFT JOIN computers c ON (s.computer_id = c.id OR s.computer_id = c.pc_number)
       LEFT JOIN tariffs t ON s.tariff_id = t.id
-      WHERE s.id = ?
-    `).get(sessionId);
+      WHERE s.id = ? AND s.club_id = ? AND s.status = 'ACTIVE'
+    `).get(sessionId, clubId);
 
     if (!session) {
       throw new Error('Faol seans topilmadi.');
@@ -44,7 +46,7 @@ export class BarLedgerService {
     const now = Date.now();
     const playedMinutes = Math.max(1, Math.ceil((now - startedAt) / 60000));
     const playedHours = Number((playedMinutes / 60).toFixed(1));
-    const isPostpaid = Boolean(session.notes === 'POSTPAID' || session.paid_amount === 0);
+    const isPostpaid = !isMemberSession(session) && Boolean(session.notes === 'POSTPAID' || session.paid_amount === 0);
 
     // 1. O'yin vaqti narxi hisob-kitobi
     let gameBill = 0;
@@ -69,8 +71,8 @@ export class BarLedgerService {
 
     const pendingOrders = db.prepare(`
       SELECT * FROM bar_orders 
-      WHERE (session_id = ? OR (computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT') OR (computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT'))
-        AND payment_status = 'PENDING_AT_CHECKOUT'
+      WHERE (session_id = ? OR (computer_id = ? AND session_id IS NULL AND payment_status = 'PENDING_AT_CHECKOUT') OR (computer_id = ? AND session_id IS NULL AND payment_status = 'PENDING_AT_CHECKOUT'))
+        AND payment_status = 'PENDING_AT_CHECKOUT' AND approval_status = 'CONFIRMED'
         AND (club_id = ? OR club_id IS NULL)
     `).all(session.id, computerRef, computerNum, targetClubId);
 
@@ -142,11 +144,13 @@ export class BarLedgerService {
    * Seansni to'liq yopish va to'lovlarni transactions jadvaliga ajratib yozish
    */
   static executeSessionCheckout({ target, paymentMethod = 'CASH', cashierUserId, clubId = 1, broadcastUpdate = null }) {
-    const preview = this.getSessionCheckoutPreview(target, clubId);
+    let preview = this.getSessionCheckoutPreview(target, clubId);
     const validPayMethod = ['CARD', 'CLICK', 'PAYME'].includes(paymentMethod) ? 'CARD' : 'CASH';
 
     db.exec('BEGIN TRANSACTION;');
     try {
+      const settlement = settleMemberUsage(preview.sessionId,new Date(),true,true);
+      preview = this.getSessionCheckoutPreview(target, clubId);
       const targetClubId = clubId || 1;
 
       // 1. O'yin vaqti tranzaksiyasi (agar Postpaid bo'lsa va to'lov olinayotgan bo'lsa)
@@ -185,9 +189,9 @@ export class BarLedgerService {
         // Barcha tegishli bar buyurtmalarini PAID holatiga o'tkazish
         db.prepare(`
           UPDATE bar_orders 
-          SET payment_status = 'PAID', payment_method = ?
-          WHERE (session_id = ? OR (computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT'))
-            AND payment_status = 'PENDING_AT_CHECKOUT'
+          SET payment_status = 'PAID', payment_method = ?, paid_at = CURRENT_TIMESTAMP
+          WHERE (session_id = ? OR (session_id IS NULL AND computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT'))
+            AND payment_status = 'PENDING_AT_CHECKOUT' AND approval_status = 'CONFIRMED'
         `).run(validPayMethod, preview.sessionId, preview.computerId);
       }
 
@@ -196,7 +200,7 @@ export class BarLedgerService {
         UPDATE sessions 
         SET status = 'COMPLETED', ends_at = CURRENT_TIMESTAMP, total_amount = ?, paid_amount = ?, updated_at = CURRENT_TIMESTAMP 
         WHERE id = ?
-      `).run(preview.finalBill, preview.finalBill, preview.sessionId);
+      `).run(preview.gameBill, preview.gameBill, preview.sessionId);
 
       // 4. Kompyuterni qulflash
       db.prepare(`
@@ -244,6 +248,7 @@ export class BarLedgerService {
         barBill: preview.barBill,
         finalBill: preview.finalBill,
         amountCollected: preview.amountToCollect,
+        refundAmount: settlement?.refundAmount || 0,
         formulaText: preview.formulaText,
         barSummaryText: preview.barSummaryText,
         paymentMethod: validPayMethod
@@ -269,50 +274,52 @@ export class BarLedgerService {
     const gameCashRow = clubId === null
       ? db.prepare(`
           SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-          WHERE substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
-            AND (payment_type = 'CASH' OR payment_method = 'CASH')
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') OR (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
+          WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
+            AND COALESCE(NULLIF(payment_type, ''), payment_method) = 'CASH'
+            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
         `).get(fromParam, toParam)
       : db.prepare(`
           SELECT COALESCE(SUM(amount), 0) as total FROM transactions
           WHERE club_id = ?
-            AND substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
-            AND (payment_type = 'CASH' OR payment_method = 'CASH')
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') OR (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
+            AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
+            AND COALESCE(NULLIF(payment_type, ''), payment_method) = 'CASH'
+            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
         `).get(clubId, fromParam, toParam);
 
     const gameCardRow = clubId === null
       ? db.prepare(`
           SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-          WHERE substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
-            AND (payment_type IN ('CARD', 'CLICK', 'PAYME') OR payment_method IN ('CARD', 'CLICK', 'PAYME'))
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') OR (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))`
+          WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
+            AND COALESCE(NULLIF(payment_type, ''), payment_method) IN ('CARD', 'CLICK', 'PAYME')
+            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))`
         ).get(fromParam, toParam)
       : db.prepare(`
           SELECT COALESCE(SUM(amount), 0) as total FROM transactions
           WHERE club_id = ?
-            AND substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
-            AND (payment_type IN ('CARD', 'CLICK', 'PAYME') OR payment_method IN ('CARD', 'CLICK', 'PAYME'))
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') OR (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))`
+            AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
+            AND COALESCE(NULLIF(payment_type, ''), payment_method) IN ('CARD', 'CLICK', 'PAYME')
+            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))`
         ).get(clubId, fromParam, toParam);
 
     const gameCash = Number(gameCashRow?.total || 0);
     const gameCard = Number(gameCardRow?.total || 0);
-    const gameRevenue = gameCash + gameCard;
+    const balanceSql = "SELECT COALESCE(SUM(CASE WHEN type='REFUND' THEN -amount ELSE amount END),0) AS total FROM client_transactions WHERE type IN ('SESSION_DEDUCT','REFUND') AND category='GAME' AND date(created_at,'localtime') BETWEEN ? AND ?" + (clubId === null ? '' : ' AND club_id=?');
+    const gameBalance = Number(db.prepare(balanceSql).get(...(clubId === null ? [fromParam,toParam] : [fromParam,toParam,clubId])).total);
+    const gameRevenue = gameCash + gameCard + gameBalance;
 
     // 2. Bar savdosi:
     // a) Bardan (klientlar o'tirgan stollaridan / PC sessiyalaridan) tushgan pul
     const barInSessionRow = clubId === null
       ? db.prepare(`
           SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders
-          WHERE substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
+          WHERE date(COALESCE(paid_at,created_at), 'localtime') >= ? AND date(COALESCE(paid_at,created_at), 'localtime') <= ?
             AND payment_status = 'PAID'
             AND (payment_method = 'ON_PC_SESSION' OR session_id IS NOT NULL OR computer_id IS NOT NULL)
         `).get(fromParam, toParam)
       : db.prepare(`
           SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders
           WHERE club_id = ?
-            AND substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
+            AND date(COALESCE(paid_at,created_at), 'localtime') >= ? AND date(COALESCE(paid_at,created_at), 'localtime') <= ?
             AND payment_status = 'PAID'
             AND (payment_method = 'ON_PC_SESSION' OR session_id IS NOT NULL OR computer_id IS NOT NULL)
         `).get(clubId, fromParam, toParam);
@@ -321,14 +328,14 @@ export class BarLedgerService {
     const barDirectRow = clubId === null
       ? db.prepare(`
           SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders
-          WHERE substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
+          WHERE date(COALESCE(paid_at,created_at), 'localtime') >= ? AND date(COALESCE(paid_at,created_at), 'localtime') <= ?
             AND payment_status = 'PAID'
             AND (computer_id IS NULL AND (session_id IS NULL OR session_id = ''))
         `).get(fromParam, toParam)
       : db.prepare(`
           SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders
           WHERE club_id = ?
-            AND substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
+            AND date(COALESCE(paid_at,created_at), 'localtime') >= ? AND date(COALESCE(paid_at,created_at), 'localtime') <= ?
             AND payment_status = 'PAID'
             AND (computer_id IS NULL AND (session_id IS NULL OR session_id = ''))
         `).get(clubId, fromParam, toParam);
@@ -340,20 +347,20 @@ export class BarLedgerService {
     // 3. Bar Sof Foydasi
     const barProfitRows = clubId === null
       ? db.prepare(`
-          SELECT boi.total_price, boi.quantity, COALESCE(bi.buy_price, 0) as buy_price
+          SELECT boi.total_price, boi.quantity, COALESCE(boi.buy_price, bi.buy_price, 0) as buy_price
           FROM bar_order_items boi
           JOIN bar_orders bo ON bo.id = boi.order_id
           LEFT JOIN bar_items bi ON bi.id = boi.bar_item_id
-          WHERE substr(bo.created_at, 1, 10) >= ? AND substr(bo.created_at, 1, 10) <= ?
+          WHERE date(COALESCE(bo.paid_at,bo.created_at), 'localtime') >= ? AND date(COALESCE(bo.paid_at,bo.created_at), 'localtime') <= ?
             AND bo.payment_status = 'PAID'
         `).all(fromParam, toParam)
       : db.prepare(`
-          SELECT boi.total_price, boi.quantity, COALESCE(bi.buy_price, 0) as buy_price
+          SELECT boi.total_price, boi.quantity, COALESCE(boi.buy_price, bi.buy_price, 0) as buy_price
           FROM bar_order_items boi
           JOIN bar_orders bo ON bo.id = boi.order_id
           LEFT JOIN bar_items bi ON bi.id = boi.bar_item_id
           WHERE bo.club_id = ?
-            AND substr(bo.created_at, 1, 10) >= ? AND substr(bo.created_at, 1, 10) <= ?
+            AND date(COALESCE(bo.paid_at,bo.created_at), 'localtime') >= ? AND date(COALESCE(bo.paid_at,bo.created_at), 'localtime') <= ?
             AND bo.payment_status = 'PAID'
         `).all(clubId, fromParam, toParam);
 
@@ -370,14 +377,14 @@ export class BarLedgerService {
             COALESCE(bi.category, 'DRINKS') as category,
             SUM(boi.quantity) as total_quantity,
             SUM(boi.total_price) as total_sales,
-            COALESCE(bi.buy_price, 0) as buy_price,
-            (SUM(boi.total_price) - (COALESCE(bi.buy_price, 0) * SUM(boi.quantity))) as net_profit
+            COALESCE(boi.buy_price, bi.buy_price, 0) as buy_price,
+            SUM(boi.total_price - COALESCE(boi.buy_price, bi.buy_price, 0) * boi.quantity) as net_profit
           FROM bar_order_items boi
           JOIN bar_orders bo ON bo.id = boi.order_id
           LEFT JOIN bar_items bi ON bi.id = boi.bar_item_id
-          WHERE substr(bo.created_at, 1, 10) >= ? AND substr(bo.created_at, 1, 10) <= ?
+          WHERE date(COALESCE(bo.paid_at,bo.created_at), 'localtime') >= ? AND date(COALESCE(bo.paid_at,bo.created_at), 'localtime') <= ?
             AND bo.payment_status = 'PAID'
-          GROUP BY boi.item_name
+          GROUP BY boi.bar_item_id, boi.item_name
           ORDER BY total_quantity DESC, total_sales DESC
           LIMIT 10
         `).all(fromParam, toParam)
@@ -387,15 +394,15 @@ export class BarLedgerService {
             COALESCE(bi.category, 'DRINKS') as category,
             SUM(boi.quantity) as total_quantity,
             SUM(boi.total_price) as total_sales,
-            COALESCE(bi.buy_price, 0) as buy_price,
-            (SUM(boi.total_price) - (COALESCE(bi.buy_price, 0) * SUM(boi.quantity))) as net_profit
+            COALESCE(boi.buy_price, bi.buy_price, 0) as buy_price,
+            SUM(boi.total_price - COALESCE(boi.buy_price, bi.buy_price, 0) * boi.quantity) as net_profit
           FROM bar_order_items boi
           JOIN bar_orders bo ON bo.id = boi.order_id
           LEFT JOIN bar_items bi ON bi.id = boi.bar_item_id
           WHERE bo.club_id = ?
-            AND substr(bo.created_at, 1, 10) >= ? AND substr(bo.created_at, 1, 10) <= ?
+            AND date(COALESCE(bo.paid_at,bo.created_at), 'localtime') >= ? AND date(COALESCE(bo.paid_at,bo.created_at), 'localtime') <= ?
             AND bo.payment_status = 'PAID'
-          GROUP BY boi.item_name
+          GROUP BY boi.bar_item_id, boi.item_name
           ORDER BY total_quantity DESC, total_sales DESC
           LIMIT 10
         `).all(clubId, fromParam, toParam);
@@ -413,18 +420,21 @@ export class BarLedgerService {
     const topupRow = clubId === null
       ? db.prepare(`
           SELECT COALESCE(SUM(amount), 0) as total FROM client_transactions
-          WHERE substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
+          WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
             AND type = 'TOPUP'
         `).get(fromParam, toParam)
       : db.prepare(`
           SELECT COALESCE(SUM(amount), 0) as total FROM client_transactions
           WHERE club_id = ?
-            AND substr(created_at, 1, 10) >= ? AND substr(created_at, 1, 10) <= ?
+            AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
             AND type = 'TOPUP'
         `).get(clubId, fromParam, toParam);
 
     const topupRevenue = Number(topupRow?.total || 0);
-    const totalNetRevenue = gameRevenue + barRevenue + topupRevenue;
+    // Cash receipts already include topups and cash/card bar sales. Never add balance spending twice.
+    const receiptsSql = "SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE COALESCE(payment_method,'')!='BALANCE' AND date(created_at,'localtime') BETWEEN ? AND ?" + (clubId === null ? '' : ' AND club_id=?');
+    const totalNetRevenue = Number(db.prepare(receiptsSql).get(...(clubId === null ? [fromParam,toParam] : [fromParam,toParam,clubId])).total);
+    const salesRevenue = gameRevenue + barRevenue;
 
     return {
       from: fromParam,
@@ -432,6 +442,9 @@ export class BarLedgerService {
       summary: {
         totalRevenue: totalNetRevenue,
         gameRevenue,
+        gameBalance,
+        salesRevenue,
+        cashReceipts: totalNetRevenue,
         gameCash,
         gameCard,
         barRevenue,
@@ -440,7 +453,8 @@ export class BarLedgerService {
         barProfit,
         topupRevenue
       },
-      topSellingItems
+      topSellingItems,
+      breakdown: getFinancialBreakdown(db, fromParam, toParam, clubId)
     };
   }
 }

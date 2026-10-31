@@ -25,7 +25,7 @@ export function hashPassword(password) {
  * Kiritilgan parolni heshlangan parol bilan solishtirish
  */
 export function verifyPassword(password, storedHash) {
-  if (!storedHash || !storedHash.includes(':')) return false;
+  if(typeof password!=='string'||password.length>1024||typeof storedHash!=='string'||!/^[a-f0-9]{32}:[a-f0-9]{128}$/.test(storedHash))return false;
   const [salt, originalHash] = storedHash.split(':');
   const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
   return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(originalHash, 'hex'));
@@ -71,7 +71,7 @@ export function createSessionToken(user, club = null) {
     role: user.role, // 'superadmin' | 'club_owner' | 'administrator' | 'client'
     phoneNumber: user.phone_number || null,
     balance: Number(user.balance || 0),
-    permissions: Array.isArray(permissions) ? permissions : ['*'],
+    permissions: normalizePermissions(permissions),
     expiresAt,
   };
 
@@ -127,8 +127,15 @@ export function extractToken(req) {
 /**
  * RBAC ruxsat tekshiruvi
  */
+export function normalizePermissions(value){return Array.isArray(value)?[...new Set(value.filter(p=>typeof p==='string').map(p=>({'sessions:manage':'session:manage','messages:send':'message:send'}[p]||p)))]:[];}
 export function hasPermission(userPermissions, requiredPermission) {
-  if (!Array.isArray(userPermissions)) return false;
+  userPermissions=normalizePermissions(userPermissions);
   if (userPermissions.includes('*')) return true;
   return userPermissions.includes(requiredPermission);
+}
+
+// Invalidate persisted and in-memory sessions when the super admin changes this owner.
+export function revokeUserSessions(userId) {
+  sessionStore().prepare("DELETE FROM auth_sessions WHERE json_extract(session_json,'$.userId')=?").run(userId);
+  for(const [token,session] of sessions)if(Number(session.userId)===Number(userId))sessions.delete(token);
 }

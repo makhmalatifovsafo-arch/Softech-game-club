@@ -1,3 +1,7 @@
+import { commandResults, applyCloudCommands } from './cloudCommands.js';
+import { execFile } from 'node:child_process';
+import { applyManagerAccount, getManagerRevision, applyAdministratorAccount, getAdministratorRevision } from './localOwnerSetup.js';
+import { BarLedgerService } from './barLedgerService.js';
 /**
  * Softech Game Club Management System — Supabase-Driven Cloud Licensing & Kill-Switch
  * Location: NetCafeServer/src/services/cloudLicenseService.js
@@ -324,58 +328,38 @@ export class CloudLicenseService {
   }
 
   static async sendHeartbeat() {
-    if (!this.supabase) return;
-
+    if(this.heartbeatInFlight || !LicenseManager.licenseData) return;
+    this.heartbeatInFlight=true;
     try {
-      // 1. Bugungi tushum (Seanslar + Bar)
-      let todayRevenue = 0;
-      try {
-        const todayRow = db.prepare(`
-          SELECT 
-            COALESCE(SUM(total_price), 0) as sessions_rev 
-          FROM sessions 
-          WHERE DATE(started_at) = DATE('now', 'localtime')
-        `).get();
-        todayRevenue = todayRow ? Number(todayRow.sessions_rev) : 0;
-      } catch (err) {}
-
-      // 2. Kompyuterlar soni va bandligi
-      let totalPcs = 16;
-      let occupiedCount = 0;
-      let onlineCount = 0;
-
-      try {
-        const pcs = db.prepare('SELECT id, status, is_online FROM computers').all();
-        totalPcs = pcs.length || 16;
-        occupiedCount = pcs.filter(p => p.status === 'OCCUPIED').length;
-        onlineCount = pcs.filter(p => p.is_online === 1 || p.status === 'OCCUPIED' || p.status === 'AVAILABLE').length;
-      } catch (err) {
-        occupiedCount = 0;
-      }
-
-      // 3. Supabase ga UPDATE jo'natish
-      const nowIso = new Date().toISOString();
-      const { error } = await this.supabase
-        .from('clubs')
-        .update({
-          last_heartbeat: nowIso,
-          last_heartbeat_at: nowIso,
-          today_revenue: todayRevenue,
-          occupied_pcs: occupiedCount,
-          online_pcs: onlineCount,
-          total_pcs: totalPcs,
-          server_version: '1.0.0'
+      const report=BarLedgerService.getDailyFinancialReport({clubId:1});
+      const pcs=db.prepare("SELECT c.*,s.ends_at FROM computers c LEFT JOIN sessions s ON s.id=c.current_session_id WHERE c.club_id=1").all();
+      const payload={commandResults:commandResults(db),administratorRevision:getAdministratorRevision(db,LicenseManager.licenseData.clubId),managerRevision:getManagerRevision(db,LicenseManager.licenseData.clubId),clubId:LicenseManager.licenseData.clubId,signedLicense:LicenseManager.getSignedLicense(),
+        appVersion:JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../package.json'),'utf8')).version,
+        reportDate:report.from,todayRevenue:report.summary.cashReceipts,barRevenue:report.breakdown.receipts.BAR.CASH+report.breakdown.receipts.BAR.CARD,
+        totalSessionsCount:db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE club_id=1 AND date(started_at,'localtime')=?").get(report.from).n,
+        onlinePcsCount:pcs.filter(p=>ClientManager.isConnected(p.id)).length,
+        occupiedPcsCount:pcs.filter(p=>p.current_session_id).length,
+        workstations:pcs.map(p=>({pc:p.pc_number,status:p.current_session_id?'OCCUPIED':ClientManager.isConnected(p.id)?'AVAILABLE':'OFFLINE',
+          zone:p.zone,minutesLeft:p.ends_at?Math.max(0,Math.ceil((Date.parse(p.ends_at)-Date.now())/60000)):0}))};
+      const response=await fetch(LicenseManager.cloudUrl+'/api/telemetry/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      const result=await response.json();
+      await applyCloudCommands(db,result.signedCommands,LicenseManager.licenseData,{
+        broadcast:message=>ClientManager.broadcast('CLOUD_ANNOUNCEMENT',message),
+        hasActiveSessions:()=>Boolean(db.prepare("SELECT id FROM sessions WHERE status='ACTIVE' LIMIT 1").get()),
+        restart:({delaySeconds,force})=>new Promise((resolve,reject)=>{
+          if(process.env.NODE_ENV==='test'||process.platform!=='win32')return reject(Error('Restart is disabled in this test/platform.'));
+          execFile('shutdown.exe',['/r','/t',String(delaySeconds),...(force?['/f']:[])],{windowsHide:true},error=>error?reject(error):resolve());
         })
-        .eq('id', this.clubId);
-
-      if (error) {
-        // Log quietly
-      } else {
-        // console.log(`💓 [Supabase-Heartbeat] Sync muvaffaqiyatli: ${nowIso} (Daromad: ${todayRevenue} UZS, PC: ${occupiedCount}/${totalPcs})`);
+      });
+      if(['BLOCKED','SUSPENDED','SUSPENDED_PAYMENT','LOCKED_BY_ADMIN'].includes(result.clubStatus)) this.executeLockdown('REMOTE_BLOCKED',result.message);
+      // Each account is independent: a manager collision must not prevent cashier delivery.
+      for(const [envelope,apply] of [[result.managerAccount,applyManagerAccount],[result.administratorAccount,applyAdministratorAccount]]){
+        if(envelope)try{apply(db,envelope,LicenseManager.licenseData);}catch(error){console.warn('[Staff account]',error.message);}
       }
-    } catch (err) {
-      // Offline or network error handled gracefully
-    }
+    } catch(error) { console.warn('[Telemetry] Bulutga yuborilmadi:',error.message); }
+    finally { this.heartbeatInFlight=false; }
   }
 
   /**

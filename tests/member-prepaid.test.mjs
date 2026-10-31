@@ -1,0 +1,41 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {pathToFileURL} from 'node:url';import {spawnSync} from 'node:child_process';
+test('member prepaid debits once, retains price through restart, refunds once and keeps purchased time',async()=>{
+ fs.mkdirSync('.test-output',{recursive:true});const dir=fs.mkdtempSync(path.resolve('.test-output/prepaid-'));
+ for(const file of ['src','schema.sql','package.json'])fs.cpSync(path.join('NetCafeServer',file),path.join(dir,file),{recursive:true});
+ process.env.NODE_ENV='test';const dbUrl=pathToFileURL(path.join(dir,'src/db.js')).href;
+ const moduleUrl=pathToFileURL(path.join(dir,'src/services/memberBilling.js')).href;
+ const {db,initDatabase}=await import(dbUrl);initDatabase();
+ try{
+  const {startMemberSession,settleMemberUsage,extendPrepaidMember}=await import(moduleUrl);
+  db.prepare("INSERT INTO computers (id,club_id,name,pc_number,status) VALUES ('prepay-pc',1,'Test PC',1,'ONLINE')").run();
+  db.prepare('UPDATE tariff_schedules SET price_per_hour=12000').run();db.prepare('UPDATE tariffs SET price_per_hour=12000').run();
+  const user=db.prepare("SELECT * FROM users WHERE username='gamer1'").get();
+  for(const minutes of [undefined,0,-1,1.5,1441,'60'])assert.throws(()=>startMemberSession('prepay-pc','gamer1','gamer123',minutes));
+  assert.equal(db.prepare('SELECT balance FROM users WHERE id=?').get(user.id).balance,user.balance);
+  const session=startMemberSession('prepay-pc','gamer1','gamer123',30);
+  assert.equal(session.amount,6000);assert.equal(session.balance,user.balance-6000);assert.equal(session.remainingSeconds,1800);
+  assert.throws(()=>startMemberSession('prepay-pc','gamer1','gamer123',30));
+  const row=db.prepare('SELECT * FROM sessions WHERE id=?').get(session.sessionId);const now=new Date(Date.parse(row.started_at)+600000);
+  assert.equal(settleMemberUsage(row.id,now,false),null);
+  assert.equal(db.prepare('SELECT ends_at FROM sessions WHERE id=?').get(row.id).ends_at,row.ends_at);
+  db.prepare('UPDATE tariff_schedules SET price_per_hour=60000').run();
+  const code='const {settleMemberUsage}=await import('+JSON.stringify(moduleUrl)+');const {db}=await import('+JSON.stringify(dbUrl)+');console.log(JSON.stringify(settleMemberUsage('+JSON.stringify(row.id)+',new Date('+JSON.stringify(now.toISOString())+'),true)));db.close();';
+  const restarted=spawnSync(process.execPath,['--input-type=module','-e',code],{windowsHide:true,encoding:'utf8'});assert.equal(restarted.status,0,restarted.stderr);
+  const result=JSON.parse(restarted.stdout.trim());assert.equal(result.refundAmount,4000);assert.equal(result.currentBalance,user.balance-2000);
+  assert.equal(settleMemberUsage(row.id,now,true),null);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM client_transactions WHERE session_id=? AND type='SESSION_DEDUCT'").get(row.id).n,1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM client_transactions WHERE session_id=? AND type='REFUND'").get(row.id).n,1);
+  db.prepare("UPDATE sessions SET status='COMPLETED' WHERE id=?").run(row.id);
+  db.prepare('UPDATE users SET balance=1 WHERE id=?').run(user.id);
+  assert.throws(()=>startMemberSession('prepay-pc','gamer1','gamer123',30));
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n,1);
+  db.prepare('UPDATE users SET balance=50000 WHERE id=?').run(user.id);
+  const full=startMemberSession('prepay-pc','gamer1','gamer123',30);
+  assert.throws(()=>extendPrepaidMember(full.sessionId,0));
+  const extension=extendPrepaidMember(full.sessionId,10);
+  assert.equal(extension.amount,10000);
+  assert.equal(Date.parse(extension.endsAt)-Date.parse(full.endsAt),600000);
+  const expired=settleMemberUsage(full.sessionId,new Date(Date.parse(extension.endsAt)+1000),true);
+  assert.equal(expired.refundAmount,0);assert.equal(expired.currentBalance,50000-full.amount-extension.amount);
+ }finally{db.close();}
+});

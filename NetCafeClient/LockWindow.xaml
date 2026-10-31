@@ -392,6 +392,38 @@
                                         Template="{StaticResource TabButtonTemplate}"/>
                             </Grid>
 
+                            <TextBlock Text="O‘ynash vaqti" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,6"/>
+                            <ComboBox x:Name="SessionMinutes" Height="40" SelectedIndex="1" Margin="0,0,0,8"
+                                      Background="#12131F" Foreground="White" FontSize="14">
+                                <ComboBox.Template>
+                                    <ControlTemplate TargetType="ComboBox">
+                                        <Grid>
+                                            <ToggleButton IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Focusable="False">
+                                                <ToggleButton.Template>
+                                                    <ControlTemplate TargetType="ToggleButton">
+                                                        <Border Background="#12131F" BorderBrush="#2A2A3D" BorderThickness="1" CornerRadius="12"/>
+                                                    </ControlTemplate>
+                                                </ToggleButton.Template>
+                                            </ToggleButton>
+                                            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" Margin="14,0,32,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                            <Path Data="M 0,0 L 4,4 L 8,0" Stroke="#94A3B8" StrokeThickness="1.5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0" IsHitTestVisible="False"/>
+                                            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
+                                                <Border Background="#12131F" BorderBrush="#38BDF8" BorderThickness="1" CornerRadius="10" Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                                    <ScrollViewer><ItemsPresenter/></ScrollViewer>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ComboBox.Template>
+                                <ComboBoxItem Tag="30" Content="30 daqiqa"/>
+                                <ComboBoxItem Tag="60" Content="60 daqiqa (1 soat)"/>
+                                <ComboBoxItem Tag="90" Content="90 daqiqa"/>
+                                <ComboBoxItem Tag="120" Content="120 daqiqa (2 soat)"/>
+                                <ComboBoxItem Tag="180" Content="180 daqiqa (3 soat)"/>
+                                <ComboBoxItem Tag="240" Content="240 daqiqa (4 soat)"/>
+                            </ComboBox>
+                            <TextBlock Text="Tanlangan vaqt puli balansdan hozir yechiladi. Erta chiqsangiz, qolgan vaqt puli qaytariladi."
+                                       TextWrapping="Wrap" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,12"/>
                             <!-- XATOLIK BANNERI (Animated Shake) -->
                             <Border x:Name="BorderError"
                                     Background="#2E1218"
@@ -471,7 +503,7 @@
 
                         <!-- Card Footer Hint -->
                         <Border Background="#090A0F" BorderBrush="#1C1E2B" BorderThickness="1" CornerRadius="10" Padding="12,8">
-                            <TextBlock x:Name="TxtCardHint" Text="💡 Balansingiz yetarlimi? Hisobingizdan daqiqama-daqiqa yechib boriladi." FontSize="10" Foreground="#64748B" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+                            <TextBlock x:Name="TxtCardHint" Text="Seans to‘lovi va qaytimi balans tarixida ko‘rinadi." FontSize="10" Foreground="#64748B" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
                         </Border>
                     </StackPanel>
                 </Border>
@@ -513,6 +545,8 @@
 
                     <!-- STEP 1: AUTHENTICATION PANEL -->
                     <StackPanel x:Name="AdminAuthStepPanel">
+                        <TextBlock Text="Menejer logini:" FontSize="12" Foreground="#CBD5E1" Margin="0,0,0,8"/>
+                        <TextBox x:Name="TxtAdminUsername" Text="manager" Height="42" Foreground="White" Background="#0B0C12" BorderBrush="#334155" Template="{StaticResource ModernTextBoxTemplate}" Margin="0,0,0,12"/>
                         <TextBlock Text="Admin / Menejer paroli:" FontSize="12" FontWeight="SemiBold" Foreground="#CBD5E1" Margin="0,0,0,8"/>
                         <PasswordBox x:Name="TxtAdminPassword"
                                      Height="46"
@@ -530,7 +564,7 @@
                             <Button Content="Bekor qilish" Width="110" Height="38" Background="#1E293B" Foreground="#94A3B8" BorderThickness="0" Cursor="Hand" Margin="0,0,10,0" Click="BtnCloseAdminModal_Click">
                                 <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
                             </Button>
-                            <Button Content="Kirish" Width="110" Height="38" Background="#F59E0B" Foreground="#0B0C12" FontWeight="Bold" BorderThickness="0" Cursor="Hand" Click="BtnAdminAuthSubmit_Click">
+                            <Button x:Name="BtnAdminAuthSubmit" Content="Kirish" Width="110" Height="38" Background="#F59E0B" Foreground="#0B0C12" FontWeight="Bold" BorderThickness="0" Cursor="Hand" Click="BtnAdminAuthSubmit_Click">
                                 <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
                             </Button>
                         </StackPanel>

@@ -22,6 +22,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.resolve(__dirname, '../../data');
 const LICENSE_FILE = path.resolve(DATA_DIR, 'softech_license.sig');
+const LOCK_FILE = path.resolve(DATA_DIR, 'license_lock.json');
 const CLOCK_GUARD_FILE = path.resolve(DATA_DIR, 'clock_guard.sec');
 
 // Shared Cloud Crypto Salt
@@ -84,6 +85,7 @@ export class LicenseManager {
 
     // Bulut bilan doimiy WebSocket va Kill-Switch aloqasini o'rnatish
     this.connectCloudWebSocket();
+    this.cloudSyncTimer ??= setInterval(() => this.checkApprovalStatus(), 5000);
 
     // Har 60 soniyada litsenziya va vaqt holatini tekshiruvchi davriy monitoring
     if (!this.checkIntervalTimer) {
@@ -181,8 +183,10 @@ export class LicenseManager {
       if (data.status === 'APPROVED') {
         this.saveSignedLicense(data.signedLicense);
         if (this.approvalPollTimer) { clearInterval(this.approvalPollTimer); this.approvalPollTimer = null; }
+      } else if (data.status === 'NONE' && this.licenseData) {
+        this.enforceLockdown('CLUB_REMOVED', 'Klub markaziy tizimdan o‘chirilgan.');
       } else if (data.status === 'REJECTED') {
-        if (this.state === 'ACTIVE') this.enforceLockdown('REMOTE_BLOCKED', data.reason);
+        if (this.state !== 'LOCKED_BY_ADMIN') this.enforceLockdown('REMOTE_BLOCKED', data.reason);
         else this.lockMessage = data.reason || 'So\'rov rad etildi.';
       }
     } catch (error) {
@@ -250,13 +254,24 @@ export class LicenseManager {
         return false;
       }
 
+      if (fs.existsSync(LOCK_FILE)) {
+        const lock = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+        this.licenseData = payload;
+        this.state = 'LOCKED_BY_ADMIN';
+        this.lockReason = lock.reason;
+        this.lockMessage = lock.message;
+        return false;
+      }
       // Muvaffaqiyatli
       this.licenseData = payload;
       this.state = 'ACTIVE';
       this.lockReason = '';
       this.lockMessage = '';
-      this.lastVerifiedCloudTimestamp = payload.verifiedAt ? new Date(payload.verifiedAt).getTime() : Date.now();
-      this.recordClockState();
+      this.lastVerifiedCloudTimestamp = Date.parse(payload.verifiedAt);
+      if (!Number.isFinite(this.lastVerifiedCloudTimestamp)) {
+        this.enforceLockdown('VERIFICATION_REQUIRED', 'Litsenziyani internet orqali qayta tasdiqlang.'); return false;
+      }
+      if (!this.verifyClockIntegrity()) return false;
 
       console.log(`✅ [Anti-Piracy] Litsenziya tasdiqlandi: "${payload.clubName || 'Klub'}" (Amal qilish muddati: ${new Date(payload.expiresAt).toLocaleDateString()})`);
       return true;
@@ -392,13 +407,8 @@ export class LicenseManager {
 
     // C) TIZIMLI HEARTBEAT TASDIQI
     if (msg.type === 'HEARTBEAT_ACK') {
-      this.lastVerifiedCloudTimestamp = Date.now();
-      this.recordClockState();
-      if (this.state === 'EXPIRED' && this.licenseData && new Date(this.licenseData.expiresAt).getTime() > Date.now()) {
-        this.state = 'ACTIVE';
-        this.lockReason = '';
-        this.lockMessage = '';
-      }
+      // A transport acknowledgement is not a signed license renewal.
+      this.checkApprovalStatus();
     }
   }
 
@@ -406,6 +416,8 @@ export class LicenseManager {
    * 6. REMOTE KILL-SWITCH IJROSI (Majburiy to'xtatish va barcha mijozlarni qulflash)
    */
   static enforceLockdown(reason, message) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(LOCK_FILE, JSON.stringify({ reason, message }), 'utf8');
     this.state = 'LOCKED_BY_ADMIN';
     this.lockReason = reason || 'PAYMENT_OVERDUE';
     this.lockMessage = message || "DIQQAT: Dastur litsenziyasi to'xtatildi. Qayta faollashtirish uchun ta'minotchi bilan bog'laning: +998 95 222 06 44, +998 99 563 45 16";
@@ -473,6 +485,7 @@ export class LicenseManager {
     fs.renameSync(configFile + '.tmp', configFile);
     fs.writeFileSync(LICENSE_FILE + '.tmp', JSON.stringify(signedLicenseObj, null, 2), 'utf8');
     fs.renameSync(LICENSE_FILE + '.tmp', LICENSE_FILE);
+    fs.rmSync(LOCK_FILE, { force: true });
     this.loadAndVerifyLocalLicense();
     if (changedClub || !wasActive) this.onLicenseActivated?.(payload);
   }
@@ -502,6 +515,10 @@ export class LicenseManager {
    */
   static isOperational() {
     return this.state === 'ACTIVE';
+  }
+
+  static getSignedLicense() {
+    try { return JSON.parse(fs.readFileSync(LICENSE_FILE,'utf8')); } catch { return null; }
   }
 
   static getStatusReport() {

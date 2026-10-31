@@ -57,3 +57,6 @@ $RECYCLE.BIN/
 # Local build tools and isolated checks
 .tools/
 .test-output/
+
+# Per-install manager credentials (never distribute with source or updates)
+**/manager-credentials.txt

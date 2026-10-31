@@ -1,0 +1,18 @@
+// Shared by the desktop dashboard and mobile PWA. No action is the default.
+window.confirmPowerSession = function(info,action) {
+ return new Promise(resolve=>{
+  const dialog=document.createElement('dialog');dialog.className='active-power-warning';
+  dialog.style.cssText='box-sizing:border-box;width:min(620px,calc(100vw - 28px));max-height:92dvh;overflow:hidden;padding:20px;border:3px solid #fb923c;border-radius:22px;background:#171d2b;color:#fff;box-shadow:0 25px 90px #000b;font-family:Segoe UI,system-ui,sans-serif';
+  const style=document.createElement('style');style.textContent='.active-power-warning[open]{display:flex;flex-direction:column}.active-power-warning .power-details{overflow:auto;min-height:0}.active-power-warning .power-choices{flex-shrink:0}@media(max-width:480px){.active-power-warning h2{font-size:23px!important}}.active-power-warning::backdrop{background:#000c;backdrop-filter:blur(5px)}.active-power-warning button{min-height:56px;border-radius:12px;padding:14px;font:700 17px Segoe UI,system-ui;cursor:pointer;width:100%;margin-top:12px}.active-power-warning button:focus-visible{outline:3px solid white;outline-offset:3px}';
+  dialog.innerHTML='<div style="font-size:40px" aria-hidden="true">⚠</div><h2 style="font-size:28px;line-height:1.2;margin:12px 0;color:#fdba74">BU KOMPYUTERDA FAOL SEANS BOR!</h2><p data-name style="font-size:20px;font-weight:700"></p><p data-description style="font-size:16px;line-height:1.4"></p><p data-bill style="font-size:16px;color:#fdba74"></p><label style="display:block;font-size:15px">Seans yopilsa, qo‘shimcha to‘lov turi<select style="display:block;width:100%;font-size:17px;padding:12px;margin-top:8px;background:#26354d;color:white;border-radius:10px"><option value="CASH">Naqd</option><option value="CARD">Karta</option></select></label><button type="button" data-close style="background:#dc2626;color:white;border:1px solid #ef4444">Seansni yopish</button><button type="button" data-keep style="background:#fbbf24;color:#241702;border:1px solid #f59e0b">Seansni yopmayman</button><button type="button" data-cancel style="background:transparent;color:#cad5e6;border:1px solid #64748b">Bekor qilish</button>';
+  const split=dialog.innerHTML.indexOf('<button');dialog.innerHTML='<div class="power-details">'+dialog.innerHTML.slice(0,split)+'</div><div class="power-choices">'+dialog.innerHTML.slice(split)+'</div>';
+  dialog.prepend(style);dialog.setAttribute('aria-label','Faol seans haqida ogohlantirish');
+  dialog.querySelector('[data-name]').textContent=(info.computerName||'Kompyuter')+' · '+(info.customerName||'Mijoz');
+  const verb=action==='reboot'?'qayta yoqiladi':'o‘chiriladi';
+  dialog.querySelector('[data-description]').textContent='Kompyuter '+verb+'. Seansni yopsangiz, yakuniy hisob-kitob qilinadi. Yopmasangiz, kompyuter o‘chiq bo‘lsa ham vaqt yurishda davom etadi; qayta yoqilganda seans tiklanadi.';
+  dialog.querySelector('[data-bill]').textContent=Number(info.amountToCollect)>0?'Seans yopilganda olinadigan qo‘shimcha summa: '+Number(info.amountToCollect).toLocaleString('uz-UZ')+' so‘m.':'';
+  let finished=false;const finish=value=>{if(finished)return;finished=true;dialog.close();dialog.remove();resolve(value);};
+  for(const [selector,decision]of [['[data-close]','close'],['[data-keep]','keep']])dialog.querySelector(selector).onclick=()=>finish({sessionDecision:decision,sessionId:info.sessionId,paymentMethod:dialog.querySelector('select').value});
+  dialog.querySelector('[data-cancel]').onclick=()=>finish(null);dialog.oncancel=e=>{e.preventDefault();finish(null);};document.body.append(dialog);dialog.showModal();dialog.querySelector('[data-cancel]').focus({preventScroll:true});dialog.scrollTop=0;
+ });
+};

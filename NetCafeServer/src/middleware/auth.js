@@ -1,4 +1,4 @@
-import { extractToken, getSession, hasPermission } from '../auth.js';
+import { extractToken, getSession, hasPermission, normalizePermissions } from '../auth.js';
 import { db } from '../db.js';
 
 /**
@@ -57,7 +57,7 @@ export function authenticate(req, res, options = {}) {
     role: freshUser.role, // 'superadmin' | 'club_owner' | 'administrator' | 'client'
     phoneNumber: freshUser.phone_number,
     balance: Number(freshUser.balance || 0),
-    permissions: Array.isArray(permissions) ? permissions : ['*'],
+    permissions: normalizePermissions(permissions),
     club: club || null
   };
 

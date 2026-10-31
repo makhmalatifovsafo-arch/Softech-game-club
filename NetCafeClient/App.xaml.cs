@@ -127,9 +127,9 @@ public partial class App : WpfApplication
         _maintenanceToolbar.SetPcInfo(_wsService.PcNumber);
 
         // ---- 8. LockWindow login va QR hodisalari ----
-        _lockWindow.OnLoginRequested += (username, password) =>
+        _lockWindow.OnLoginRequested += (username, password, minutes) =>
         {
-            _ = _wsService.SendMemberLoginAsync(username, password);
+            _ = _wsService.SendMemberLoginAsync(username, password, minutes);
         };
 
         _lockWindow.OnQrRefreshRequested += () =>
@@ -235,7 +235,7 @@ public partial class App : WpfApplication
                 _shellWindow.Focus();
 
                 // 3. Time Widget
-                if (clientBalance.HasValue && clientBalance.Value > 0)
+                if (clientBalance.HasValue)
                 {
                     _timeWidget?.StartMemberSession(customerName, clientBalance.Value, remainingSeconds, _wsService.PcNumber);
                 }
@@ -409,6 +409,7 @@ public partial class App : WpfApplication
 
     private static void ExecuteShutdown(string arguments)
     {
+        if (IsDevMode) return; // One-PC testing must never power off the host.
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo

@@ -6,7 +6,9 @@ export class ClientManager {
   static socketToPcId = new Map();
 
   static registerClient(socket, pcId, pcNumber, macAddress, ipAddress, name = null) {
-    if (this.clients.has(pcId)) {
+    const previousPc=this.socketToPcId.get(socket);
+    if(previousPc && previousPc!==pcId)this.unregisterClient(socket);
+    if (this.clients.has(pcId) && this.clients.get(pcId).socket!==socket) {
       const old = this.clients.get(pcId);
       try { old.socket.terminate(); } catch {}
       this.socketToPcId.delete(old.socket);
@@ -31,20 +33,7 @@ export class ClientManager {
 
     if (activeSes) {
       this.updateComputerOnlineStatus(pcId, 'OCCUPIED');
-      const now = Date.now();
-      const endsAt = new Date(activeSes.ends_at).getTime();
-      const remainingSeconds = Math.max(0, Math.floor((endsAt - now) / 1000));
-      this.send(pcId, 'START_SESSION', {
-        sessionId: activeSes.id,
-        durationMinutes: Math.round(remainingSeconds / 60),
-        tariffName: activeSes.tariff_name || 'Standart',
-        startedAt: new Date(activeSes.started_at).getTime(),
-        endsAt,
-        endTime: activeSes.ends_at,
-        remainingSeconds: activeSes.notes?.includes('POSTPAID') ? -1 : remainingSeconds,
-        customerName: activeSes.customer_name || 'Mijoz',
-        isPostpaid: Boolean(activeSes.notes?.includes('POSTPAID'))
-      });
+      // The handshake sends the complete session once, after license verification.
       console.log(`🔌 [ClientManager] ${client.name} (ID: ${pcId}) yoqildi va faol seansi (${activeSes.id}) avtomatik uzatildi.`);
       this.broadcast('WORKSTATION_UPDATED', { id: pcId, status: 'OCCUPIED', is_online: 1, isOnline: true });
       this.broadcast('ADMIN_DATA_UPDATED', { pcId, status: 'OCCUPIED' });
@@ -99,6 +88,10 @@ export class ClientManager {
       }
     }
     return undefined;
+  }
+
+  static isConnected(target) {
+    return this.findClient(target)?.socket?.readyState === WebSocket.OPEN;
   }
 
   static getAllClients() {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import crypto from 'node:crypto';
 
 mkdirSync('.test-output', { recursive: true });
@@ -17,7 +17,7 @@ process.env.SUPABASE_ANON_KEY = '';
 process.env.SUPABASE_SERVICE_ROLE_KEY = '';
 
 async function call(handler, route, body, token) {
-  const req = new EventEmitter();
+  const req = new PassThrough();
   Object.assign(req, { method: body === undefined ? 'GET' : 'POST', url: route,
     headers: { host: 'localhost', ...(token ? { authorization: 'Bearer ' + token } : {}) },
     socket: { remoteAddress: '127.0.0.1' } });
@@ -25,8 +25,7 @@ async function call(handler, route, body, token) {
   const res = { statusCode: 200, setHeader() {}, writeHead(code) { this.statusCode = code; },
     end(data) { result = { status: this.statusCode, body: JSON.parse(data) }; } };
   const task = handler(req, res, route);
-  req.emit('data', JSON.stringify(body ?? {}));
-  req.emit('end');
+  req.end(JSON.stringify(body ?? {}));
   await task;
   assert.ok(result, 'handler must respond');
   return result;

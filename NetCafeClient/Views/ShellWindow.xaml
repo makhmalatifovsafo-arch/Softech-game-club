@@ -60,6 +60,7 @@
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="MinHeight" Value="40"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type RadioButton}">
@@ -107,6 +108,8 @@
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
@@ -137,7 +140,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <!-- 1. Yuqori Panel (Top Bar) -->
-            <RowDefinition Height="74"/>
+            <RowDefinition Height="Auto"/>
             <!-- 2. Navigatsiya va Qidiruv Qatori -->
             <RowDefinition Height="64"/>
             <!-- 3. O'yinlar To'ri (Games Grid) -->
@@ -149,8 +152,9 @@
         <!-- ================================================================= -->
         <!-- 1. YUQORI PANEL (TOP BAR) -->
         <!-- ================================================================= -->
-        <Border Grid.Row="0" Background="#0C0D12" BorderBrush="#1E2028" BorderThickness="0,0,0,1" Padding="24,0">
-            <Grid VerticalAlignment="Center">
+        <Border Grid.Row="0" Background="#0C0D12" BorderBrush="#1E2028" BorderThickness="0,0,0,1" Padding="24,12">
+            <Grid x:Name="HeaderLayout" VerticalAlignment="Center">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -200,7 +204,7 @@
                 </StackPanel>
 
                 <!-- O'ng Taraf: [🛒 Bar], [🔔 Admin], [🔊 Ovoz], [✕ Qulf] -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel x:Name="HeaderActions" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- Bardan buyurtma berish -->
                     <Button x:Name="BtnOpenBar"
                             Content="🛒 Bardan buyurtma"
@@ -258,13 +262,15 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Kategoriya Tablari -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,16,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <RadioButton Content="🎮 Barchasi" Style="{StaticResource CategoryTabStyle}" IsChecked="True" Checked="CategoryTab_Checked" Tag="ALL"/>
                     <RadioButton Content="🎯 Otishma (Shooters)" Style="{StaticResource CategoryTabStyle}" Checked="CategoryTab_Checked" Tag="SHOOTER"/>
                     <RadioButton Content="⚔️ MOBA / Strategiya" Style="{StaticResource CategoryTabStyle}" Checked="CategoryTab_Checked" Tag="MOBA"/>
                     <RadioButton Content="🏎️ Sport &amp; Poyga" Style="{StaticResource CategoryTabStyle}" Checked="CategoryTab_Checked" Tag="SPORT"/>
                     <RadioButton Content="🌐 Ilovalar &amp; Brauzerlar" Style="{StaticResource CategoryTabStyle}" Checked="CategoryTab_Checked" Tag="APPS"/>
                 </StackPanel>
+                </ScrollViewer>
 
                 <!-- Qidiruv Maydoni (Search Input) -->
                 <Border Grid.Column="1" Background="#18181B" BorderBrush="#27272A" BorderThickness="1" CornerRadius="18" Padding="12,6" Width="260">

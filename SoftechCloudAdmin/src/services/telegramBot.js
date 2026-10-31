@@ -170,7 +170,7 @@ export class TelegramBotService {
         try {
           const ActivationService = activationService || (await import('./activationService.js')).ActivationService;
           const res = await ActivationService.approveActivation(reqId);
-          const reply = `✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)\n📅 Muddat: 30 kun`;
+          const reply = `✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)\n👤 Keyingi qadam: super admin web panelida Klublar → shu klub → Administrator akkaunti va Menejer akkaunti orqali alohida login-parol belgilang. Administratorni menejerdan oldin tayyorlash mumkin.\n📅 Muddat: 30 kun`;
           await this.sendMessage(reply, { chatId });
           return reply;
         } catch (err) {
@@ -370,7 +370,7 @@ export class TelegramBotService {
         try {
           const ActivationService = activationService || (await import('./activationService.js')).ActivationService;
           const res = await ActivationService.approveActivation(reqId);
-          await this.sendMessage(`✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)`, { chatId });
+          await this.sendMessage(`✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)\n👤 Keyingi qadam: super admin web panelida Klublar → shu klub → Administrator akkaunti va Menejer akkaunti orqali alohida login-parol belgilang. Administratorni menejerdan oldin tayyorlash mumkin.`, { chatId });
         } catch (err) {
           await this.sendMessage(`⚠️ Xatolik: ${err.message}`, { chatId });
         }

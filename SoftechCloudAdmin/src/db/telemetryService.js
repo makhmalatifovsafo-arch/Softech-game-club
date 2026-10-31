@@ -1,3 +1,4 @@
+import { formatClubInspector } from '../services/clubInspector.js';
 import crypto from 'node:crypto';
 import { db, initDatabase, hashPassword, verifyPassword } from './connection.js';
 
@@ -477,136 +478,10 @@ export class TelemetryService {
    * 13. Klub bo'yicha batafsil jonli inspektor (Overview, Workstations Matrix, Kassa Bo'linishi)
    */
   static getClubDetailedInspector(clubId) {
-    const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId);
-    if (!club) return null;
-
-    const expiresMs = new Date(club.license_expires_at).getTime();
-    const daysLeft = Math.ceil((expiresMs - Date.now()) / (1000 * 60 * 60 * 24));
-
-    // Online status
-    let isOnline = false;
-    let offlineMinutes = 0;
-    if (club.last_heartbeat_at) {
-      const hbStr = club.last_heartbeat_at.includes('Z') ? club.last_heartbeat_at : (club.last_heartbeat_at.replace(' ', 'T') + 'Z');
-      const hbTime = new Date(hbStr).getTime();
-      const diffMs = Math.max(0, Date.now() - hbTime);
-      offlineMinutes = Math.floor(diffMs / 60000);
-      isOnline = club.status === 'ACTIVE' || offlineMinutes <= 15;
-    } else {
-      isOnline = club.status === 'ACTIVE';
-      offlineMinutes = isOnline ? 2 : 999;
-    }
-
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const metrics = db.prepare(`
-      SELECT * FROM club_metrics WHERE club_id = ? AND record_date = ?
-    `).get(clubId, todayStr) || {
-      total_daily_revenue: 0,
-      bar_revenue: 0,
-      total_sessions_count: 0,
-      total_play_hours: 0
-    };
-
-    const totalRevenue = Number(metrics.total_daily_revenue) || 0;
-    const barRevenue = Number(metrics.bar_revenue) || 0;
-    const sessionsRevenue = Math.max(0, totalRevenue - barRevenue);
-    const refundsSum = sessionsRevenue > 0 ? Math.round(sessionsRevenue * 0.015) : 0;
-
-    // Workstations cache tekshirish
-    let workstations = db.prepare(`
-      SELECT * FROM club_workstations_cache WHERE club_id = ? ORDER BY id ASC
-    `).all(clubId);
-
-    const totalPcs = Math.max(1, Number(club.total_workstations) || 20);
-
-    // Agar keshda kam bo'lsa yoki barchasi oflayn bo'lsa (onlayn klubda), avtomatik sinxronizatsiya qilamiz
-    const allOffline = workstations.length > 0 && workstations.every(w => w.status === 'OFFLINE');
-    if (workstations.length < totalPcs || (allOffline && isOnline)) {
-      const preparedList = [];
-      const now = Date.now();
-
-      for (let i = 1; i <= totalPcs; i++) {
-        const pcNum = `PC-${String(i).padStart(2, '0')}`;
-        let zone = 'STANDARD';
-        if (i <= 4) zone = 'VIP';
-        else if (i <= 10) zone = 'PRO';
-
-        let status = 'AVAILABLE';
-        let sessionStartedAt = null;
-
-        if (isOnline) {
-          if (i % 6 === 0) {
-            status = 'OFFLINE';
-          } else if (i % 2 === 1 || i <= 8) {
-            status = 'OCCUPIED';
-            const minsAgo = 15 + ((i * 13) % 110);
-            sessionStartedAt = new Date(now - minsAgo * 60000).toISOString();
-          }
-        } else {
-          status = 'OFFLINE';
-        }
-
-        preparedList.push({
-          pc_number: pcNum,
-          zone_name: zone,
-          status,
-          current_session_started_at: sessionStartedAt
-        });
-      }
-
-      this.syncWorkstationsCache(clubId, preparedList);
-
-      workstations = db.prepare(`
-        SELECT * FROM club_workstations_cache WHERE club_id = ? ORDER BY id ASC
-      `).all(clubId);
-    }
-
-    const gamerNamesPool = ['Shoxrux_pro', 'Temur_99', 'Jasur_CS', 'Cyber_King', 'Doni_Sniper', 'Aziz_Apex', 'Bek_Warrior', 'Rustam_Dota', 'Ali_Pro', 'Sardor_Top', 'Farrux_PUBG', 'Umid_Valorant'];
-    const enrichedWorkstations = workstations.map((pc, idx) => {
-      let sessionDetails = null;
-      if (pc.status === 'OCCUPIED') {
-        const startTime = pc.current_session_started_at ? new Date(pc.current_session_started_at).getTime() : (Date.now() - 45 * 60000);
-        const playedMinutes = Math.max(5, Math.floor((Date.now() - startTime) / 60000));
-        const hourlyRate = pc.zone_name === 'VIP' ? 20000 : (pc.zone_name === 'PRO' ? 15000 : 10000);
-        const spentAmount = Math.round((playedMinutes / 60) * hourlyRate);
-
-        sessionDetails = {
-          gamerName: gamerNamesPool[idx % gamerNamesPool.length],
-          startedAt: new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          playedMinutes,
-          spentAmount,
-          hourlyRate
-        };
-      }
-
-      return {
-        id: pc.id,
-        pcNumber: pc.pc_number,
-        zoneName: pc.zone_name,
-        status: pc.status,
-        session: sessionDetails
-      };
-    });
-
-    return {
-      club: {
-        ...club,
-        is_online_now: isOnline ? 1 : 0,
-        offline_minutes: offlineMinutes,
-        license_days_left: daysLeft,
-        duty_cashier: club.owner_name ? (club.owner_name.split(' ')[0].toLowerCase() + '_admin') : 'ali_admin',
-        ping_ms: isOnline ? (15 + (club.id * 3) % 14) : null
-      },
-      kassa: {
-        totalDailyRevenue: totalRevenue,
-        sessionsRevenue: sessionsRevenue,
-        barRevenue: barRevenue,
-        refundsSum: refundsSum,
-        totalSessionsCount: Number(metrics.total_sessions_count) || 0,
-        totalPlayHours: Number(metrics.total_play_hours) || 0
-      },
-      workstations: enrichedWorkstations
-    };
+    const club=db.prepare('SELECT * FROM clubs WHERE id=?').get(clubId);if(!club)return null;
+    const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
+    const metrics=db.prepare('SELECT * FROM club_metrics WHERE club_id=? AND record_date=?').get(clubId,date)||{};
+    const pcs=db.prepare('SELECT * FROM club_workstations_cache WHERE club_id=? ORDER BY id').all(clubId);
+    return formatClubInspector(club,metrics,pcs);
   }
 }
-

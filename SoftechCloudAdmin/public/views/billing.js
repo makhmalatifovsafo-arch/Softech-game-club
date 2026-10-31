@@ -16,6 +16,8 @@ export const billingState = {
   },
   clubs: [],
   selectedClubForPayment: null,
+  paymentRequestId: null,
+  paymentSubmitting: false,
   selectedClubForTariff: null,
   activeFilter: 'ALL', // 'ALL' | 'GREEN' | 'YELLOW' | 'RED'
   isLoading: false
@@ -47,6 +49,7 @@ export async function fetchBillingData() {
       return;
     }
 
+    if(!summaryRes.ok||!clubsRes.ok)throw new Error('Billing API xatosi.');
     const summaryData = await summaryRes.json();
     const clubsData = await clubsRes.json();
 
@@ -79,7 +82,7 @@ function renderBillingKpiCards() {
   return `
     <div class="space-y-3">
       <!-- MRR & Total Revenue Highlight Card -->
-      <div class="glass-card rounded-3xl p-4.5 border border-sky-500/25 glow-cyan relative overflow-hidden">
+      <div class="glass-card rounded-3xl p-[18px] border border-sky-500/25 glow-cyan relative overflow-hidden">
         <div class="absolute -right-8 -bottom-8 w-28 h-28 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
 
         <div class="flex items-center justify-between">
@@ -574,6 +577,7 @@ window.openPaymentModal = function(clubId) {
   const club = billingState.clubs.find(c => c.id === Number(clubId));
   if (club) {
     billingState.selectedClubForPayment = club;
+    billingState.paymentRequestId = crypto.randomUUID();
     renderBillingView();
   }
 };
@@ -626,6 +630,7 @@ window.handleRecordPaymentSubmit = async function(e) {
   const monthsAdded = parseInt(document.getElementById('inputPaymentMonths').value, 10);
   const notes = document.getElementById('inputPaymentNotes').value.trim();
 
+  if(billingState.paymentSubmitting)return;billingState.paymentSubmitting=true;
   showBillingToast("To'lov tranzaksiyasi qayd etilmoqda...");
 
   try {
@@ -638,6 +643,7 @@ window.handleRecordPaymentSubmit = async function(e) {
       },
       body: JSON.stringify({
         clubId: club.id,
+        requestId: billingState.paymentRequestId,
         amount,
         paymentMethod,
         monthsAdded,
@@ -647,7 +653,7 @@ window.handleRecordPaymentSubmit = async function(e) {
 
     const data = await res.json();
     if (data.success) {
-      alert(`✅ To'lov muvaffaqiyatli qabul qilindi!\n\nFilial: ${data.clubName}\nSumma: ${data.amount.toLocaleString()} UZS\nTo'lov turi: ${data.paymentMethod}\nYangi amal qilish muddati: ${data.newExpiryDate.slice(0, 10)}\n\nFilial serveriga UNLOCK signali yuborildi.`);
+      alert(`✅ To'lov muvaffaqiyatli qabul qilindi!\n\nFilial: ${data.clubName}\nSumma: ${data.amount.toLocaleString()} UZS\nTo'lov turi: ${data.paymentMethod}\nYangi amal qilish muddati: ${data.newExpiryDate.slice(0, 10)}\n\nFilial internetga ulanganda yangi litsenziya holatini oladi.`);
       closePaymentModal();
       await fetchBillingData();
       renderBillingView();

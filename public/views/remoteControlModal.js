@@ -25,73 +25,9 @@ export const remoteControlState = {
  * 1. Admin Parolini Yangilash Dialogi
  */
 function renderPasswordDialog() {
-  return `
-    <form onsubmit="handleResetPasswordSubmit(event)" class="space-y-3.5 animate-fade-in">
-      <div class="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-start gap-2">
-        <span class="text-base leading-none">🔑</span>
-        <p class="leading-relaxed">
-          Ushbu amal filial serveridagi <strong>admin</strong> parolini masofadan yangilaydi. Yangi parol filial serveri keyingi heartbeat'da qabul qilishi bilan darhol kuchga kiradi.
-        </p>
-      </div>
-
-      <!-- Yangi Parol Inputi va Generator -->
-      <div>
-        <label class="block text-[11px] font-semibold text-zinc-300 mb-1">
-          Yangi Master Parol:
-        </label>
-        <div class="flex items-center gap-2">
-          <div class="relative flex-1">
-            <input 
-              id="inputNewPassword" 
-              type="text" 
-              required 
-              minlength="6"
-              placeholder="Masalan: Softech2026!" 
-              class="w-full px-3.5 py-2.5 rounded-xl glass-card text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition"
-            />
-          </div>
-          <button 
-            type="button" 
-            onclick="generateRandomPassword()" 
-            class="px-3 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-sky-400 text-xs font-bold transition flex items-center gap-1 border border-zinc-700"
-            title="Tasodifiy kuchli parol generatsiya qilish"
-          >
-            <span>🎲</span>
-            <span>Generatsiya</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Tiklash Sababi -->
-      <div>
-        <label class="block text-[11px] font-semibold text-zinc-300 mb-1">
-          Yangilanish Sababi:
-        </label>
-        <input 
-          id="inputPasswordReason" 
-          type="text" 
-          value="Klub egasi iltimosiga binoan parolni yangilash" 
-          class="w-full px-3.5 py-2 rounded-xl glass-card text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition"
-        />
-      </div>
-
-      <!-- Submit Button -->
-      <div class="pt-2">
-        <button 
-          type="submit" 
-          class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-500/25 transition"
-        >
-          <span>🚀</span>
-          <span>Parolni Yangilash Buyrug'ini Yuborish</span>
-        </button>
-      </div>
-    </form>
-  `;
+  return `<div class="space-y-3"><p class="text-sm text-zinc-300">Klub menejerining login va parolini super admin belgilaydi.</p><button type="button" onclick="openManagerAccount(${remoteControlState.activeClubId})" class="w-full py-3 rounded-xl bg-sky-400 text-black font-bold">Menejer akkauntini sozlash</button></div>`;
 }
 
-/**
- * 2. Klub Litsenziyasini Bloklash / Faollashtirish Dialogi
- */
 function renderLicenseDialog() {
   return `
     <form onsubmit="handleLicenseSubmit(event)" class="space-y-3.5 animate-fade-in">
@@ -530,42 +466,6 @@ window.selectBroadcastTarget = function(target) {
 // ============================================================================
 // 3. API SUBMIT HANDLERS
 // ============================================================================
-
-window.handleResetPasswordSubmit = async function(e) {
-  e.preventDefault();
-  triggerHaptic([20, 30]);
-
-  const clubId = remoteControlState.activeClubId;
-  const newPassword = document.getElementById('inputNewPassword').value.trim();
-  const reason = document.getElementById('inputPasswordReason').value.trim();
-
-  showRemoteToast("🔑 Parol yangilash buyrug'i yuborilmoqda...");
-
-  try {
-    const token = localStorage.getItem('softech_access_token');
-    const res = await fetch(`/api/telemetry/commands/${clubId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        action: 'RESET_ADMIN_PASSWORD',
-        payload: { newPassword, reason }
-      })
-    });
-
-    const data = await res.json();
-    if (data.success) {
-      alert(`✅ Muvaffaqiyatli!\n\n${remoteControlState.activeClubName} admin paroli yangilandi:\n\nLogin: admin\nYangi Parol: ${data.newPassword || newPassword}\n\nFilial serveri navbatdagi so'rovda qabul qiladi.`);
-      closeRemoteCommandModal();
-    } else {
-      showRemoteToast(`Xatolik: ${data.error || 'Buyruq qabul qilinmadi'}`);
-    }
-  } catch (err) {
-    showRemoteToast("Tarmoq xatosi: Buyruqni yuborib bo'lmadi");
-  }
-};
 
 window.handleLicenseSubmit = async function(e) {
   e.preventDefault();
