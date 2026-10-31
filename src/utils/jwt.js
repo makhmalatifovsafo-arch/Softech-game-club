@@ -3,12 +3,13 @@ import crypto from 'node:crypto';
 const production = process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
 function secret(value, name) {
   if (value && Buffer.byteLength(value) >= 32) return value;
-  if (production || value) throw new Error(name + ' must contain at least 32 bytes.');
+  if (production || value) throw Object.assign(new Error(name + ' must contain at least 32 bytes.'), { statusCode: 503, code: 'AUTH_CONFIGURATION_ERROR' });
   // Local sessions expire after a restart unless an environment secret is configured.
   return crypto.randomBytes(48).toString('hex');
 }
-const accessSecret = secret(process.env.SUPERADMIN_JWT_SECRET || process.env.JWT_SECRET, 'SUPERADMIN_JWT_SECRET');
-const refreshSecret = secret(process.env.REFRESH_SECRET, 'REFRESH_SECRET');
+let accessSecret, refreshSecret;
+const getAccessSecret = () => accessSecret ??= secret(process.env.SUPERADMIN_JWT_SECRET || process.env.JWT_SECRET, 'SUPERADMIN_JWT_SECRET');
+const getRefreshSecret = () => refreshSecret ??= secret(process.env.REFRESH_SECRET, 'REFRESH_SECRET');
 
 function sign(payload, ttl, type, key) {
   const now = Math.floor(Date.now() / 1000);
@@ -33,7 +34,7 @@ function verify(token, type, key) {
     return payload;
   } catch { return null; }
 }
-export const signAccessToken = (payload, ttl = 3600) => sign(payload, ttl, 'access', accessSecret);
-export const signRefreshToken = (payload, ttl = 30 * 24 * 3600) => sign(payload, ttl, 'refresh', refreshSecret);
-export const verifyAccessToken = token => verify(token, 'access', accessSecret);
-export const verifyRefreshToken = token => verify(token, 'refresh', refreshSecret);
+export const signAccessToken = (payload, ttl = 3600) => sign(payload, ttl, 'access', getAccessSecret());
+export const signRefreshToken = (payload, ttl = 30 * 24 * 3600) => sign(payload, ttl, 'refresh', getRefreshSecret());
+export const verifyAccessToken = token => verify(token, 'access', getAccessSecret());
+export const verifyRefreshToken = token => verify(token, 'refresh', getRefreshSecret());

@@ -327,6 +327,6 @@ export default async function handler(req, res) {
     return sendJson(res, 404, { success: false, error: `API yo'nalishi topilmadi: ${pathname}` });
   } catch (error) {
     console.error('API Error:', error);
-    return sendJson(res, error.statusCode || 500, { success: false, error: error.message });
+    return sendJson(res, error.statusCode || 500, { success: false, error: error.message, ...(error.code ? { code: error.code } : {}) });
   }
 }

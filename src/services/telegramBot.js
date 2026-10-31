@@ -15,9 +15,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db } from '../db/connection.js';
-import { TelemetryService } from '../db/telemetryService.js';
-import { BillingService } from './billingService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,7 +158,7 @@ export class TelegramBotService {
   // 2. BOT BUYRUQLARI (COMMANDS)
   // ==========================================================================
 
-  static async processCommand(commandText, chatId = null) {
+  static async processCommand(commandText, chatId = null, activationService = null) {
     const rawCmd = String(commandText || '').trim();
     const cmd = rawCmd.toLowerCase();
 
@@ -204,6 +201,7 @@ export class TelegramBotService {
 
     // 1. /status — Barcha klublarning joriy holati
     if (cmd === '/status' || cmd.startsWith('/status@') || cmd.includes('/status')) {
+      const { TelemetryService } = await import('../db/telemetryService.js');
       const summary = TelemetryService.getGlobalMetricsSummary();
       const clubs = TelemetryService.getAllClubsWithLiveMetrics();
 
@@ -232,7 +230,9 @@ export class TelegramBotService {
 
     // 2. /revenue — Bugungi umumiy platforma tushumi
     if (cmd === '/revenue' || cmd.startsWith('/revenue@') || cmd.includes('/revenue')) {
+      const { TelemetryService } = await import('../db/telemetryService.js');
       const summary = TelemetryService.getGlobalMetricsSummary();
+      const { BillingService } = await import('./billingService.js');
       const billingSummary = BillingService.getBillingSummary();
 
       const todayRev = (summary.revenue.todayTotal || 0).toLocaleString();
@@ -254,6 +254,7 @@ export class TelegramBotService {
 
     // 3. /clubs — Klublar ro'yxati va ma'lumotlari
     if (cmd === '/clubs' || cmd.startsWith('/clubs@') || cmd.includes('/clubs')) {
+      const { TelemetryService } = await import('../db/telemetryService.js');
       const clubs = TelemetryService.getAllClubsWithLiveMetrics();
       let text = `🏢 <b>Ro'yxatdan o'tgan klublar (${clubs.length} ta):</b>\n\n`;
 
@@ -407,7 +408,7 @@ export class TelegramBotService {
 
     if (text) {
       console.log(`📩 [Telegram Bot Input]: "${text}" (Chat ID: ${chatId})`);
-      const response = await this.processCommand(text, chatId);
+      const response = await this.processCommand(text, chatId, activationService);
       return { handled: true, command: text, response };
     }
 
