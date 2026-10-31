@@ -3,6 +3,11 @@ import { db } from './db.js';
 
 // In-memory token do'koni: token -> { userId, clubId, clubName, username, role, permissions, expiresAt }
 const sessions = new Map();
+function sessionStore() {
+  db.exec('CREATE TABLE IF NOT EXISTS auth_sessions (token_hash TEXT PRIMARY KEY, session_json TEXT NOT NULL, expires_at INTEGER NOT NULL)');
+  return db;
+}
+const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex');
 
 // 24 soatlik yashash muddati
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -70,6 +75,9 @@ export function createSessionToken(user, club = null) {
     expiresAt,
   };
 
+  sessionStore().prepare('INSERT INTO auth_sessions (token_hash, session_json, expires_at) VALUES (?, ?, ?)')
+    .run(tokenHash(token), JSON.stringify(sessionData), expiresAt);
+  sessionStore().prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(Date.now());
   sessions.set(token, sessionData);
   return { token, sessionData };
 }
@@ -79,11 +87,16 @@ export function createSessionToken(user, club = null) {
  */
 export function getSession(token) {
   if (!token) return null;
-  const session = sessions.get(token);
+  let session = sessions.get(token);
+  if (!session) {
+    const saved = sessionStore().prepare('SELECT session_json FROM auth_sessions WHERE token_hash = ? AND expires_at > ?').get(tokenHash(token), Date.now());
+    if (saved) { try { session = JSON.parse(saved.session_json); sessions.set(token, session); } catch {} }
+  }
   if (!session) return null;
 
   if (Date.now() > session.expiresAt) {
     sessions.delete(token);
+    sessionStore().prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash(token));
     return null;
   }
 
@@ -96,6 +109,7 @@ export function getSession(token) {
 export function destroySession(token) {
   if (token) {
     sessions.delete(token);
+    sessionStore().prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash(token));
   }
 }
 

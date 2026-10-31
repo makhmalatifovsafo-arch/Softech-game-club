@@ -1,0 +1,25 @@
+Softech Game Club - local development
+
+1. Use Node.js 22.16+ (node:sqlite is required).
+2. Run npm ci in this repository root. Dependencies are shared by the Node apps.
+3. Copy .env.example to .env and set a unique initial admin password (12+ characters).
+   Set SUPERADMIN_INITIAL_PIN to your own four-digit PIN.
+   Set two independent random JWT secrets of at least 32 bytes.
+4. npm start starts the local cloud admin on port 7000.
+   npm run start:server starts the club server on port 5000.
+5. npm test checks local and serverless authentication using an isolated test database.
+6. Build NetCafeClient/NetCafeClient.csproj with .NET 8 SDK.
+   Set NetCafeClient/config.json serverUrl to ws://SERVER_LAN_IP:5000/ws on each client.
+   Assign each client a unique pcNumber. Do not replace localhost with a guessed IP.
+
+Existing admin passwords/PINs are not overwritten. Old JWT sessions require a new login.
+There is no fallback admin password or master PIN. Vercel uses real Supabase accounts;
+configure SUPERADMIN_JWT_SECRET and REFRESH_SECRET in its environment before deploying.
+Each JWT secret must be at least 32 bytes. Local development generates temporary
+secrets if omitted; sessions then expire on restart.
+
+Windows kiosk, watchdog recovery and power commands require a dedicated client PC
+for end-to-end testing. The automated checks do not lock or restart this computer.
+
+For local server-to-cloud development set SOFTECH_CLOUD_URL=http://127.0.0.1:7000
+in .env. An explicit environment URL takes precedence over NetCafeServer/config.json.

@@ -1,0 +1,85 @@
+name: Build and publish Windows OTA release
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New immutable version (example: 1.0.6)'
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: softech-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Resolve version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ($env:REQUESTED_VERSION) { $version = $env:REQUESTED_VERSION }
+          elseif ($env:REF_TYPE -eq 'tag') { $version = $env:REF_NAME -replace '^v','' }
+          else {
+            $latestTag = gh release view --json tagName --jq .tagName 2>$null
+            if ($LASTEXITCODE -ne 0) { $version = '1.0.6' }
+            else {
+              if ($latestTag -match '^v?(\d+\.\d+\.\d+)$') { $previous = $Matches[1] }
+              else {
+                New-Item -ItemType Directory -Force -Path .tools/previous-release | Out-Null
+                gh release download $latestTag --pattern version.json --dir .tools/previous-release
+                if ($LASTEXITCODE -ne 0) { throw 'Cannot establish previous release version' }
+                $previous = (Get-Content -Raw .tools/previous-release/version.json | ConvertFrom-Json).version
+              }
+              if ($previous -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw 'Invalid previous release version' }
+              $version = "$($Matches[1]).$($Matches[2]).$([int]$Matches[3]+1)"
+            }
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "DOTNET_EXE=$((Get-Command dotnet).Source)" >> $env:GITHUB_ENV
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - run: dotnet run --project tests/UpdatePolicy/UpdatePolicy.csproj
+      - run: dotnet build SoftechUpdater/SoftechUpdater.csproj
+      - run: dotnet build tests/FixtureClient/FixtureClient.csproj
+      - run: node tests/updater-transaction.mjs
+      - name: Build complete payloads and bootstrap installers
+        run: ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION -Repository $env:GITHUB_REPOSITORY
+      - name: Verify packaged applications
+        run: node tests/release-artifacts.mjs $env:RELEASE_VERSION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: softech-${{ env.RELEASE_VERSION }}
+          path: Releases/v${{ env.RELEASE_VERSION }}/*
+      - name: Publish only after every asset is uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $tag = "v$env:RELEASE_VERSION"
+          $assets = (Get-ChildItem -LiteralPath "Releases/$tag" -File).FullName
+          gh release create $tag @assets --draft --target $env:GITHUB_SHA --title "Softech $tag" --notes-file RELEASE-NOTES.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release upload failed' }
+          gh release edit $tag --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

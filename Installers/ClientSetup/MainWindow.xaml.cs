@@ -78,11 +78,17 @@ namespace ClientSetup
                     {
                         try
                         {
+                            string boundary = Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                            if (!(proc.MainModule?.FileName?.StartsWith(boundary, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
+                            File.WriteAllText(Path.Combine(targetDir, ".graceful_exit"), "bootstrap upgrade");
                             proc.Kill();
                             proc.WaitForExit(3000);
                         }
                         catch { }
                     }
+
+                    string? previousConfiguration = File.Exists(Path.Combine(targetDir, "config.json"))
+                        ? File.ReadAllText(Path.Combine(targetDir, "config.json")) : null;
 
                     // Extract embedded payload.zip
                     var assembly = Assembly.GetExecutingAssembly();
@@ -102,6 +108,8 @@ namespace ClientSetup
                             }
 
                             ZipFile.ExtractToDirectory(tempZipPath, targetDir, overwriteFiles: true);
+                            if (previousConfiguration != null)
+                                File.WriteAllText(Path.Combine(targetDir, "config.json"), previousConfiguration);
                         }
                         finally
                         {
@@ -119,10 +127,11 @@ namespace ClientSetup
                         serverUrl = serverUrl,
                         pcNumber = wsName,
                         workstationName = wsName,
-                        heartbeatIntervalSeconds = 5
+                        heartbeatIntervalSeconds = 5,
+                        updateIdleSeconds = 10
                     };
                     string json = JsonSerializer.Serialize(configObj, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(configPath, json);
+                    File.WriteAllText(configPath, previousConfiguration ?? json);
 
                     // Shortcuts
                     string exePath = Path.Combine(targetDir, "NetCafeClient.exe");

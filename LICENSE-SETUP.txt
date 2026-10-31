@@ -1,0 +1,40 @@
+LITSENZIYA OQIMI — 2026-10-31
+
+Kod tuzatildi; jonli Vercel va Supabase bazasiga hali joylanmagan.
+Mavjud bot tokeni getMe orqali tekshirildi: ishlaydi.
+Mavjud webhook softech-game-club.vercel.app domeniga ulangan.
+Haqiqiy foydalanuvchilarga sinov xabari yuborilmadi.
+
+BULUTNI YANGILASH
+1. Supabase SQL Editor orqali migrations/20261031_activation_hwid.sql ni bajaring.
+   Agar takroriy HWIDlar mavjud bo'lsa, migratsiya xato bilan to'xtaydi:
+   SELECT hardware_fingerprint, count(*) FROM public.clubs
+   WHERE hardware_fingerprint IS NOT NULL GROUP BY hardware_fingerprint HAVING count(*) > 1;
+   Takrorlarni haqiqiy klublar bilan solishtirmasdan o'chirmang.
+2. Vercel Production sozlamalarida SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+   SUPERADMIN_JWT_SECRET, REFRESH_SECRET, TELEGRAM_BOT_TOKEN,
+   TELEGRAM_ADMIN_CHAT_ID, TELEGRAM_WEBHOOK_SECRET ni kiriting.
+   JWT va refresh sirlari kamida 32 bayt bo'lishi kerak.
+   Root .env fayli Vercel muhitiga avtomatik ko'chmaydi.
+3. Yangi kodni Vercelga joylang.
+4. Xuddi shu TELEGRAM_WEBHOOK_SECRET va bot sozlamalari bilan lokal .env tayyorlang:
+   node --env-file=.env scripts/telegram-webhook.mjs --check
+   node --env-file=.env scripts/telegram-webhook.mjs --configure
+   --check faqat tekshiradi, --configure webhook manzilini va secret_token ni o'rnatadi.
+   Yangi kod eski, secretsiz webhook so'rovlarini qabul qilmaydi.
+   Botni boshqa cloud/localhost loyihasiga bir paytda ulash mumkin emas.
+
+SERVERNI FAOLLASHTIRISH
+1. Yangilangan server dasturini o'rnating.
+2. Super admin: Yangi klub -> klub ma'lumotlari -> haqiqiy kalitni nusxalash.
+3. Server: kalitni kiriting -> Faollashtirish.
+   Yoki serverdan so'rov yuboring -> super admin paneli/Telegram orqali tasdiqlang.
+4. Server imzoni tekshirib, data/softech_license.sig va config.json ga klub IDni saqlaydi.
+   Keyingi ishga tushishda litsenziya saqlanadi.
+5. Bir kalit boshqa kompyuterga o'z-o'zidan ko'chmaydi. Ko'chirish admin orqali alohida hal qilinadi.
+6. Maxsus SOFTECH_CLOUD_KEY ishlatilsa, bulut va serverlarda aynan bir xil bo'lishi shart.
+
+TEKSHIRUV
+npm.cmd test
+Testlar haqiqiy Telegramga xabar yubormaydi; izolyatsiyalangan SQLite va Supabase mock ishlatiladi.
+Jonli migratsiya, Vercel deploy va haqiqiy o'rnatilgan kompyuterdagi pilot hali bajarilmagan.

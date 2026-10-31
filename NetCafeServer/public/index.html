@@ -8563,6 +8563,11 @@
     }
 
     function renderUpdateBadge(status) {
+      if (status?.silent) {
+        document.getElementById('headerUpdateBadge')?.classList.add('hidden');
+        document.getElementById('serverUpdateModal')?.classList.add('hidden');
+        return;
+      }
       currentServerUpdateStatus = status;
       const badge = document.getElementById('headerUpdateBadge');
       const text = document.getElementById('headerUpdateText');

@@ -37,8 +37,8 @@ function loadInitialCredentials() {
   } catch {}
 
   return {
-    botToken: token || '8984240982:AAGwNfsGlyIG7ewsWKA8Odbo_rchA6Et-a8',
-    adminChatId: chatId ? String(chatId) : '958262819'
+    botToken: token || '',
+    adminChatId: chatId ? String(chatId) : ''
   };
 }
 
@@ -77,52 +77,36 @@ export class TelegramBotService {
   /**
    * Asosiy xabar yuborish metodi (HTML formati bilan)
    */
+  static verifyWebhook(req) {
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    return Boolean(secret && req.headers['x-telegram-bot-api-secret-token'] === secret);
+  }
   static async sendMessage(text, { chatId = null, parseMode = 'HTML', replyMarkup = null } = {}) {
     const targetChatId = chatId || this.adminChatId;
-    const timestamp = new Date().toISOString();
-
-    const record = {
-      timestamp,
-      targetChatId,
-      text,
-      status: 'SENT'
-    };
+    const record = { timestamp: new Date().toISOString(), targetChatId, text, status: 'PENDING' };
     this.sentMessagesLog.unshift(record);
-    if (this.sentMessagesLog.length > 50) this.sentMessagesLog.pop();
-
-    if (this.botToken && !this.botToken.startsWith('MOCK_')) {
-      try {
-        const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
-        const bodyObj = {
-          chat_id: targetChatId,
-          text,
-          parse_mode: parseMode
-        };
-
-        if (replyMarkup) {
-          bodyObj.reply_markup = replyMarkup;
-        }
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyObj)
-        });
-        const data = await res.json();
-        if (!data.ok) {
-          console.warn(`⚠️ [Telegram Bot] API javob xatosi (${data.error_code}): ${data.description}`);
-        }
-        return { success: data.ok, messageId: data.result?.message_id, data };
-      } catch (err) {
-        console.warn('⚠️ [Telegram Bot] Tarmoq orqali yuborishda xatolik:', err.message);
-        return { success: false, error: err.message };
-      }
+    this.sentMessagesLog = this.sentMessagesLog.slice(0, 50);
+    if (!this.botToken || this.botToken.startsWith('MOCK_') || !targetChatId) {
+      record.status = 'NOT_CONFIGURED';
+      return { success: false, error: 'TELEGRAM_BOT_TOKEN yoki TELEGRAM_ADMIN_CHAT_ID sozlanmagan.' };
     }
-
-    console.log(`\n📨 [Telegram Bot Dispatched to Chat ${targetChatId}]:\n${text}\n`);
-    return { success: true, simulated: true, timestamp };
+    try {
+      const response = await fetch('https://api.telegram.org/bot' + this.botToken + '/sendMessage', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
+        body: JSON.stringify({ chat_id: targetChatId, text, parse_mode: parseMode, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        record.status = 'FAILED';
+        return { success: false, error: data.description || 'Telegram xabari yuborilmadi.', errorCode: data.error_code };
+      }
+      record.status = 'SENT';
+      return { success: true, messageId: data.result?.message_id };
+    } catch {
+      record.status = 'FAILED';
+      return { success: false, error: 'Telegram bilan aloqa uzildi yoki javob vaqti tugadi.' };
+    }
   }
-
   // ==========================================================================
   // 1. ALERT TRIGGERS (HODISA VA OGOHLANTIRISHLAR)
   // ==========================================================================
@@ -187,7 +171,7 @@ export class TelegramBotService {
       if (match) {
         const reqId = parseInt(match[1], 10);
         try {
-          const { ActivationService } = await import('./activationService.js');
+          const ActivationService = activationService || (await import('./activationService.js')).ActivationService;
           const res = await ActivationService.approveActivation(reqId);
           const reply = `✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)\n📅 Muddat: 30 kun`;
           await this.sendMessage(reply, { chatId });
@@ -205,7 +189,7 @@ export class TelegramBotService {
       if (match) {
         const reqId = parseInt(match[1], 10);
         try {
-          const { ActivationService } = await import('./activationService.js');
+          const ActivationService = activationService || (await import('./activationService.js')).ActivationService;
           await ActivationService.rejectActivation(reqId, "Super Admin Telegram orqali rad etdi");
           const reply = `❌ So'rov #${reqId} rad etildi.`;
           await this.sendMessage(reply, { chatId });
@@ -334,7 +318,12 @@ export class TelegramBotService {
       while (this.isPolling) {
         try {
           const url = `https://api.telegram.org/bot${this.botToken}/getUpdates?offset=${this.lastUpdateId + 1}&timeout=20`;
-          const res = await fetch(url, { method: 'GET' });
+          const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(25000) });
+          if (res.status === 409) {
+            this.isPolling = false;
+            console.warn('[Telegram] Webhook yoki boshqa polling faol. Lokal polling toxtatildi.');
+            break;
+          }
           if (res.ok) {
             const data = await res.json();
             if (data.ok && Array.isArray(data.result)) {
@@ -364,8 +353,10 @@ export class TelegramBotService {
   /**
    * Telegram Webhook / Update ni qabul qilish
    */
-  static async handleWebhookUpdate(update) {
+  static async handleWebhookUpdate(update, activationService = null) {
     if (!update) return { handled: false };
+    const sourceChatId = update.callback_query?.message?.chat?.id ?? update.message?.chat?.id;
+    if (!this.adminChatId || String(sourceChatId) !== String(this.adminChatId)) return { handled: false, error: 'Ruxsat berilmagan' };
 
     // Inline tugmalar bosilganda (Callback Query)
     if (update.callback_query) {
@@ -376,7 +367,7 @@ export class TelegramBotService {
       if (data.startsWith('approve_')) {
         const reqId = parseInt(data.replace('approve_', ''), 10);
         try {
-          const { ActivationService } = await import('./activationService.js');
+          const ActivationService = activationService || (await import('./activationService.js')).ActivationService;
           const res = await ActivationService.approveActivation(reqId);
           await this.sendMessage(`✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)`, { chatId });
         } catch (err) {
@@ -385,7 +376,7 @@ export class TelegramBotService {
       } else if (data.startsWith('reject_')) {
         const reqId = parseInt(data.replace('reject_', ''), 10);
         try {
-          const { ActivationService } = await import('./activationService.js');
+          const ActivationService = activationService || (await import('./activationService.js')).ActivationService;
           await ActivationService.rejectActivation(reqId);
           await this.sendMessage(`❌ So'rov #${reqId} rad etildi.`, { chatId });
         } catch (err) {

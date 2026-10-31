@@ -1,422 +1,214 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { exec, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { db } from '../db.js';
-import { ClientManager } from './clientManager.js';
+import { canApplyUpdate, validateRelease } from './updatePolicy.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const ROOT_DIR = path.resolve(__dirname, '../../');
+const execute = promisify(execFile);
+const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-/**
- * ServerUpdater — Enterprise Zero-Downtime GitHub Releases OTA Auto-Updater for Node.js Server.
- * Xususiyatlari:
- * 1. GitHub Releases direct static endpointlari orqali version.json ni davriy tekshirish.
- * 2. User-Agent: Softech-Updater sarlavhasi (GitHub 403 Forbidden ni oldini oladi).
- * 3. 302 Redirect (GitHub -> AWS S3) avtomatik kuzatiladi.
- * 4. Faol seanslar (activeSessions) tekshiruvi: 0 ta bo'lsa yoki admin ruxsati bilan yangilash.
- * 5. Ma'lumotlar bazasi (netcafe.db*) daxlsizligi to'liq ta'minlangan.
- * 6. WebSocket orqali UPDATE_AVAILABLE va SERVER_UPDATE_AVAILABLE hodisalarini tarqatish.
- */
 export class ServerUpdater {
-  static currentVersion = '1.0.2';
+  static currentVersion = '1.0.0';
   static manifestUrl = null;
-  static updatesDir = path.resolve(ROOT_DIR, 'updates');
-  static stagingDir = path.resolve(ROOT_DIR, 'updates/staging');
-
-  static state = {
-    isChecking: false,
-    isDownloading: false,
-    isStaged: false,
-    stagedVersion: null,
-    latestManifest: null,
-    lastChecked: null,
-    error: null,
-  };
-
+  static updatesDir = path.join(ROOT_DIR, 'updates');
+  static stagingDir = path.join(this.updatesDir, 'staging');
   static timer = null;
+  static idleTimer = null;
+  static pendingWrites = 0;
+  static applying = false;
+  static preparing = false;
+  static evaluating = false;
+  static minimumIdleSeconds = 10;
+  static idleSeconds = -1;
+  static nextApplyAttempt = 0;
+  static onShutdown = () => process.exit(0);
+  static state = { isChecking: false, isDownloading: false, isStaged: false, stagedVersion: null,
+    source: null, latestManifest: null, lastChecked: null, error: null };
 
   static init() {
-    try {
-      const pkgPath = path.resolve(ROOT_DIR, 'package.json');
-      if (fs.existsSync(pkgPath)) {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        this.currentVersion = pkg.version || '1.0.2';
-      }
-    } catch {
-      this.currentVersion = '1.0.2';
-    }
-
-    this.manifestUrl = this.resolveManifestUrl();
-
-    if (!fs.existsSync(this.updatesDir)) fs.mkdirSync(this.updatesDir, { recursive: true });
-    if (!fs.existsSync(this.stagingDir)) fs.mkdirSync(this.stagingDir, { recursive: true });
-
-    console.log(`🔄 [ServerUpdater] Initsializatsiya qilindi. Joriy versiya: v${this.currentVersion}, Manifest: ${this.manifestUrl}`);
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
+    this.currentVersion = pkg.version;
+    let config = {};
+    try { config = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'config.json'), 'utf8')); } catch {}
+    this.minimumIdleSeconds = Math.min(3600, Math.max(5, (Number(config.updateIdleSeconds) === 30 ? 10 : Number(config.updateIdleSeconds)) || 10));
+    this.manifestUrl = process.env.UPDATE_MANIFEST_URL || config.updateManifestUrl ||
+      'https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json';
+    fs.mkdirSync(this.stagingDir, { recursive: true });
   }
 
-  static resolveManifestUrl() {
-    // 1. Muhit o'zgaruvchilarini tekshirish
-    if (process.env.UPDATE_MANIFEST_URL) {
-      return process.env.UPDATE_MANIFEST_URL.trim();
-    }
-
-    // 2. config.json dan qidirish
-    try {
-      const configPath = path.resolve(ROOT_DIR, 'config.json');
-      if (fs.existsSync(configPath)) {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        if (config.updateManifestUrl) {
-          return config.updateManifestUrl.trim();
-        }
-        if (config.githubOwner && config.githubRepo) {
-          return `https://github.com/${config.githubOwner}/${config.githubRepo}/releases/latest/download/version.json`;
-        }
-      }
-    } catch (err) {
-      console.warn(`[ServerUpdater] config.json o'qishda xatolik:`, err.message);
-    }
-
-    // 3. Fallback standart GitHub reliz URL
-    return 'https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json';
-  }
-
-  static startPeriodicChecks(intervalMs = 60 * 1000) {
+  static startPeriodicChecks(intervalMs = 60000) {
     this.init();
-
-    // Dastur ishga tushgach 5 soniyadan so'ng dastlabki tekshiruv
-    setTimeout(() => {
-      this.checkForUpdates().catch(() => {});
-    }, 5000);
-
-    if (this.timer) clearInterval(this.timer);
-    this.timer = setInterval(() => {
-      this.checkForUpdates().catch(() => {});
-    }, intervalMs);
+    setTimeout(() => this.checkForUpdates(), 5000).unref();
+    this.timer = setInterval(() => this.checkForUpdates(), intervalMs);
+    this.idleTimer = setInterval(() => this.evaluateIdleUpdate(), 1000);
   }
 
   static async checkForUpdates() {
-    if (this.state.isChecking || this.state.isDownloading) return this.getStatus();
-
+    if (this.state.isChecking || this.state.isDownloading || this.applying || this.preparing) return this.getStatus();
     this.state.isChecking = true;
-    this.state.error = null;
     this.state.lastChecked = new Date().toISOString();
-
     try {
-      console.log(`🌐 [ServerUpdater] GitHub Manifest tekshirilmoqda: ${this.manifestUrl}`);
       const manifest = await this.fetchJson(this.manifestUrl);
-      if (!manifest) {
-        return this.getStatus();
-      }
+      if (!manifest) return this.getStatus();
+      const release = validateRelease(manifest, 'server');
       this.state.latestManifest = manifest;
-
-      if (!manifest.version) {
-        throw new Error("Noto'g'ri manifest formati (version topilmadi)");
-      }
-
-      const isNewer = this.compareSemver(manifest.version, this.currentVersion) > 0;
-
-      if (isNewer) {
-        console.log(`🚀 [ServerUpdater] Yangi server relizi topildi: v${manifest.version} (Joriy: v${this.currentVersion})`);
-        
-        // Agar bu versiya allaqachon staged bo'lsa, xabardor qilamiz
-        if (this.state.isStaged && this.state.stagedVersion === manifest.version) {
-          this.broadcastUpdateNotice();
-          return this.getStatus();
-        }
-
-        // Yuklab olish va ochish
-        const serverFile = manifest.server;
-        const downloadUrl = serverFile ? (serverFile.downloadUrl || serverFile.url) : null;
-
-        if (downloadUrl) {
-          await this.downloadAndStage(manifest);
-        } else {
-          console.warn("[ServerUpdater] Manifestda server yangilanish havolasi mavjud emas.");
-        }
-      } else {
-        console.log(`✓ [ServerUpdater] Server eng so'nggi versiyada (v${this.currentVersion}).`);
-      }
-    } catch (err) {
-      this.state.error = err.message;
-      console.warn(`⚠️ [ServerUpdater] Tekshirishda xatolik:`, err.message);
-    } finally {
-      this.state.isChecking = false;
-    }
-
+      if (this.compareSemver(release.version, this.currentVersion) <= 0 || this.isFailedVersion(release.version))
+        return this.getStatus();
+      if (this.state.stagedVersion !== release.version) await this.downloadAndStage(manifest);
+    } catch (error) { this.state.error = error.message; }
+    finally { this.state.isChecking = false; }
     return this.getStatus();
   }
 
+  static isFailedVersion(version) {
+    try { return JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'updates-failed-version.json'), 'utf8')).version === version; }
+    catch { return false; }
+  }
+
   static async downloadAndStage(manifest) {
+    const release = validateRelease(manifest, 'server');
     this.state.isDownloading = true;
-    const version = manifest.version;
-    const serverFile = manifest.server;
-    const downloadUrl = serverFile.downloadUrl || serverFile.url;
-    const expectedSha256 = serverFile.sha256;
-
-    const zipFile = path.resolve(this.stagingDir, `server_v${version}.zip`);
-    const targetExtractDir = path.resolve(this.updatesDir, `v${version}`);
-
+    const candidate = path.join(this.stagingDir, 'v' + release.version + '-' + crypto.randomUUID());
+    fs.mkdirSync(candidate, { recursive: true });
+    const zip = path.join(candidate, 'download.zip');
+    const extracted = path.join(candidate, 'package');
     try {
-      console.log(`⬇️ [ServerUpdater] GitHub Server relizi yuklanmoqda: ${downloadUrl}`);
-      await this.downloadFile(downloadUrl, zipFile);
-
-      // SHA256 tekshiruvi (agar ko'rsatilgan bo'lsa)
-      if (expectedSha256 && expectedSha256.trim() !== '') {
-        const hash = await this.calculateSha256(zipFile);
-        if (hash.toLowerCase() !== expectedSha256.toLowerCase().trim()) {
-          fs.unlinkSync(zipFile);
-          throw new Error(`SHA256 mos kelmadi! Kutilgan: ${expectedSha256}, Hisoblangan: ${hash}`);
-        }
-        console.log(`🔒 [ServerUpdater] SHA256 yaxlitligi tasdiqlandi.`);
-      }
-
-      // Arxivni vX.X.X papkasiga ochish
-      if (fs.existsSync(targetExtractDir)) {
-        fs.rmSync(targetExtractDir, { recursive: true, force: true });
-      }
-      fs.mkdirSync(targetExtractDir, { recursive: true });
-
-      await this.extractZip(zipFile, targetExtractDir);
-      try { fs.unlinkSync(zipFile); } catch {}
-
+      await this.downloadFile(release.url, zip);
+      if (await this.calculateSha256(zip) !== release.sha256) throw new Error('Release SHA256 mismatch');
+      await this.extractZip(zip, extracted);
+      const metadata = JSON.parse(fs.readFileSync(path.join(extracted, 'update-package.json'), 'utf8'));
+      if (metadata.kind !== 'server' || metadata.version !== release.version ||
+          !fs.existsSync(path.join(extracted, 'SoftechUpdater.exe')) || !fs.existsSync(path.join(extracted, 'src/server.js')))
+        throw new Error('Incomplete server update package');
+      fs.unlinkSync(zip);
+      this.state.source = extracted;
+      this.state.stagedVersion = release.version;
       this.state.isStaged = true;
-      this.state.stagedVersion = version;
-      console.log(`📦 [ServerUpdater] Versiya v${version} updates/v${version} papkasiga tayyorlab qo'yildi!`);
-
-      this.broadcastUpdateNotice();
-
-      // Kassir va Admin ekranida yangilanish bildirishnomasi va modali paydo bo'ladi
-      console.log(`📢 [ServerUpdater] Yangi reliz v${version} tayyorlandi va UI ga xabarnoma yuborildi.`);
-      this.broadcastUpdateNotice();
-    } catch (err) {
-      this.state.error = err.message;
-      console.error(`❌ [ServerUpdater] Yuklash yoki ochishda xatolik:`, err.message);
-      throw err;
-    } finally {
-      this.state.isDownloading = false;
-    }
+      this.state.error = null;
+    } finally { this.state.isDownloading = false; }
   }
 
   static getActiveSessionsCount() {
-    try {
-      const row = db.prepare("SELECT COUNT(*) as count FROM sessions WHERE status = 'ACTIVE'").get();
-      return row ? Number(row.count) : 0;
-    } catch {
-      return 0;
-    }
+    try { return Number(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE status = 'ACTIVE'").get().count); }
+    catch { return -1; } // Unknown must never be treated as zero.
   }
-
+  static policy() {
+    return { staged: this.state.isStaged, applying: this.applying, activeSessions: this.getActiveSessionsCount(),
+      pendingWrites: this.pendingWrites, idleSeconds: this.idleSeconds, minimumIdleSeconds: this.minimumIdleSeconds };
+  }
   static getStatus() {
-    const activeSessions = this.getActiveSessionsCount();
-    return {
-      currentVersion: this.currentVersion,
+    return { ...this.state, source: undefined, currentVersion: this.currentVersion,
       latestVersion: this.state.latestManifest?.version || this.currentVersion,
-      isChecking: this.state.isChecking,
-      isDownloading: this.state.isDownloading,
-      isStaged: this.state.isStaged,
-      stagedVersion: this.state.stagedVersion,
-      activeSessions,
-      canApply: this.state.isStaged && activeSessions === 0,
-      changelog: this.state.latestManifest?.changelog || null,
-      releaseDate: this.state.latestManifest?.releaseDate || null,
-      lastChecked: this.state.lastChecked,
-      error: this.state.error,
-    };
+      activeSessions: this.getActiveSessionsCount(), isApplying: this.applying, silent: true,
+      idleSeconds: this.idleSeconds, canApply: canApplyUpdate(this.policy()) };
   }
+  static broadcastUpdateNotice() { /* Silent updates do not interrupt the cashier. */ }
 
-  static broadcastUpdateNotice() {
-    const status = this.getStatus();
+  static async probeIdle() {
+    if (process.platform !== 'win32') return -1;
     try {
-      // 1. UPDATE_AVAILABLE hodisasi (talabga asosan)
-      ClientManager.broadcast('UPDATE_AVAILABLE', {
-        version: status.latestVersion,
-        changelog: status.changelog,
-        ...status,
-      });
-
-      // 2. SERVER_UPDATE_AVAILABLE hodisasi (mavjud UI bilan moslik uchun)
-      ClientManager.broadcast('SERVER_UPDATE_AVAILABLE', status);
-    } catch (err) {
-      console.warn(`[ServerUpdater] Broadcast xatosi:`, err.message);
-    }
+      const { stdout } = await execute(path.join(ROOT_DIR, 'SoftechUpdater.exe'), ['--probe-idle'],
+        { windowsHide: true, timeout: 5000 });
+      const seconds = JSON.parse(stdout).idleSeconds;
+      return Number.isFinite(seconds) ? seconds : -1;
+    } catch { return -1; }
   }
 
-  static async applyUpdate({ force = false } = {}) {
-    if (!this.state.isStaged || !this.state.stagedVersion) {
-      return { success: false, error: "Qo'llash uchun tayyorlangan yangilanish mavjud emas." };
-    }
+  static async evaluateIdleUpdate() {
+    if (!this.state.isStaged || this.applying || this.evaluating || Date.now() < this.nextApplyAttempt) return;
+    this.evaluating = true;
+    try { await this.applyUpdate(); }
+    catch (error) { this.state.error = error.message; this.nextApplyAttempt = Date.now() + 60000; }
+    finally { this.evaluating = false; }
+  }
 
-    const activeSessions = this.getActiveSessionsCount();
-    if (activeSessions > 0 && !force) {
-      return {
-        success: false,
-        error: `Faol o'yin seanslari ketmoqda (${activeSessions} ta kompyuter band). Yangilash uchun seanslar tugashi kerak yoki majburiy rejim zarur.`,
-        activeSessions,
-        canForce: true,
+  static async applyUpdate() {
+    // Manual/remote requests cannot force a restart through a live game session.
+    if (this.applying || this.preparing || !this.state.isStaged || this.state.isDownloading)
+      return { success: false, error: 'No idle update ready.' };
+    this.idleSeconds = await this.probeIdle();
+    if (!canApplyUpdate(this.policy())) return { success: false, error: 'Waiting for idle input, no active sessions and no pending writes.' };
+    this.preparing = true; // Keep serving the cashier while files are copied.
+    const handover = path.join(this.stagingDir, 'handover-' + crypto.randomUUID());
+    fs.mkdirSync(handover);
+    const helperPath = path.join(handover, 'SoftechUpdater.exe');
+    const source = this.state.source;
+    let committed = false;
+    try {
+      fs.copyFileSync(path.join(source, 'SoftechUpdater.exe'), helperPath);
+      const cockpitPid = Number(process.env.SOFTECH_COCKPIT_PID);
+      const cockpitExe = process.env.SOFTECH_COCKPIT_EXE;
+      const useCockpit = Number.isInteger(cockpitPid) && cockpitPid > 0 && cockpitExe && fs.existsSync(cockpitExe);
+      const plan = {
+        Source: source, Target: ROOT_DIR, Version: this.state.stagedVersion, Kind: 'server',
+        ParentPids: useCockpit ? [process.pid, cockpitPid] : [process.pid],
+        RestartExecutable: useCockpit ? cockpitExe : process.execPath,
+        RestartArguments: useCockpit ? [] : ['src/server.js'],
+        ReadyFile: path.join(handover, 'ready'), CommitFile: path.join(handover, 'commit'),
+        CancelFile: path.join(handover, 'cancel'), HealthFile: path.join(handover, 'healthy'),
+        HealthUrl: 'http://127.0.0.1:' + (process.env.PORT || 5000) + '/api/health'
       };
-    }
-
-    const version = this.state.stagedVersion;
-    const sourceDir = path.resolve(this.updatesDir, `v${version}`);
-
-    if (!fs.existsSync(sourceDir)) {
-      return { success: false, error: `Yangilanish papkasi topilmadi: ${sourceDir}` };
-    }
-
-    console.log(`🚀 [ServerUpdater] Server yangilanishi qo'llanilmoqda (v${this.currentVersion} -> v${version})...`);
-
-    // Mutlaqo qora oynasiz (Headless / Silent) yangilash uchun bat va vbs yaratamiz
-    const batchScriptPath = path.resolve(ROOT_DIR, 'apply_server_update.bat');
-    const vbsScriptPath = path.resolve(ROOT_DIR, 'apply_server_update.vbs');
-
-    const batchContent = `@echo off
-cd /d "${ROOT_DIR}"
-
-:: 1. Eski server jarayoni to'xtashini kutish
-timeout /t 2 /nobreak >nul 2>&1
-
-:: 2. Zaxira nusxasi yaratilmoqda (netcafe.db daxlsiz qoladi)
-if not exist "backup_v${this.currentVersion}" mkdir "backup_v${this.currentVersion}" >nul 2>&1
-if exist "src" xcopy /E /I /Y "src" "backup_v${this.currentVersion}\\src" >nul 2>&1
-if exist "public" xcopy /E /I /Y "public" "backup_v${this.currentVersion}\\public" >nul 2>&1
-if exist "package.json" copy /Y "package.json" "backup_v${this.currentVersion}\\package.json" >nul 2>&1
-
-:: 3. Yangi fayllar ko'chirilmoqda
-xcopy /E /I /Y "${sourceDir}\\*" "." >nul 2>&1
-
-:: 4. Serverni qora oynasiz, orqa fonda qayta ishga tushirish
-if exist "start_server_background.vbs" (
-    start "" wscript.exe //B //Nologo "start_server_background.vbs"
-) else if exist ".\\runtime\\node.exe" (
-    start "" /B ".\\runtime\\node.exe" src/server.js
-) else (
-    start "" /B node src/server.js
-)
-
-exit
-`;
-
-    // Qora konsol oynasini 100% yashiruvchi VBScript
-    const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-Set FSO = CreateObject("Scripting.FileSystemObject")
-currentDir = "${ROOT_DIR.replace(/\\/g, '\\\\')}"
-WshShell.CurrentDirectory = currentDir
-WshShell.Run "cmd.exe /c """ & currentDir & "\\apply_server_update.bat""", 0, False
-`;
-
-    fs.writeFileSync(batchScriptPath, batchContent, 'utf8');
-    fs.writeFileSync(vbsScriptPath, vbsContent, 'utf8');
-
-    // wscript.exe orqali qora oynasiz ishga tushirish
-    const child = spawn('wscript.exe', ['//B', '//Nologo', vbsScriptPath], {
-      detached: true,
-      stdio: 'ignore',
-      cwd: ROOT_DIR,
-      windowsHide: true,
-    });
-    child.unref();
-
-    // Serverni xavfsiz to'xtatish
-    setTimeout(() => {
-      process.exit(0);
-    }, 1000);
-
-    return {
-      success: true,
-      message: `Yangilanish boshlandi. Server v${version} versiyasiga yangilanib, 3-5 soniya ichida qayta ishga tushadi.`,
-    };
+      fs.writeFileSync(path.join(handover, 'plan.json'), JSON.stringify(plan));
+      const helper = spawn(helperPath, ['--plan', path.join(handover, 'plan.json')],
+        { detached: true, windowsHide: true, stdio: 'ignore', cwd: handover });
+      let spawnError;
+      helper.on('error', error => { spawnError = error; });
+      helper.unref();
+      const deadline = Date.now() + 55000;
+      while (!fs.existsSync(plan.ReadyFile)) {
+        if (spawnError || helper.exitCode !== null || Date.now() > deadline || fs.existsSync(plan.ReadyFile + '.error'))
+          throw new Error('Updater preparation failed; current server stays running.');
+        await sleep(100);
+      }
+      this.idleSeconds = await this.probeIdle();
+      if (!canApplyUpdate({ ...this.policy(), applying: false }))
+        throw new Error('Cashier activity resumed; update postponed.');
+      // No async gap between the final gate and handing off the exact processes.
+      this.applying = true;
+      fs.writeFileSync(plan.CommitFile, plan.Version);
+      if (useCockpit) fs.writeFileSync(path.join(this.updatesDir, 'cockpit-exit.json'),
+        JSON.stringify({ pid: cockpitPid, at: Date.now() }));
+      committed = true;
+      setTimeout(() => this.onShutdown(), 100);
+      return { success: true, message: 'Silent update committed.' };
+    } catch (error) {
+      fs.writeFileSync(path.join(handover, 'cancel'), 'cancel');
+      this.state.error = error.message;
+      this.nextApplyAttempt = Date.now() + 60000;
+      return { success: false, error: error.message };
+    } finally { this.preparing = false; if (!committed) this.applying = false; }
   }
 
-  // ---- Yordamchi metodlar ----
-
-  static compareSemver(v1, v2) {
-    const parse = (v) => {
-      const parts = String(v).replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
-      return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
-    };
-    const [maj1, min1, pat1] = parse(v1);
-    const [maj2, min2, pat2] = parse(v2);
-
-    if (maj1 !== maj2) return maj1 - maj2;
-    if (min1 !== min2) return min1 - min2;
-    return pat1 - pat2;
+  static compareSemver(a, b) {
+    const x = a.replace(/^v/i, '').split('.').map(Number);
+    const y = b.replace(/^v/i, '').split('.').map(Number);
+    for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+    return 0;
   }
-
-  static async fetchJson(urlStr) {
-    const response = await fetch(urlStr, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Softech-Updater',
-        'Accept': 'application/json',
-      },
-      redirect: 'follow',
-    });
-
-    if (response.status === 404) {
-      console.log(`ℹ️ [ServerUpdater] GitHub-da hali yangi reliz e'lon qilinmagan (HTTP 404). Server to'liq faol rejimda ishlamoqda.`);
-      return null;
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}`);
-    }
-
-    return await response.json();
+  static async fetchJson(url) {
+    const response = await fetch(url, { headers: { 'User-Agent': 'Softech-Updater/2.0', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000) });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error('Manifest HTTP ' + response.status);
+    return response.json();
   }
-
-  static async downloadFile(urlStr, destFile) {
-    const response = await fetch(urlStr, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Softech-Updater',
-      },
-      redirect: 'follow',
-    });
-
-    if (!response.ok) {
-      throw new Error(`Yuklab bo'lmadi: HTTP ${response.status} ${response.statusText}`);
-    }
-
-    const fileStream = fs.createWriteStream(destFile);
-    await new Promise((resolve, reject) => {
-      Readable.fromWeb(response.body).pipe(fileStream);
-      fileStream.on('finish', resolve);
-      fileStream.on('error', (err) => {
-        try { fs.unlinkSync(destFile); } catch {}
-        reject(err);
-      });
-    });
+  static async downloadFile(url, destination) {
+    const response = await fetch(url, { headers: { 'User-Agent': 'Softech-Updater/2.0' }, signal: AbortSignal.timeout(900000) });
+    if (!response.ok || !response.body) throw new Error('Download HTTP ' + response.status);
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(destination));
   }
-
-  static calculateSha256(filePath) {
-    return new Promise((resolve, reject) => {
-      const hash = crypto.createHash('sha256');
-      const stream = fs.createReadStream(filePath);
-      stream.on('data', data => hash.update(data));
-      stream.on('end', () => resolve(hash.digest('hex')));
-      stream.on('error', reject);
-    });
+  static async calculateSha256(file) {
+    const hash = crypto.createHash('sha256');
+    for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+    return hash.digest('hex');
   }
-
-  static extractZip(zipPath, targetDir) {
-    return new Promise((resolve, reject) => {
-      // Windows 10/11 native bsdtar (tez va xavfsiz)
-      const cmd = `tar -xf "${zipPath}" -C "${targetDir}"`;
-      exec(cmd, (err) => {
-        if (!err) {
-          return resolve();
-        }
-        // Fallback: PowerShell Expand-Archive
-        const psCmd = `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${targetDir}' -Force"`;
-        exec(psCmd, (psErr) => {
-          if (psErr) reject(psErr);
-          else resolve();
-        });
-      });
-    });
+  static async extractZip(zip, target) {
+    await execute(path.join(ROOT_DIR, 'SoftechUpdater.exe'), ['--extract', zip, target],
+      { windowsHide: true, timeout: 120000 });
   }
 }

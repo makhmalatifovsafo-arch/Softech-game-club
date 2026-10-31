@@ -1,0 +1,23 @@
+Licensing and activation fixes:
+- Server activation reports success only after verifying and saving the signed license.
+- Activation input survives status polling; cloud errors are shown accurately.
+- Super admin shows the real license key and preserves selected subscription days and PC limits.
+- Cloud approval/rejection routes and Telegram callbacks use the same database.
+- Telegram delivery failures are reported instead of simulated success.
+- Existing subscription expiry and hardware binding are preserved.
+
+Cloud rollout requires migrations/20261031_activation_hwid.sql, the updated API,
+and a Telegram webhook secret configured as described in LICENSE-SETUP.txt.
+
+Silent background updates for Softech Server and Client.
+
+Downloads and checksum verification happen while the application is running.
+Installation waits for at least 10 seconds without mouse or keyboard input.
+Clients also wait for no active session, no maintenance mode and no other user applications.
+Servers wait for zero active sessions and zero pending writes.
+Files are prepared before shutdown; local configuration and databases are preserved.
+If the new application fails its startup health check, previous files are restored.
+
+Bootstrap: install this release once on machines with the old updater.
+Subsequent published releases are downloaded and applied automatically.
+Restart duration depends on the computer; one second is a target, not a guarantee.

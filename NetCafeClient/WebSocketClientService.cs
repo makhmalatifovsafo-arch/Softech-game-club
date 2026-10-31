@@ -85,6 +85,7 @@ public class WebSocketClientService
     private readonly ConfigModel             _config;
     private          ClientWebSocket?        _client;
     private          CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     // ---- Events ----
     public event Action?                                       OnLockScreen;
@@ -148,12 +149,13 @@ public class WebSocketClientService
         try
         {
             string path = GetConfigFilePath();
-            var payload = new
-            {
-                serverUrl = config.ServerUrl,
-                pcNumber = config.PcNumber,
-                heartbeatIntervalSeconds = config.HeartbeatIntervalSeconds
-            };
+            var payload = File.Exists(path)
+                ? System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) as System.Text.Json.Nodes.JsonObject
+                : null;
+            payload ??= new System.Text.Json.Nodes.JsonObject();
+            payload["serverUrl"] = config.ServerUrl;
+            payload["pcNumber"] = config.PcNumber;
+            payload["heartbeatIntervalSeconds"] = config.HeartbeatIntervalSeconds;
             var options = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(path, JsonSerializer.Serialize(payload, options));
         }
@@ -236,9 +238,15 @@ public class WebSocketClientService
                 // BUG 1: Immediately send handshake { "type": "CLIENT_HELLO", "pcNumber": "PC-01", "ip": "CLIENT_LOCAL_IP" }
                 await SendHandshakeAsync();
 
-                var heartbeatTask = Task.Run(HeartbeatLoop, _cts.Token);
-                await ReceiveLoopAsync();
-                await heartbeatTask;
+                using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+                var heartbeatTask = HeartbeatLoop(heartbeatCts.Token);
+                try { await ReceiveLoopAsync(); }
+                finally
+                {
+                    heartbeatCts.Cancel();
+                    _client?.Abort();
+                    await heartbeatTask;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -307,7 +315,7 @@ public class WebSocketClientService
     // Heartbeat Loop (5s interval)
     // -----------------------------------------------------------------------
 
-    private async Task HeartbeatLoop()
+    private async Task HeartbeatLoop(CancellationToken cancellationToken)
     {
         while (_client != null && _client.State == WebSocketState.Open && !_cts.IsCancellationRequested)
         {
@@ -327,7 +335,7 @@ public class WebSocketClientService
                 };
 
                 await SendRawAsync(hb);
-                await Task.Delay(TimeSpan.FromSeconds(_config.HeartbeatIntervalSeconds), _cts.Token);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, _config.HeartbeatIntervalSeconds)), cancellationToken);
             }
             catch { break; }
         }
@@ -677,17 +685,27 @@ public class WebSocketClientService
 
     public async Task SendRawAsync(object data)
     {
-        if (_client == null || _client.State != WebSocketState.Open) return;
+        var socket = _client;
+        if (socket == null || socket.State != WebSocketState.Open) return;
+        bool acquired = false;
 
         try
         {
+            await _sendLock.WaitAsync(_cts.Token);
+            acquired = true;
+            if (!ReferenceEquals(socket, _client) || socket.State != WebSocketState.Open) return;
             string json = JsonSerializer.Serialize(data);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
-            await _client.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[WS] Send xato: {ex.Message}");
+            try { socket.Abort(); } catch { }
+        }
+        finally
+        {
+            if (acquired) _sendLock.Release();
         }
     }
 

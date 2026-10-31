@@ -66,7 +66,7 @@ namespace ServerSetup
                         try
                         {
                             string? procPath = proc.MainModule?.FileName;
-                            if (procPath != null && procPath.StartsWith(targetDir, StringComparison.OrdinalIgnoreCase))
+                            if (procPath != null && procPath.StartsWith(Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                             {
                                 proc.Kill();
                                 proc.WaitForExit(3000);
@@ -83,6 +83,9 @@ namespace ServerSetup
                         tempDbBackup = Path.Combine(Path.GetTempPath(), $"softech_db_backup_{Guid.NewGuid():N}.db");
                         try { File.Copy(existingDbPath, tempDbBackup, overwrite: true); } catch { tempDbBackup = null; }
                     }
+
+                    string? previousConfiguration = File.Exists(Path.Combine(targetDir, "config.json"))
+                        ? File.ReadAllText(Path.Combine(targetDir, "config.json")) : null;
 
                     // Extract embedded payload.zip
                     var assembly = Assembly.GetExecutingAssembly();
@@ -102,6 +105,10 @@ namespace ServerSetup
                             }
 
                             ZipFile.ExtractToDirectory(tempZipPath, targetDir, overwriteFiles: true);
+                            if (previousConfiguration != null)
+                                File.WriteAllText(Path.Combine(targetDir, "config.json"), previousConfiguration);
+                            else if (!File.Exists(Path.Combine(targetDir, "config.json")))
+                                File.WriteAllText(Path.Combine(targetDir, "config.json"), "{\"updateIdleSeconds\":10}");
 
                             // Agar avvalgi baza bo'lsa, uni tiklaymiz
                             if (tempDbBackup != null && File.Exists(tempDbBackup))

@@ -20,6 +20,7 @@ public class NodeProcessManager
 
     private Process? _spawnedProcess;
     private bool _isSpawnedByThisInstance;
+    public string ServerDirectory => ResolveNodeAndServerPaths().serverDir;
 
     public const string ServerUrl = "http://127.0.0.1:5000";
     public const string HealthCheckUrl = "http://127.0.0.1:5000/api/health";
@@ -99,6 +100,9 @@ public class NodeProcessManager
             RedirectStandardOutput = false,
             RedirectStandardError = false
         };
+
+        startInfo.Environment["SOFTECH_COCKPIT_PID"] = Environment.ProcessId.ToString();
+        startInfo.Environment["SOFTECH_COCKPIT_EXE"] = Environment.ProcessPath!;
 
         try
         {
@@ -229,7 +233,7 @@ public class NodeProcessManager
     /// <summary>
     /// Dastur yopilganda fondagi Node.js va uning barcha child jarayonlarini toza o'chirish.
     /// </summary>
-    public void StopNodeServer()
+    public void StopNodeServer(bool forUpdate = false)
     {
         if (_spawnedProcess == null || !_isSpawnedByThisInstance) return;
 
@@ -240,7 +244,7 @@ public class NodeProcessManager
                 StatusChanged?.Invoke("Node.js serveri to'xtatilmoqda...");
                 
                 // .NET 8 Process.Kill(entireProcessTree: true)
-                _spawnedProcess.Kill(entireProcessTree: true);
+                _spawnedProcess.Kill(entireProcessTree: !forUpdate);
                 _spawnedProcess.WaitForExit(3000);
             }
         }

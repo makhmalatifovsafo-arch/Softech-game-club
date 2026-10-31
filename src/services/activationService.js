@@ -10,6 +10,7 @@
  */
 
 import crypto from 'node:crypto';
+import { escapeHtml, signClubLicense, validateHwid, positiveInteger } from './cloudActivationService.js';
 import { db, initDatabase } from '../db/connection.js';
 import { TelegramBotService } from './telegramBot.js';
 
@@ -89,6 +90,9 @@ export class ActivationService {
       throw new Error("hardwareFingerprint (HWID) ko'rsatilishi shart.");
     }
 
+    validateHwid(hardwareFingerprint);
+    totalPcs = positiveInteger(totalPcs, 16);
+    clubId = null; // Public requests cannot select an existing club.
     const finalClubName = clubName || `Game Club (${hardwareFingerprint.slice(-4)})`;
 
     // Mavjud PENDING so'rov bormi tekshirish
@@ -109,14 +113,14 @@ export class ActivationService {
       requestId = Number(result.lastInsertRowid);
     }
 
-    // Telegram Bot orqali Super Adminga tezkor xabar yuborish
+    let notification = { success: false, error: 'Telegram xabari yuborilmadi.' };
     try {
       const alertMsg = [
         `🚨 <b>YANGI SERVER LITSENZIYA SO'ROVI!</b>`,
-        `🏢 Klub: <b>${finalClubName}</b>`,
-        `🖥️ Mashina HWID: <code>${hardwareFingerprint}</code>`,
+        `🏢 Klub: <b>${escapeHtml(finalClubName)}</b>`,
+        `🖥️ Mashina HWID: <code>${escapeHtml(hardwareFingerprint)}</code>`,
         `💻 Kompyuterlar: <b>${totalPcs} ta PC</b>`,
-        `🌐 LAN IP: <code>${serverLanIp}</code> • v${serverVersion}`,
+        `🌐 LAN IP: <code>${escapeHtml(serverLanIp)}</code> • v${escapeHtml(serverVersion)}`,
         ``,
         `Tasdiqlash: /approve_${requestId}`,
         `Rad etish: /reject_${requestId}`,
@@ -133,7 +137,7 @@ export class ActivationService {
         ]
       };
 
-      await TelegramBotService.sendMessage(alertMsg, { replyMarkup: inlineKeyboard });
+      notification = await TelegramBotService.sendMessage(alertMsg, { replyMarkup: inlineKeyboard });
     } catch (err) {
       console.warn('⚠️ Telegram ogohlantirish yuborishda xatolik:', err.message);
     }
@@ -141,8 +145,9 @@ export class ActivationService {
     return {
       success: true,
       requestId,
+      notification,
       status: 'PENDING',
-      message: "Litsenziya so'rovi Super Adminga yuborildi. Tasdiqlanishi kutilmoqda."
+      message: notification.success ? "So'rov saqlandi va Telegramga yuborildi." : "So'rov saqlandi. Telegram yuborilmadi; super admin panelidan tasdiqlash mumkin."
     };
   }
 
@@ -161,18 +166,21 @@ export class ActivationService {
     const cleanKey = licenseKey.trim();
 
     // 1. clubs jadvalidan api_secret_token yoki slug orqali qidirish
-    let club = db.prepare('SELECT * FROM clubs WHERE api_secret_token = ? OR slug = ?').get(cleanKey, cleanKey);
+    let club = db.prepare('SELECT * FROM clubs WHERE api_secret_token = ?').get(cleanKey);
 
-    if (!club) {
-      club = db.prepare('SELECT * FROM clubs WHERE UPPER(api_secret_token) = UPPER(?)').get(cleanKey);
-    }
+
 
     if (!club) {
       throw new Error("Kiritilgan litsenziya kaliti topilmadi yoki noto'g'ri. Super Admin bergan kalitni tekshiring.");
     }
 
     // 2. Klubni faollashtirish va ushbu HWID ga biriktirish
-    const finalPcs = parseInt(totalPcs || club.total_workstations || 16, 10);
+    validateHwid(hardwareFingerprint);
+    if (club.hardware_fingerprint && club.hardware_fingerprint !== hardwareFingerprint) throw new Error('Kalit boshqa kompyuterga biriktirilgan.');
+    const other = db.prepare('SELECT id FROM clubs WHERE hardware_fingerprint = ? AND id != ?').get(hardwareFingerprint, club.id);
+    if (other) throw new Error('Bu qurilma boshqa klubga biriktirilgan.');
+    signClubLicense(club, hardwareFingerprint);
+    const finalPcs = club.total_workstations;
     const expiresAtIso = club.license_expires_at || new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
 
     db.prepare(`
@@ -199,7 +207,7 @@ export class ActivationService {
       clubId: club.id,
       clubName: club.name,
       hardwareFingerprint,
-      days: 30,
+      expiresAt: expiresAtIso,
       maxPcs: finalPcs
     });
 
@@ -207,11 +215,11 @@ export class ActivationService {
     try {
       await TelegramBotService.sendMessage(
         `✅ <b>LITSENZIYA FAOLLASHTIRILDI (KALIT BILAN)!</b>\n` +
-        `🏢 Klub: <b>${club.name}</b>\n` +
+        `🏢 Klub: <b>${escapeHtml(club.name)}</b>\n` +
         `🔑 Kalit: <code>${cleanKey}</code>\n` +
-        `🖥️ HWID: <code>${hardwareFingerprint}</code>\n` +
+        `🖥️ HWID: <code>${escapeHtml(hardwareFingerprint)}</code>\n` +
         `💻 Kompyuterlar: <b>${finalPcs} ta PC</b>\n` +
-        `🌐 LAN IP: <code>${serverLanIp}</code> • v${serverVersion}\n\n` +
+        `🌐 LAN IP: <code>${escapeHtml(serverLanIp)}</code> • v${escapeHtml(serverVersion)}\n\n` +
         `<i>Filial serveri muvaffaqiyatli ishga tushirildi!</i>`
       );
     } catch (err) {}
@@ -229,59 +237,14 @@ export class ActivationService {
    */
   static getActivationStatus(hardwareFingerprint) {
     this.initSchema();
-    if (!hardwareFingerprint) return { status: 'NONE' };
-
-    const req = db.prepare(`
-      SELECT * FROM activation_requests 
-      WHERE hardware_fingerprint = ? 
-      ORDER BY id DESC LIMIT 1
-    `).get(hardwareFingerprint);
-
-    if (req) {
-      if (req.status === 'APPROVED') {
-        const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(req.club_id) ||
-                     db.prepare('SELECT * FROM clubs WHERE hardware_fingerprint = ?').get(hardwareFingerprint);
-
-        const signedLicense = this.generateSignedLicense({
-          clubId: club ? club.id : req.club_id,
-          clubName: club ? club.name : req.club_name,
-          hardwareFingerprint,
-          days: 30,
-          maxPcs: club ? club.total_workstations : req.total_pcs
-        });
-
-        return {
-          status: 'APPROVED',
-          club: club ? { id: club.id, name: club.name } : { id: req.club_id, name: req.club_name },
-          signedLicense
-        };
-      } else if (req.status === 'REJECTED') {
-        return { status: 'REJECTED', reason: req.rejection_reason || "Super Admin tomonidan rad etildi" };
-      } else {
-        return { status: 'PENDING' };
-      }
+    validateHwid(hardwareFingerprint);
+    const club = db.prepare('SELECT * FROM clubs WHERE hardware_fingerprint = ?').get(hardwareFingerprint);
+    if (club) {
+      try { return { success: true, status: 'APPROVED', club: { id: club.id, name: club.name }, signedLicense: signClubLicense(club, hardwareFingerprint) }; }
+      catch (error) { return { success: true, status: 'REJECTED', reason: error.message }; }
     }
-
-    try {
-      const club = db.prepare("SELECT * FROM clubs WHERE hardware_fingerprint = ? AND status = 'ACTIVE'").get(hardwareFingerprint);
-      if (club) {
-        const signedLicense = this.generateSignedLicense({
-          clubId: club.id,
-          clubName: club.name,
-          hardwareFingerprint,
-          days: 30,
-          maxPcs: club.total_workstations
-        });
-
-        return {
-          status: 'APPROVED',
-          club: { id: club.id, name: club.name },
-          signedLicense
-        };
-      }
-    } catch (e) {}
-
-    return { status: 'NONE' };
+    const request = db.prepare('SELECT * FROM activation_requests WHERE hardware_fingerprint = ? ORDER BY id DESC LIMIT 1').get(hardwareFingerprint);
+    return { success: true, status: request?.status === 'REJECTED' ? 'REJECTED' : request ? 'PENDING' : 'NONE', reason: request?.rejection_reason };
   }
 
   /**
@@ -299,9 +262,9 @@ export class ActivationService {
   /**
    * 5. Kriptografik Litsenziya Yaratish va Imzolash (HMAC-SHA256 Token)
    */
-  static generateSignedLicense({ clubId, clubName, hardwareFingerprint, days = 30, maxPcs = 16 }) {
+  static generateSignedLicense({ clubId, clubName, hardwareFingerprint, days = 30, maxPcs = 16, expiresAt: existingExpiry }) {
     const issuedAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + parseInt(days, 10) * 24 * 3600 * 1000).toISOString();
+    const expiresAt = existingExpiry || new Date(Date.now() + positiveInteger(days, 30, 3650) * 86400000).toISOString();
 
     const payload = {
       clubId,
@@ -324,7 +287,7 @@ export class ActivationService {
   /**
    * 6. Super Admin tomonidan litsenziyani tasdiqlash ([✅ TASDIQLASH])
    */
-  static async approveActivation(requestId, { days = 30, maxPcs = 16 } = {}) {
+  static async approveActivation(requestId, { days = 30, maxPcs } = {}) {
     this.initSchema();
 
     const req = db.prepare('SELECT * FROM activation_requests WHERE id = ?').get(requestId);
@@ -346,7 +309,9 @@ export class ActivationService {
       club = db.prepare('SELECT * FROM clubs WHERE hardware_fingerprint = ?').get(req.hardware_fingerprint);
     }
 
-    const expiresAtIso = new Date(Date.now() + parseInt(days, 10) * 24 * 3600 * 1000).toISOString();
+    days = positiveInteger(days, 30, 3650);
+    maxPcs = positiveInteger(maxPcs, req.total_pcs);
+    const expiresAtIso = new Date(Date.now() + days * 86400000).toISOString();
 
     if (club) {
       db.prepare(`
@@ -370,6 +335,12 @@ export class ActivationService {
       `).run(req.club_name, slug, expiresAtIso, parseInt(maxPcs, 10) || req.total_pcs, req.server_lan_ip, req.server_version, req.hardware_fingerprint);
 
       club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(Number(res.lastInsertRowid));
+    }
+
+    if (!club.api_secret_token) {
+      const key = 'softech_sec_' + crypto.randomBytes(24).toString('hex');
+      db.prepare('UPDATE clubs SET api_secret_token = ? WHERE id = ?').run(key, club.id);
+      club.api_secret_token = key;
     }
 
     // So'rovni APPROVED qilish
@@ -407,7 +378,7 @@ export class ActivationService {
     // Telegram Bot xabarnomasi
     try {
       await TelegramBotService.sendMessage(
-        `✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${club.name}</b>\n🖥️ HWID: <code>${req.hardware_fingerprint}</code>\n📅 Muddati: ${days} kun (${expiresAtIso.slice(0, 10)})`
+        `✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${escapeHtml(club.name)}</b>\n🖥️ HWID: <code>${req.hardware_fingerprint}</code>\n📅 Muddati: ${days} kun (${expiresAtIso.slice(0, 10)})`
       );
     } catch (err) {}
 
@@ -490,7 +461,7 @@ export class ActivationService {
           timestamp: Date.now()
         }));
         deliveredInstant = true;
-        console.log(`🚨 [Kill-Switch] Jonli WebSocket orqali ${club.name} darhol bloklandi!`);
+        console.log(`🚨 [Kill-Switch] Jonli WebSocket orqali ${escapeHtml(club.name)} darhol bloklandi!`);
       } catch (err) {
         console.warn('Kill-Switch yuborishda xatolik:', err.message);
       }
@@ -499,7 +470,7 @@ export class ActivationService {
     // 4. Telegram orqali Favqulodda Bildirishnoma
     try {
       await TelegramBotService.sendMessage(
-        `🚨 <b>FAVQULODDA BLOKLASH (KILL-SWITCH IJROSI)!</b>\n🏢 Klub: <b>${club.name}</b>\n⚠️ Sabab: <b>${reason}</b>\n📡 Jonli yetkazildi: ${deliveredInstant ? '✅ HA (Darhol bloklandi)' : '⏳ NAVBATDA (Offline)'}`
+        `🚨 <b>FAVQULODDA BLOKLASH (KILL-SWITCH IJROSI)!</b>\n🏢 Klub: <b>${escapeHtml(club.name)}</b>\n⚠️ Sabab: <b>${reason}</b>\n📡 Jonli yetkazildi: ${deliveredInstant ? '✅ HA (Darhol bloklandi)' : '⏳ NAVBATDA (Offline)'}`
       );
     } catch (err) {}
 
@@ -552,7 +523,7 @@ export class ActivationService {
 
     try {
       await TelegramBotService.sendMessage(
-        `✅ <b>QULFDAN CHIQARILDI (LITSENZIYA FAOLLASHTIRILDI)!</b>\n🏢 Klub: <b>${club.name}</b>\n📅 Yangi muddat: +${days} kun (${newExpIso.slice(0, 10)})`
+        `✅ <b>QULFDAN CHIQARILDI (LITSENZIYA FAOLLASHTIRILDI)!</b>\n🏢 Klub: <b>${escapeHtml(club.name)}</b>\n📅 Yangi muddat: +${days} kun (${newExpIso.slice(0, 10)})`
       );
     } catch (err) {}
 

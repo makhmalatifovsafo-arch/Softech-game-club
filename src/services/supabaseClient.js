@@ -151,11 +151,15 @@ export class SupabaseCloudService {
 
   static async registerClub(clubData) {
     const client = this.getClient();
-    if (!client) return null;
+    if (!client) throw Object.assign(new Error('SUPABASE_URL va SUPABASE_SERVICE_ROLE_KEY sozlanmagan.'), { statusCode: 503 });
 
-    const slug = clubData.slug || clubData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const secretToken = `softech_sec_${slug}_${crypto.randomBytes(4).toString('hex')}`;
-    const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    const slug = (clubData.slug || clubData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'club') + '-' + crypto.randomBytes(6).toString('hex');
+    const secretToken = `softech_sec_${slug}_${crypto.randomBytes(24).toString('hex')}`;
+    const days = Number(clubData.licenseDays ?? (clubData.licenseType === 'ANNUAL' ? 365 : clubData.licenseType === 'TRIAL' ? 7 : 30));
+    const pcs = Number(clubData.totalWorkstations ?? 16);
+    if (!Number.isInteger(days) || days < 1 || days > 3650 || !Number.isInteger(pcs) || pcs < 1 || pcs > 10000)
+      throw Object.assign(new Error('Litsenziya muddati yoki kompyuterlar soni noto\'g\'ri.'), { statusCode: 400 });
+    const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
 
     const insertRow = {
       name: clubData.name.trim(),
@@ -164,10 +168,10 @@ export class SupabaseCloudService {
       owner_phone: clubData.ownerPhone?.trim() || '+998 90 123 45 67',
       city: clubData.city?.trim() || 'Toshkent',
       status: 'ACTIVE',
-      total_workstations: parseInt(clubData.totalWorkstations, 10) || 16,
+      total_workstations: pcs,
       api_secret_token: secretToken,
       license_expires_at: expiresAt,
-      tariff_type: clubData.tariffType || 'PER_PC',
+      tariff_type: clubData.tariffType === 'FIXED' ? 'FIXED_MONTHLY' : (clubData.tariffType || 'PER_PC'),
       tariff_price_per_pc: parseFloat(clubData.tariffPricePerPc) || 20000.0,
       tariff_fixed_price: parseFloat(clubData.tariffFixedPrice) || 500000.0
     };

@@ -401,6 +401,7 @@ const server = http.createServer(async (req, res) => {
   // TELEGRAM BOT & NOTIFICATION DISPATCHER ROUTES
   // ==========================================================================
   if (pathname === '/api/telegram/webhook' && req.method === 'POST') {
+    if (!TelegramBotService.verifyWebhook(req)) return sendJson(res, 403, { success: false, error: 'Ruxsat berilmagan' });
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {

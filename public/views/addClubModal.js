@@ -390,8 +390,8 @@ function renderStep3() {
   const club = wizardState.createdClub;
   if (!club) return '';
 
-  const licenseToken = club.licenseKey || 'SOFTECH-LICENSE-XXXX-XXXX';
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(licenseToken)}&bgcolor=09090b&color=38bdf8&margin=4`;
+  const licenseToken = club.api_secret_token || club.licenseKey;
+  if (!licenseToken) return '<p>Litsenziya kaliti olinmadi. Klubni qayta oching.</p>';
 
   return `
     <div class="p-5 space-y-4 animate-fade-in text-center">
@@ -427,33 +427,7 @@ function renderStep3() {
         </div>
       </div>
 
-      <!-- QR Kod Kartochkasi (Tezkor skanerlash uchun) -->
-      <div class="glass-card p-3.5 rounded-2xl border border-zinc-800 space-y-2.5">
-        <div class="text-[11px] font-semibold text-zinc-300">
-          📱 Kassir Serveri Uchun QR-Kod
-        </div>
-        
-        <div class="w-44 h-44 mx-auto rounded-2xl bg-[#09090b] p-2 border border-sky-500/30 flex items-center justify-center shadow-xl">
-          <img 
-            src="${qrUrl}" 
-            alt="License QR Code" 
-            class="w-full h-full rounded-xl object-contain"
-            onerror="this.src=''; this.alt='QR kod yuklanmoqda...';"
-          />
-        </div>
-
-        <p class="text-[10px] text-zinc-400 max-w-xs mx-auto leading-relaxed">
-          Kassir o'z serverida ilovani ishga tushirayotganda ushbu QR-kodni skanerlashi yoki tokenni qo'lda kiritishi kifoya. Tizim avtomatik tarzda markaziy bulutga ulanadi.
-        </p>
-      </div>
-
-      <!-- Server Terminal Buyrug'i Misoli -->
-      <div class="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-left space-y-1">
-        <span class="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">Lokal Server Buyrug'i:</span>
-        <div class="font-mono text-[10px] text-emerald-400 select-all truncate">
-          NetCafeServer --cloud-token ${licenseToken}
-        </div>
-      </div>
+      <p class="text-xs text-zinc-400">Kalitni nusxalang. Server dasturidagi “Serverni Faollashtirish” oynasiga kiriting va “Faollashtirish” tugmasini bosing.</p>
 
       <!-- Finish Button -->
       <div class="pt-2">
@@ -642,7 +616,7 @@ window.submitClubRegistration = async function() {
     });
 
     const data = await res.json();
-    if (res.status === 201 || (data.success && data.club)) {
+    if (res.ok && data.success && data.club?.api_secret_token) {
       wizardState.createdClub = data.club;
       wizardState.currentStep = 3;
       showModalToast("✓ Klub saqlandi va litsenziya kaliti yaratildi!");

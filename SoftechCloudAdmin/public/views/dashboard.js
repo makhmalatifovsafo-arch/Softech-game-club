@@ -1,3 +1,4 @@
+const activationHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 /**
  * Softech Super Admin — Main Executive Cockpit Screen
  * Optimized for One-Hand Mobile Use, Touch Gestures & PWA Standalone Mode
@@ -488,11 +489,11 @@ function renderActivationRequestsBanner() {
               </div>
               <div>
                 <div class="flex items-center gap-2">
-                  <h4 class="text-xs sm:text-sm font-extrabold text-white tracking-tight">${req.club_name}</h4>
+                  <h4 class="text-xs sm:text-sm font-extrabold text-white tracking-tight">${activationHtml(req.club_name)}</h4>
                   <span class="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">YANGI O'RNATISH</span>
                 </div>
                 <p class="text-[10px] text-zinc-300 font-mono mt-0.5">
-                  HWID: <strong class="text-sky-400 font-bold">${req.hardware_fingerprint}</strong> • ${req.total_pcs} ta PC
+                  HWID: <strong class="text-sky-400 font-bold">${activationHtml(req.hardware_fingerprint)}</strong> • ${req.total_pcs} ta PC
                 </p>
               </div>
             </div>
@@ -501,7 +502,7 @@ function renderActivationRequestsBanner() {
           <div class="flex items-center gap-2 pt-2 border-t border-zinc-800">
             <button 
               type="button" 
-              onclick="approveServerActivation(${req.id}, '${req.club_name}')" 
+              onclick="approveServerActivation(${req.id}, this.dataset.clubName)" data-club-name="${activationHtml(req.club_name)}"
               class="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 transition shadow-md shadow-emerald-600/30"
             >
               <span>✅</span>

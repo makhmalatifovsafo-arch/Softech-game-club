@@ -31,6 +31,7 @@ public partial class App : WpfApplication
     private WebSocketClientService? _wsService;
     private DisplayLockManager?     _displayMgr;
     private bool                    _isSessionActive = false;
+    private bool _isMaintenance;
 
     public WebSocketClientService?   WsService          => _wsService;
     public MaintenanceToolbarWindow? MaintenanceToolbar => _maintenanceToolbar;
@@ -56,6 +57,27 @@ public partial class App : WpfApplication
             }
         }
 
+        // Helper processes must not acquire the main mutex or alter kiosk restrictions.
+        if (Array.Exists(args, arg => arg.StartsWith("--watchdog-parent=", StringComparison.Ordinal)))
+        {
+            WatchdogService.Initialize(args);
+            return;
+        }
+
+        // ---- 1. Single-instance tekshiruvi ----
+        bool isNew;
+        _instanceMutex = new Mutex(initiallyOwned: true, "NetCafeClient_TekirQulf_Mutex", out isNew);
+
+        if (!isNew)
+        {
+            // Boshqa nusxa allaqachon ishlayapti
+            System.Windows.MessageBox.Show("NetCafeClient allaqachon ishlamoqda.", "Xabar", MessageBoxButton.OK, MessageBoxImage.Information);
+            _instanceMutex.Dispose();
+            _instanceMutex = null;
+            Shutdown();
+            return;
+        }
+
         // Dastur qanday yopilishidan qat'i nazar (Ctrl+C yoki taskkill) Taskbarni tiklash kafolati
         AppDomain.CurrentDomain.ProcessExit += (s, ev) =>
         {
@@ -67,39 +89,7 @@ public partial class App : WpfApplication
         // Boshlanishida taskbarni har doim ko'rsatish
         LockWindow.ShowWindowsTaskbar();
 
-        // ---- 1. Single-instance tekshiruvi ----
-        bool isNew;
-        _instanceMutex = new Mutex(initiallyOwned: true, "NetCafeClient_TekirQulf_Mutex", out isNew);
-
-        if (!isNew && !IsDevMode)
-        {
-            // Boshqa nusxa allaqachon ishlayapti
-            System.Windows.MessageBox.Show("NetCafeClient allaqachon ishlamoqda.", "Xabar", MessageBoxButton.OK, MessageBoxImage.Information);
-            Shutdown();
-            return;
-        }
-
-        // ---- 2. Watchdog — faqat Production nusxa uchun ----
-        bool isWatchdogInstance = false;
-        foreach (string arg in args)
-        {
-            if (arg.StartsWith("--watchdog-parent="))
-            {
-                isWatchdogInstance = true;
-                break;
-            }
-        }
-
-        if (isWatchdogInstance)
-        {
-            _instanceMutex?.ReleaseMutex();
-            _instanceMutex?.Dispose();
-
-            WatchdogService.Initialize(args);
-            return;
-        }
-
-        if (!IsDevMode)
+        if (!IsDevMode && !Array.Exists(args, arg => arg == "--update-health"))
         {
             WatchdogService.Initialize(args);
         }
@@ -302,12 +292,19 @@ public partial class App : WpfApplication
         _wsService.Start();
 
         // ---- 12. OTA Auto-Update Service ----
-        AutoUpdateService.Instance.Initialize(null, () => _isSessionActive);
-        AutoUpdateService.Instance.OnUpdatePendingSession += ver =>
+        AutoUpdateService.Instance.Initialize(null, () => _isSessionActive, () => _isMaintenance);
+        AutoUpdateService.Instance.StartPeriodicChecks(TimeSpan.FromSeconds(60));
+        int healthArg = Array.IndexOf(args, "--update-health");
+        if (healthArg >= 0 && healthArg + 1 < args.Length)
         {
-            Dispatcher.Invoke(() => _shellWindow?.ShowUpdatePendingNotice(ver));
-        };
-        AutoUpdateService.Instance.StartPeriodicChecks(TimeSpan.FromMinutes(15));
+            System.IO.File.WriteAllText(args[healthArg + 1], "ready");
+            // The updater owns crash recovery until its health check completes.
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(45));
+                if (!IsDevMode) WatchdogService.Initialize(Array.Empty<string>());
+            });
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -354,6 +351,7 @@ public partial class App : WpfApplication
     /// </summary>
     public void EnableMaintenanceMode()
     {
+        _isMaintenance = true;
         try
         {
             _lockWindow?.Hide();
@@ -432,6 +430,7 @@ public partial class App : WpfApplication
     // -----------------------------------------------------------------------
     private void LockScreen()
     {
+        _isMaintenance = false;
         _isSessionActive = false;
         // 1. Vidjet va ShellWindow yashirish
         _timeWidget?.StopSession();
@@ -492,8 +491,15 @@ public partial class App : WpfApplication
     // -----------------------------------------------------------------------
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_instanceMutex == null)
+        {
+            base.OnExit(e);
+            return;
+        }
+
         try
         {
+            AutoUpdateService.Instance.Stop();
             _wsService?.Stop();
             KeyboardHook.Stop();
             TaskManagerBlocker.DisableRestrictions();

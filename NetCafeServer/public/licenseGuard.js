@@ -2,18 +2,15 @@
  * Softech NetCafe Server — Cashier & Admin License Lock Overlay
  * Location: NetCafeServer/public/licenseGuard.js
  *
- * MUHIM: Barcha faollashtirish so'rovlari TO'G'RIDAN-TO'G'RI Vercel bulut
- * serveriga yuboriladi (localhost yoki lokal serverni chetlab o'tadi).
+ * Activation goes through the local server so success means the license was verified and saved.
  */
 
 (function () {
   let licensePollingTimer = null;
   let currentServerHwid = null;
 
-  // ⚡ CLOUD API — BARCHA SO'ROVLAR SHU YERGA YUBORILADI (HECH QACHON localhost EMAS!)
-  const CLOUD_API = 'https://softech-game-club.vercel.app';
+  let lastOverlayState = null;
 
-  // Lokal server faqat HWID va holat tekshirish uchun ishlatiladi
   async function checkLicenseStatus() {
     try {
       const res = await fetch('/api/license/status');
@@ -34,6 +31,7 @@
       overlay.style.position = 'fixed';
       overlay.style.inset = '0';
       overlay.style.zIndex = '999999';
+      lastOverlayState = null;
       overlay.style.display = 'none';
       overlay.style.alignItems = 'center';
       overlay.style.justifyContent = 'center';
@@ -57,6 +55,8 @@
     }
 
     overlay.style.display = 'flex';
+    if (lastOverlayState === status.state && overlay.innerHTML) return;
+    lastOverlayState = status.state;
 
     // 1. PENDING_ACTIVATION (Birinchi o'rnatish)
     if (status.state === 'PENDING_ACTIVATION') {
@@ -225,7 +225,7 @@
 
   // ===================================================================
   // USUL 1: LITSENZIYA KALITI BILAN DARHOL FAOLLASHTIRISH
-  // TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORILADI!
+
   // ===================================================================
   window.activateWithKey = async function () {
     const input = document.getElementById('manualLicenseKeyInput');
@@ -254,8 +254,7 @@
         } catch (e) {}
       }
 
-      // 2. TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORAMIZ (localhost EMAS!)
-      const cloudRes = await fetch(CLOUD_API + '/api/telemetry/activate-by-key', {
+      const cloudRes = await fetch('/api/license/activate-with-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ licenseKey: key, hardwareFingerprint: hwid, totalPcs: 16, serverVersion: '1.0.2' })
@@ -263,17 +262,6 @@
       const cloudData = await cloudRes.json();
 
       if (cloudRes.ok && cloudData.success) {
-        // 3. Agar muvaffaqiyatli bo'lsa, lokal serverga ham yuborib litsenziyani saqlashga harakat qilamiz
-        try {
-          await fetch('/api/license/activate-with-key', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ licenseKey: key })
-          });
-        } catch (e) {
-          console.warn('Lokal serverga yuborishda xatolik (muhim emas):', e);
-        }
-
         if (errEl) { errEl.style.display = 'none'; }
         const resultEl = document.getElementById('cloudRequestResult');
         if (resultEl) {
@@ -303,7 +291,7 @@
 
   // ===================================================================
   // USUL 2: TELEGRAM ORQALI SO'ROV YUBORISH
-  // TO'G'RIDAN-TO'G'RI VERCEL BULUTGA YUBORILADI!
+
   // ===================================================================
   window.requestServerActivation = async function () {
     const btn = document.getElementById('btnSendActivationReq');
@@ -330,8 +318,7 @@
         } catch (e) {}
       }
 
-      // 2. TO'G'RIDAN-TO'G'RI VERCEL BULUT SERVERIGA YUBORAMIZ!
-      const cloudRes = await fetch(CLOUD_API + '/api/telemetry/activation-request', {
+      const cloudRes = await fetch('/api/license/request-activation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -342,9 +329,10 @@
         })
       });
       const cloudData = await cloudRes.json();
+      if (!cloudRes.ok || !cloudData.success) throw new Error(cloudData.error || 'So\'rov saqlanmadi.');
 
       if (statusText) {
-        statusText.textContent = "✅ So'rov bulutga yuborildi! Telegram orqali Super Admin tasdig'i kutilmoqda...";
+        statusText.textContent = cloudData.message || "So\'rov saqlandi. Super Admin tasdig\'i kutilmoqda.";
         statusText.style.color = '#22c55e';
       }
       if (resultEl) {
@@ -354,15 +342,6 @@
         resultEl.style.color = '#22c55e';
         resultEl.textContent = "✅ " + (cloudData.message || "So'rov muvaffaqiyatli yuborildi!");
       }
-
-      // Lokal serverga ham xabar beramiz
-      try {
-        await fetch('/api/license/request-activation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clubName: clubName, totalPcs: 16 })
-        });
-      } catch (e) {}
 
       checkLicenseStatus();
     } catch (err) {

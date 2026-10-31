@@ -1,110 +1,39 @@
 import crypto from 'node:crypto';
 
-// Standart JWT Secret (Muhit o'zgaruvchisidan yoki xavfsiz generatsiya qilingan kalit)
-const JWT_SECRET = process.env.JWT_SECRET || 'softech_master_cockpit_super_secret_jwt_key_2026';
-const REFRESH_SECRET = process.env.REFRESH_SECRET || 'softech_master_cockpit_refresh_secret_key_2026';
-
-function base64UrlEncode(input) {
-  return Buffer.from(input)
-    .toString('base64url');
+const production = process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+function secret(value, name) {
+  if (value && Buffer.byteLength(value) >= 32) return value;
+  if (production || value) throw new Error(name + ' must contain at least 32 bytes.');
+  // Local sessions expire after a restart unless an environment secret is configured.
+  return crypto.randomBytes(48).toString('hex');
 }
+const accessSecret = secret(process.env.SUPERADMIN_JWT_SECRET || process.env.JWT_SECRET, 'SUPERADMIN_JWT_SECRET');
+const refreshSecret = secret(process.env.REFRESH_SECRET, 'REFRESH_SECRET');
 
-function base64UrlDecode(input) {
-  return Buffer.from(input, 'base64url').toString('utf8');
+function sign(payload, ttl, type, key) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ ...payload, iat: now, exp: now + ttl, tokenType: type })).toString('base64url');
+  const signature = crypto.createHmac('sha256', key).update(header + '.' + body).digest('base64url');
+  return header + '.' + body + '.' + signature;
 }
-
-/**
- * Qisqa muddatli Access Token yaratish (Standart: 1 soat)
- */
-export function signAccessToken(payload, expiresInSeconds = 3600) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
-  const fullPayload = { ...payload, exp, iat: Math.floor(Date.now() / 1000) };
-
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
-
-  const signature = crypto
-    .createHmac('sha256', JWT_SECRET)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
-}
-
-/**
- * Uzoq muddatli Refresh Token yaratish (Standart: 30 kun)
- */
-export function signRefreshToken(payload, expiresInSeconds = 30 * 24 * 3600) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
-  const fullPayload = { ...payload, exp, iat: Math.floor(Date.now() / 1000), tokenType: 'refresh' };
-
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
-
-  const signature = crypto
-    .createHmac('sha256', REFRESH_SECRET)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
-}
-
-/**
- * Access Tokenni tekshirish
- */
-export function verifyAccessToken(token) {
-  if (!token || typeof token !== 'string') return null;
+function verify(token, type, key) {
+  if (typeof token !== 'string') return null;
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
-
-  const [encodedHeader, encodedPayload, signature] = parts;
-
-  const expectedSignature = crypto
-    .createHmac('sha256', JWT_SECRET)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-
-  if (signature !== expectedSignature) {
-    return null; // Imzo xato
-  }
-
+  if (parts.length !== 3 || !parts.every(p => /^[A-Za-z0-9_-]+$/.test(p))) return null;
   try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      return null; // Muddati o'tgan
-    }
+    const [header, body, signature] = parts;
+    const expected = crypto.createHmac('sha256', key).update(header + '.' + body).digest();
+    const actual = Buffer.from(signature, 'base64url');
+    if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+    const metadata = JSON.parse(Buffer.from(header, 'base64url').toString('utf8'));
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (metadata.alg !== 'HS256' || metadata.typ !== 'JWT' || payload.tokenType !== type ||
+        !Number.isFinite(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) return null;
     return payload;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
-
-/**
- * Refresh Tokenni tekshirish
- */
-export function verifyRefreshToken(token) {
-  if (!token || typeof token !== 'string') return null;
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-
-  const [encodedHeader, encodedPayload, signature] = parts;
-
-  const expectedSignature = crypto
-    .createHmac('sha256', REFRESH_SECRET)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64url');
-
-  if (signature !== expectedSignature) return null;
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-    return payload;
-  } catch {
-    return null;
-  }
-}
+export const signAccessToken = (payload, ttl = 3600) => sign(payload, ttl, 'access', accessSecret);
+export const signRefreshToken = (payload, ttl = 30 * 24 * 3600) => sign(payload, ttl, 'refresh', refreshSecret);
+export const verifyAccessToken = token => verify(token, 'access', accessSecret);
+export const verifyRefreshToken = token => verify(token, 'refresh', refreshSecret);

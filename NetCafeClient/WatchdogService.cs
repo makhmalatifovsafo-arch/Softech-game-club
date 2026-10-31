@@ -33,6 +33,18 @@ public static class WatchdogService
     private static readonly string GracefulExitMarker = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".graceful_exit");
 
     private static Thread? _watchThread;
+    private static Process? _watchdogProcess;
+
+    public static void PrepareForUpdate()
+    {
+        // Stop our own watchdog while the main process still lives; no marker race.
+        if (_watchdogProcess != null && !_watchdogProcess.HasExited)
+        {
+            _watchdogProcess.Kill();
+            _watchdogProcess.WaitForExit(1000);
+        }
+        RequestGracefulShutdown();
+    }
 
     /// <summary>
     /// Admin tomonidan ruxsat berilgan toza chiqishni bildirish.
@@ -53,16 +65,6 @@ public static class WatchdogService
     /// </summary>
     public static void Initialize(string[] args)
     {
-        // 0. Agar Dev rejim bo'lsa yoki eski graceful marker qolgan bo'lsa
-        try
-        {
-            if (File.Exists(GracefulExitMarker))
-            {
-                File.Delete(GracefulExitMarker);
-            }
-        }
-        catch {}
-
         if (App.IsDevMode)
         {
             // Dev rejimda watchdog umuman ishlamasin
@@ -82,6 +84,16 @@ public static class WatchdogService
                 }
             }
         }
+
+        // 0. Agar Dev rejim bo'lsa yoki eski graceful marker qolgan bo'lsa
+        try
+        {
+            if (File.Exists(GracefulExitMarker))
+            {
+                File.Delete(GracefulExitMarker);
+            }
+        }
+        catch {}
 
         // 2. Normal ishga tushish — o'zimizni kuzatuvchi watchdog instance'ni spawning qilish
         SpawnWatchdogInstance();
@@ -108,7 +120,7 @@ public static class WatchdogService
                 WorkingDirectory       = Path.GetDirectoryName(exePath) ?? ""
             };
 
-            Process.Start(psi);
+            _watchdogProcess = Process.Start(psi);
         }
         catch (Exception ex)
         {
@@ -140,6 +152,7 @@ public static class WatchdogService
             // PID allaqachon yo'q — agar toza chiqish bo'lmasa qayta ishga tushirish
             if (CheckGracefulAndExit()) return;
             RestartMain();
+            Environment.Exit(0);
             return;
         }
 
@@ -161,6 +174,7 @@ public static class WatchdogService
         finally
         {
             CloseHandle(handle);
+            Environment.Exit(0);
         }
     }
 

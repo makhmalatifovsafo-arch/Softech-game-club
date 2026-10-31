@@ -21,7 +21,7 @@ const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
 
 export class CloudLicenseService {
   static supabase = null;
-  static clubId = 1;
+  static clubId = null;
   static supabaseUrl = '';
   static supabaseAnonKey = '';
   
@@ -51,7 +51,7 @@ export class CloudLicenseService {
 
     this.supabaseUrl = process.env.SUPABASE_URL || config.supabaseUrl || 'https://xyzcompany.supabase.co';
     this.supabaseAnonKey = process.env.SUPABASE_ANON_KEY || config.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.mock_key_softech_2026';
-    this.clubId = parseInt(process.env.CLUB_ID || config.clubId || 1, 10);
+    this.clubId = parseInt(process.env.CLUB_ID || config.clubId || 0, 10);
 
     return {
       supabaseUrl: this.supabaseUrl,
@@ -66,6 +66,7 @@ export class CloudLicenseService {
   static async init() {
     if (this.isInitialized) return;
     this.loadConfig();
+    if (!this.clubId) return;
 
     console.log('================================================================');
     console.log('⚡ [Supabase-License] Bulut Litsenziya va Kill-Switch servisi yuklanmoqda...');
@@ -295,9 +296,7 @@ export class CloudLicenseService {
     console.log('================================================================');
 
     try {
-      LicenseManager.state = 'ACTIVE';
-      LicenseManager.lockReason = '';
-      LicenseManager.lockMessage = '';
+      LicenseManager.loadAndVerifyLocalLicense();
     } catch (err) {}
 
     // Mijozlarga qulfdan chiqish haqida xabar berish

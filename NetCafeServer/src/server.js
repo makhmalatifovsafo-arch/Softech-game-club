@@ -53,6 +53,18 @@ CloudLicenseService.init();
 
 // 2. HTTP Server va REST API
 const server = http.createServer((req, res) => {
+  const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  if (ServerUpdater.applying && mutating) {
+    res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '2' });
+    res.end(JSON.stringify({ error: 'Server is restarting. Please retry.' }));
+    return;
+  }
+  if (mutating && !req.url.startsWith('/api/updates/')) {
+    ServerUpdater.pendingWrites++;
+    let done = false;
+    const finish = () => { if (!done) { done = true; ServerUpdater.pendingWrites--; } };
+    res.once('finish', finish); res.once('close', finish);
+  }
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -71,7 +83,7 @@ const server = http.createServer((req, res) => {
 
   // 0. GET /api/health (Cockpit Desktop App Health-Check)
   if (url.pathname === '/api/health' && req.method === 'GET') {
-    sendJson(res, 200, { status: 'ok', app: 'NetCafeServer', uptime: process.uptime() });
+    sendJson(res, 200, { status: 'ok', app: 'NetCafeServer', version: ServerUpdater.currentVersion, uptime: process.uptime() });
     return;
   }
 
@@ -95,7 +107,7 @@ const server = http.createServer((req, res) => {
     readBody(req, async (body) => {
       const clubName = body.clubName || 'Softech Gaming Club';
       const result = await LicenseManager.requestActivation(clubName);
-      sendJson(res, 200, result);
+      sendJson(res, result.success ? 200 : 502, result);
     });
     return;
   }
@@ -1349,25 +1361,10 @@ const server = http.createServer((req, res) => {
 
   // 4. GET /api/updates/version.json — Standart version.json manifestini tarqatish
   if (url.pathname === '/api/updates/version.json' && req.method === 'GET') {
-    const manifestPath = path.resolve(ROOT_DIR, 'version.json');
-    if (fs.existsSync(manifestPath)) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(fs.readFileSync(manifestPath, 'utf8'));
-    } else {
-      sendJson(res, 200, {
-        version: ServerUpdater.currentVersion,
-        releaseDate: new Date().toISOString().slice(0, 10),
-        client: {
-          url: `http://${req.headers.host}/updates/client-latest.zip`,
-          sha256: null
-        },
-        server: {
-          url: `http://${req.headers.host}/updates/server-latest.zip`,
-          sha256: null
-        },
-        changelog: "Enterprise OTA Update System v" + ServerUpdater.currentVersion
-      });
-    }
+    res.setHeader('Cache-Control', 'no-store');
+    Promise.resolve(ServerUpdater.state.latestManifest || ServerUpdater.fetchJson(ServerUpdater.manifestUrl))
+      .then(manifest => sendJson(res, manifest ? 200 : 503, manifest || { error: 'Release manifest is not available yet.' }))
+      .catch(() => sendJson(res, 503, { error: 'Release feed temporarily unavailable.' }));
     return;
   }
 
@@ -4457,6 +4454,12 @@ ClientManager.wss = wss;
 
 // Anti-Piracy, HWID Locking & Remote Kill-Switch Initsializatsiyasi
 LicenseManager.init({
+  onLicenseActivated: () => {
+    CloudLicenseService.stop();
+    CloudLicenseService.isBlockedState = false;
+    CloudLicenseService.status = 'ACTIVE';
+    CloudLicenseService.init().catch(error => console.warn('[CloudLicense]', error.message));
+  },
   clientBroadcaster: (payload) => {
     ClientManager.broadcastToAll(payload);
   },
@@ -4471,6 +4474,7 @@ wss.on('connection', (socket, req) => {
   console.log(`📡 [WS Connection] Yangi aloqa: ${remoteIp} (Port ${req.socket?.remotePort})`);
 
   socket.on('message', (data) => {
+    if (ServerUpdater.applying) return;
     ProtocolDispatcher.handleMessage(socket, data.toString());
   });
 
@@ -4521,6 +4525,14 @@ server.listen(PORT, '0.0.0.0', () => {
   HeartbeatMonitor.start();
   SessionScheduler.start();
 });
+
+ServerUpdater.onShutdown = () => {
+  HeartbeatMonitor.stop();
+  SessionScheduler.stop();
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  db.close();
+  process.exit(0);
+};
 
 process.on('SIGINT', () => {
   HeartbeatMonitor.stop();

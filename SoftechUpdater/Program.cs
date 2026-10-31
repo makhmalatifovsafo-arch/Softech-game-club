@@ -1,350 +1,224 @@
-using System;
 using System.Diagnostics;
-using System.IO;
-using System.Threading;
+using System.IO.Compression;
+using System.Text.Json;
+using Softech.Updates;
 
 namespace SoftechUpdater;
 
-/// <summary>
-/// SoftechUpdater — Enterprise Companion Process for NetCafeClient OTA Updates.
-/// Vazifalari:
-/// 1. Windows 'File in Use' cheklovini yechish (Running .exe ni almashtirish).
-/// 2. Parent PID (NetCafeClient) ning to'liq yopilishini kutish (Process.WaitForExit).
-/// 3. Eski fayllarni .bak ga xavfsiz zaxiralash.
-/// 4. Yangi fayllarni nusxalash (workstation config.json saqlanadi).
-/// 5. Yangilangan NetCafeClient.exe ni administrator huquqlari bilan qayta yoqish.
-/// 6. 10 soniyalik Crash Watchdog & Rollback Guard (agar yangi fayl ishlamay qolsa, .bak zudlik bilan tiklanadi).
-/// 7. Staging katalogini tozalash.
-/// </summary>
 public static class Program
 {
-    private static readonly string _logFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "SoftechClient",
-        "updater.log"
-    );
+    private static string? logFile;
+    private static readonly JsonSerializerOptions Json = PackageManifest.JsonOptions;
 
-    public static int Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
-        EnsureLogDirectory();
-        Log("=================================================");
-        Log($"🚀 [SoftechUpdater] Ishga tushirildi. Argumentlar: {string.Join(" ", args)}");
-
-        string? sourceDir = null;
-        string? targetDir = null;
-        int parentPid = -1;
-        string exeName = "NetCafeClient.exe";
-        int waitTimeoutSeconds = 15;
-
-        // Argumentlarni o'qish (--target, --source, --pid, --restart, --executable, --timeout)
-        for (int i = 0; i < args.Length; i++)
+        try
         {
-            string arg = args[i];
-            if (arg.Equals("--source", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            if (args.Length == 1 && args[0] == "--probe-idle")
             {
-                sourceDir = args[++i];
+                Console.WriteLine(JsonSerializer.Serialize(new { idleSeconds = IdleSafety.IdleSeconds() }));
+                return 0;
             }
-            else if (arg.Equals("--target", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            if (args.Length == 3 && args[0] == "--extract")
             {
-                targetDir = args[++i];
+                // .NET rejects ZIP traversal; package validation also rejects reparse points.
+                ZipFile.ExtractToDirectory(args[1], args[2], overwriteFiles: false);
+                return 0;
             }
-            else if (arg.Equals("--pid", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
-            {
-                int.TryParse(args[++i], out parentPid);
-            }
-            else if ((arg.Equals("--restart", StringComparison.OrdinalIgnoreCase) || 
-                      arg.Equals("--executable", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
-            {
-                exeName = args[++i];
-            }
-            else if (arg.Equals("--timeout", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
-            {
-                int.TryParse(args[++i], out waitTimeoutSeconds);
-            }
+            if (args.Length != 2 || args[0] != "--plan") return 2;
+            var plan = JsonSerializer.Deserialize<UpdatePlan>(File.ReadAllText(args[1]), Json)
+                ?? throw new InvalidDataException("Missing update plan.");
+            return await Apply(plan);
         }
-
-        if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
+        catch (Exception ex)
         {
-            Log($"❌ [SoftechUpdater] Noto'g'ri source katalogi: '{sourceDir}'");
+            Log(ex.ToString());
             return 1;
         }
-
-        if (string.IsNullOrWhiteSpace(targetDir) || !Directory.Exists(targetDir))
-        {
-            Log($"❌ [SoftechUpdater] Noto'g'ri target katalogi: '{targetDir}'");
-            return 2;
-        }
-
-        // 1. Asosiy mijoz jarayoni (Parent PID) to'xtashini kutish
-        if (parentPid > 0)
-        {
-            Log($"⏳ Asosiy jarayon (PID: {parentPid}) yopilishi kutilmoqda (maksimal {waitTimeoutSeconds}s)...");
-            try
-            {
-                var parentProc = Process.GetProcessById(parentPid);
-                if (!parentProc.WaitForExit(waitTimeoutSeconds * 1000))
-                {
-                    Log($"⚠️ Asosiy jarayon belgilangan vaqtda yopilmadi. Majburiy to'xtatilmoqda...");
-                    parentProc.Kill();
-                    parentProc.WaitForExit(3000);
-                }
-            }
-            catch (ArgumentException)
-            {
-                Log($"ℹ️ Asosiy jarayon (PID: {parentPid}) allaqachon to'xtagan.");
-            }
-            catch (Exception ex)
-            {
-                Log($"⚠️ Jarayonni kutishda ogohlantirish: {ex.Message}");
-            }
-        }
-
-        // Qolib ketgan NetCafeClient nusxalarini xavfsiz to'xtatish
-        TerminateRunningTargetProcesses(targetDir, exeName);
-
-        // Watchdog xavfsiz chiqish fayli mavjud bo'lsa tozalash
-        string gracefulExitMarker = Path.Combine(targetDir, ".graceful_exit");
-        try
-        {
-            if (File.Exists(gracefulExitMarker))
-            {
-                File.Delete(gracefulExitMarker);
-            }
-        }
-        catch { }
-
-        // 2. Mavjud ijro faylini zaxiralash (.bak)
-        string targetExePath = Path.Combine(targetDir, exeName);
-        string bakExePath = targetExePath + ".bak";
-
-        try
-        {
-            if (File.Exists(targetExePath))
-            {
-                Log($"📦 Zaxira nusxa yaratilmoqda: {targetExePath} -> {bakExePath}");
-                File.Copy(targetExePath, bakExePath, overwrite: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"⚠️ Ogohlantirish: .bak yaratib bo'lmadi: {ex.Message}");
-        }
-
-        // 3. Staging katalogidagi fayllarni target katalogiga nusxalash
-        Log($"📂 Yangilanish fayllari ko'chirilmoqda: '{sourceDir}' -> '{targetDir}'...");
-        bool copySuccess = CopyDirectory(sourceDir, targetDir);
-
-        if (!copySuccess)
-        {
-            Log("❌ [SoftechUpdater] Fayllarni nusxalashda xatolik yuz berdi! Zaxiradan tiklanmoqda (Rollback)...");
-            RestoreBackup(bakExePath, targetExePath);
-            LaunchProcess(targetExePath, targetDir, requireAdmin: true);
-            return 3;
-        }
-
-        Log("✅ Barcha fayllar muvaffaqiyatli yangilandi.");
-
-        // 4. Sog'lomlik tekshiruvi & 10 soniyalik Crash Watchdog (Rollback Guard)
-        Log($"🚀 Yangilangan '{targetExePath}' administrator huquqlari bilan ishga tushirilmoqda...");
-        Process? newProc = LaunchProcess(targetExePath, targetDir, requireAdmin: true);
-
-        if (newProc == null)
-        {
-            Log("❌ Yangi dasturni ishga tushirib bo'lmadi! Zudlik bilan eski versiya tiklanmoqda...");
-            RestoreBackup(bakExePath, targetExePath);
-            LaunchProcess(targetExePath, targetDir, requireAdmin: true);
-            return 4;
-        }
-
-        bool crashed = false;
-        int checkIntervalMs = 500;
-        int totalChecks = 20; // 20 * 500ms = 10 soniya barqarorlik tekshiruvi
-
-        for (int i = 0; i < totalChecks; i++)
-        {
-            Thread.Sleep(checkIntervalMs);
-            if (newProc.HasExited)
-            {
-                Log($"💥 KRITIK XATOLIK: Yangi versiya 10 soniya ichida kutilmaganda yopildi! ExitCode: {newProc.ExitCode}");
-                crashed = true;
-                break;
-            }
-        }
-
-        if (crashed)
-        {
-            Log("🔄 Avtomatik Rollback: Oldingi barqaror versiya (.bak) tiklanmoqda...");
-            RestoreBackup(bakExePath, targetExePath);
-            Log("🚀 Zaxiradagi versiya qayta yoqilmoqda...");
-            LaunchProcess(targetExePath, targetDir, requireAdmin: true);
-            Log("⚠️ Rollback to'liq yakunlandi. Workstation ish holatiga qaytarildi.");
-            return 5;
-        }
-
-        Log("🎉 10 soniyalik sog'lomlik tekshiruvi muvaffaqiyatli o'tdi! Yangi versiya barqaror ishlamoqda.");
-
-        // 5. Staging katalogini tozalash
-        try
-        {
-            Directory.Delete(sourceDir, recursive: true);
-            Log("🧹 Staging katalogi tozalandi.");
-        }
-        catch (Exception ex)
-        {
-            Log($"ℹ️ Staging tozalash keyinga qoldirildi: {ex.Message}");
-        }
-
-        Log("🏁 [SoftechUpdater] Yangilanish jarayoni muvaffaqiyatli yakunlandi.");
-        return 0;
     }
 
-    private static void TerminateRunningTargetProcesses(string targetDir, string exeName)
+    private static async Task<int> Apply(UpdatePlan plan)
     {
-        string processNameWithoutExt = Path.GetFileNameWithoutExtension(exeName);
-        foreach (var proc in Process.GetProcessesByName(processNameWithoutExt))
-        {
-            try
-            {
-                string? procPath = proc.MainModule?.FileName;
-                if (procPath != null && procPath.StartsWith(targetDir, StringComparison.OrdinalIgnoreCase))
-                {
-                    Log($"🛑 Eski jarayon to'xtatilmoqda: PID {proc.Id} ({procPath})");
-                    proc.Kill();
-                    proc.WaitForExit(3000);
-                }
-            }
-            catch { }
-        }
-    }
-
-    private static bool CopyDirectory(string source, string target)
-    {
+        string target = Path.GetFullPath(plan.Target);
+        string source = Path.GetFullPath(plan.Source);
+        if (!Directory.Exists(target) || source.Equals(target, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Invalid source/target.");
+        if (plan.Kind is not ("client" or "server") || plan.ParentPids.Length == 0)
+            throw new InvalidDataException("Invalid application update plan.");
+        Directory.CreateDirectory(Path.Combine(target, "logs"));
+        logFile = Path.Combine(target, "logs", "updater.log");
+        string transaction = Path.Combine(target, ".ota", Guid.NewGuid().ToString("N"));
+        string prepared = Path.Combine(transaction, "prepared");
+        string backup = Path.Combine(transaction, "backup");
+        var applied = new List<string>();
+        var originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var databases = new Dictionary<string, string>();
+        Process? restarted = null;
+        bool committed = false;
+        bool healthy = false;
+        Directory.CreateDirectory(Path.Combine(target, ".ota"));
+        FileStream transactionLock;
         try
         {
-            foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+            transactionLock = new FileStream(Path.Combine(target, ".ota", "update.lock"),
+                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException) { return 3; } // Another transaction still owns preparation/health/rollback.
+        using var exclusiveTransaction = transactionLock;
+        Directory.CreateDirectory(transaction);
+        try
+        {
+            var package = PackageManifest.Validate(source, plan.Version, plan.Kind);
+            var files = package.Files.Keys.Append("update-package.json").ToArray();
+            foreach (string relative in files)
             {
-                string relativePath = Path.GetRelativePath(source, file);
-                string destinationFile = Path.Combine(target, relativePath);
-
-                // Workstation konfiguratsiyasi (config.json) mavjud bo'lsa, ustidan yozmaymiz
-                if (Path.GetFileName(file).Equals("config.json", StringComparison.OrdinalIgnoreCase) &&
-                    File.Exists(destinationFile))
+                string destination = PackageManifest.ChildPath(target, relative);
+                string staged = PackageManifest.ChildPath(prepared, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
+                File.Copy(PackageManifest.ChildPath(source, relative), staged, true);
+                if (File.Exists(destination))
                 {
-                    Log($"🔒 Workstation konfiguratsiyasi saqlab qolindi: {destinationFile}");
-                    continue;
+                    string old = PackageManifest.ChildPath(backup, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(old)!);
+                    File.Copy(destination, old, true);
+                    originals.Add(relative);
                 }
-
-                string? destDir = Path.GetDirectoryName(destinationFile);
-                if (destDir != null && !Directory.Exists(destDir))
+            }
+            // All slow copying and access checks finish while the application still runs.
+            File.WriteAllText(plan.ReadyFile, JsonSerializer.Serialize(new { version = plan.Version, pid = Environment.ProcessId }));
+            var deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(plan.TimeoutSeconds, 10, 180));
+            while (!File.Exists(plan.CommitFile))
+            {
+                if (File.Exists(plan.CancelFile) || DateTime.UtcNow > deadline) return 3;
+                await Task.Delay(50);
+            }
+            foreach (int pid in plan.ParentPids.Distinct())
+            {
+                try
                 {
-                    Directory.CreateDirectory(destDir);
+                    using var parent = Process.GetProcessById(pid);
+                    await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
                 }
+                catch (ArgumentException) { } // The exact parent already exited.
+            }
+            // No process-name scans, force-kills or runas/UAC prompts.
+            // Snapshot databases after parent exit so a failing schema migration can roll back.
+            if (plan.Kind == "server")
+            {
+                var candidates = Directory.GetFiles(target, "*.db*").AsEnumerable();
+                if (Directory.Exists(Path.Combine(target, "data")))
+                    candidates = candidates.Concat(Directory.GetFiles(Path.Combine(target, "data"), "*.db*", SearchOption.AllDirectories));
+                foreach (var db in candidates)
+                {
+                    string relative = Path.GetRelativePath(target, db);
+                    string snapshot = PackageManifest.ChildPath(Path.Combine(transaction, "databases"), relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(snapshot)!);
+                    File.Copy(db, snapshot, true);
+                    databases[db] = snapshot;
+                }
+            }
+            committed = true;
+            var downtime = Stopwatch.StartNew();
+            foreach (string relative in files)
+            {
+                string destination = PackageManifest.ChildPath(target, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                applied.Add(relative);
+                File.Move(PackageManifest.ChildPath(prepared, relative), destination, true);
+            }
+            restarted = Launch(plan);
+            Log($"v{plan.Version}: files switched and process started in {downtime.ElapsedMilliseconds} ms.");
+            if (restarted == null) throw new IOException("Could not restart application.");
 
-                // Fayl vaqtincha bloklangan bo'lsa 5 martagacha qayta urinish
-                bool copied = false;
-                for (int attempt = 1; attempt <= 5; attempt++)
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
+            bool ready = false;
+            var healthDeadline = DateTime.UtcNow.AddSeconds(30);
+            var stableSince = DateTime.UtcNow;
+            while (DateTime.UtcNow < healthDeadline)
+            {
+                if (restarted.HasExited) throw new IOException("Updated application exited during health check.");
+                if (plan.Kind == "client") ready = File.Exists(plan.HealthFile);
+                else if (!string.IsNullOrWhiteSpace(plan.HealthUrl))
                 {
                     try
                     {
-                        File.Copy(file, destinationFile, overwrite: true);
-                        copied = true;
-                        break;
+                        var data = await http.GetStringAsync(plan.HealthUrl);
+                        using var health = JsonDocument.Parse(data);
+                        ready = health.RootElement.GetProperty("version").GetString() == plan.Version;
                     }
-                    catch (IOException)
-                    {
-                        Thread.Sleep(500);
-                    }
+                    catch { ready = false; }
                 }
-
-                if (!copied)
-                {
-                    Log($"❌ Faylni ko'chirib bo'lmadi: {file} -> {destinationFile}");
-                    return false;
-                }
+                if (!ready) stableSince = DateTime.UtcNow;
+                if (ready && DateTime.UtcNow - stableSince >= TimeSpan.FromSeconds(10)) { healthy = true; break; }
+                await Task.Delay(100);
             }
-            return true;
+            if (!healthy) throw new IOException("Updated application did not become healthy.");
+            File.WriteAllText(Path.Combine(target, "updates-last-success.json"),
+                JsonSerializer.Serialize(new { version = plan.Version, at = DateTimeOffset.UtcNow }));
+            Log("Update health verified.");
+            return 0;
         }
         catch (Exception ex)
         {
-            Log($"❌ CopyDirectory Xatosi: {ex.Message}");
-            return false;
+            Log(ex.ToString());
+            if (!committed)
+            {
+                File.WriteAllText(plan.ReadyFile + ".error", ex.Message);
+                return 4; // Running application has not been disturbed.
+            }
+            // Only stop the process created by this transaction, never unrelated applications.
+            if (restarted != null && !restarted.HasExited)
+            {
+                restarted.Kill(entireProcessTree: true);
+                await restarted.WaitForExitAsync();
+            }
+            foreach (string relative in applied.AsEnumerable().Reverse())
+            {
+                string destination = PackageManifest.ChildPath(target, relative);
+                if (originals.Contains(relative))
+                    File.Copy(PackageManifest.ChildPath(backup, relative), destination, true);
+                else if (File.Exists(destination)) File.Delete(destination);
+            }
+            foreach (var db in databases.Keys.Where(file => file.EndsWith(".db", StringComparison.OrdinalIgnoreCase)))
+                foreach (var suffix in new[] { "-wal", "-shm" })
+                    if (File.Exists(db + suffix)) File.Delete(db + suffix);
+            foreach (var db in databases) File.Copy(db.Value, db.Key, true);
+            File.WriteAllText(Path.Combine(target, "updates-failed-version.json"),
+                JsonSerializer.Serialize(new { version = plan.Version, error = ex.Message, at = DateTimeOffset.UtcNow }));
+            // Old client must not retain the new readiness marker.
+            if (File.Exists(plan.HealthFile)) File.Delete(plan.HealthFile);
+            Launch(plan);
+            Log("Previous application files restored and restarted.");
+            return 5;
+        }
+        finally
+        {
+            restarted?.Dispose();
+            // Keep transaction backups for diagnosis; only generated control files are removed.
+            foreach (string file in new[] { plan.ReadyFile, plan.CommitFile, plan.CancelFile })
+                try { if (File.Exists(file)) File.Delete(file); } catch { }
         }
     }
 
-    private static void RestoreBackup(string bakPath, string targetExePath)
+    private static Process? Launch(UpdatePlan plan)
     {
-        try
+        var info = new ProcessStartInfo
         {
-            if (File.Exists(bakPath))
-            {
-                File.Copy(bakPath, targetExePath, overwrite: true);
-                Log($"✓ Zaxira tiklandi: {bakPath} -> {targetExePath}");
-            }
-        }
-        catch (Exception ex)
+            FileName = plan.RestartExecutable, WorkingDirectory = plan.Target,
+            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
+        };
+        foreach (string arg in plan.RestartArguments) info.ArgumentList.Add(arg);
+        if (plan.Kind == "client")
         {
-            Log($"❌ Zaxirani tiklashda xatolik: {ex.Message}");
+            info.ArgumentList.Add("--update-health");
+            info.ArgumentList.Add(plan.HealthFile);
         }
-    }
-
-    private static Process? LaunchProcess(string exePath, string workingDir, bool requireAdmin = true)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = exePath,
-                WorkingDirectory = workingDir,
-                UseShellExecute = true
-            };
-            if (requireAdmin)
-            {
-                psi.Verb = "runas"; // Administrator huquqlari
-            }
-            return Process.Start(psi);
-        }
-        catch (Exception ex)
-        {
-            Log($"⚠️ Administrator huquqi (runas) bilan yoqishda xatolik: {ex.Message}. Oddiy rejimda urinib ko'rilmoqda...");
-            try
-            {
-                var fallbackPsi = new ProcessStartInfo
-                {
-                    FileName = exePath,
-                    WorkingDirectory = workingDir,
-                    UseShellExecute = true
-                };
-                return Process.Start(fallbackPsi);
-            }
-            catch (Exception ex2)
-            {
-                Log($"❌ Dasturni ishga tushirishda xatolik '{exePath}': {ex2.Message}");
-                return null;
-            }
-        }
-    }
-
-    private static void EnsureLogDirectory()
-    {
-        try
-        {
-            string? dir = Path.GetDirectoryName(_logFile);
-            if (dir != null && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-        }
-        catch { }
+        return Process.Start(info);
     }
 
     private static void Log(string message)
     {
-        try
-        {
-            string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
-            Console.WriteLine(line);
-            File.AppendAllText(_logFile, line + Environment.NewLine);
-        }
+        try { if (logFile != null) File.AppendAllText(logFile, $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}"); }
         catch { }
     }
 }

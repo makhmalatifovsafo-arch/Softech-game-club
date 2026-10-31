@@ -4,41 +4,19 @@
  */
 
 import crypto from 'node:crypto';
+import { CloudActivationService } from '../src/services/cloudActivationService.js';
 import { SupabaseCloudService } from '../src/services/supabaseClient.js';
 import { TelegramBotService } from '../src/services/telegramBot.js';
 
-// JWT yordamchi funksiyalari
-const JWT_SECRET = process.env.SUPERADMIN_JWT_SECRET || 'softech_superadmin_cloud_secret_2026';
+import { signAccessToken, verifyAccessToken } from '../src/utils/jwt.js';
 
 function generateJwt(user) {
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({
-    id: user.id,
-    username: user.username,
-    role: 'superadmin',
-    exp: Math.floor(Date.now() / 1000) + (7 * 24 * 3600) // 7 kun
-  })).toString('base64url');
-
-  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
-  return `${header}.${payload}.${signature}`;
+  return signAccessToken({ id: user.id, sub: user.id, username: user.username, role: 'superadmin' }, 7 * 24 * 3600);
 }
 
 function verifyJwt(token) {
-  if (!token) return null;
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-
-  const [header, payload, signature] = parts;
-  const expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
-  if (signature !== expectedSig) return null;
-
-  try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (data.exp && data.exp < Math.floor(Date.now() / 1000)) return null;
-    return data;
-  } catch {
-    return null;
-  }
+  const user = verifyAccessToken(token);
+  return user?.role === 'superadmin' && user.sub ? user : null;
 }
 
 function getAuthUser(req) {
@@ -114,17 +92,12 @@ export default async function handler(req, res) {
       const body = await getParsedBody(req);
       const { pinCode } = body;
 
-      if (!pinCode || String(pinCode).length !== 4) {
+      if (!/^\d{4}$/.test(String(pinCode ?? ''))) {
         return sendJson(res, 400, { success: false, error: "4 xonali PIN kod kiritilishi shart." });
       }
 
       const user = await SupabaseCloudService.verifyPinCode(pinCode);
       if (!user) {
-        if (String(pinCode) === '7777') {
-          const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
-          const token = generateJwt(fallbackUser);
-          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
-        }
         return sendJson(res, 401, { success: false, error: "Noto'g'ri PIN kod." });
       }
 
@@ -143,12 +116,6 @@ export default async function handler(req, res) {
       // Supabase orqali tekshirish
       const user = await SupabaseCloudService.verifySuperAdminCredentials(username, password);
       if (!user) {
-        // Fallback: Standart admin / admin123
-        if (username === 'admin' && password === 'admin123') {
-          const fallbackUser = { id: 1, username: 'admin', fullName: 'Super Admin', role: 'superadmin' };
-          const token = generateJwt(fallbackUser);
-          return sendJson(res, 200, { success: true, token, accessToken: token, user: fallbackUser });
-        }
         return sendJson(res, 401, { success: false, error: "Login yoki parol noto'g'ri." });
       }
 
@@ -243,181 +210,26 @@ export default async function handler(req, res) {
     // 2.5 YANGI O'RNATISH VA FAOLLASHTIRISH SO'ROVI (ACTIVATION REQUEST)
     // ========================================================================
     if (pathname === '/api/telemetry/activation-request' && method === 'POST') {
-      const body = await getParsedBody(req);
-      const { clubName, hardwareFingerprint, totalPcs, serverLanIp, serverVersion } = body;
-
-      const finalClubName = clubName || `Game Club (${(hardwareFingerprint || 'PC').slice(-4)})`;
-      const hwid = hardwareFingerprint || 'HWID-UNKNOWN';
-      const pcs = parseInt(totalPcs, 10) || 16;
-      const lanIp = serverLanIp || '192.168.1.100';
-      const ver = serverVersion || '1.0.1';
-
-      console.log(`🚨 [Activation Request] Yangi server so'rovi: ${finalClubName} (${hwid})`);
-
-      // 1. Supabase da kiritish yoki yangilash
-      try {
-        const client = SupabaseCloudService.getClient();
-        if (client) {
-          await client.from('clubs').upsert({
-            name: finalClubName,
-            hardware_fingerprint: hwid,
-            total_workstations: pcs,
-            server_lan_ip: lanIp,
-            server_version: ver,
-            status: 'PENDING',
-            license_expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
-          }, { onConflict: 'hardware_fingerprint' });
-        }
-      } catch (err) {
-        console.warn('⚠️ Supabase activation upsert:', err.message);
-      }
-
-      // 2. Telegram Bot orqali Super Adminga xabar yuborish
-      try {
-        const alertMsg = [
-          `🚨 <b>YANGI SERVER LITSENZIYA SO'ROVI!</b>`,
-          `🏢 Klub: <b>${finalClubName}</b>`,
-          `🖥️ Mashina HWID: <code>${hwid}</code>`,
-          `💻 Kompyuterlar: <b>${pcs} ta PC</b>`,
-          `🌐 LAN IP: <code>${lanIp}</code> • v${ver}`,
-          ``,
-          `<i>Super Admin paneli orqali [✅ FAOLLASHTIRISH] mumkin.</i>`
-        ].join('\n');
-
-        await TelegramBotService.sendMessage(alertMsg);
-      } catch (err) {
-        console.warn('⚠️ Telegram bot alert failed:', err.message);
-      }
-
-      return sendJson(res, 200, {
-        success: true,
-        status: 'PENDING',
-        message: "Litsenziya so'rovi qabul qilindi. Super Admin tasdiqlashi kutilmoqda."
-      });
+      return sendJson(res, 200, await CloudActivationService.createActivationRequest(await getParsedBody(req)));
     }
-
-    // 2.6 Litsenziya Kaliti (Super Admin kodi) orqali darhol faollashtirish
     if (pathname === '/api/telemetry/activate-by-key' && method === 'POST') {
-      const body = await getParsedBody(req);
-      const { licenseKey, hardwareFingerprint, totalPcs, serverLanIp, serverVersion } = body;
-
-      if (!licenseKey || !licenseKey.trim()) {
-        return sendJson(res, 400, { success: false, error: "Litsenziya kaliti kiritilishi shart." });
-      }
-      if (!hardwareFingerprint || !hardwareFingerprint.trim()) {
-        return sendJson(res, 400, { success: false, error: "Qurilma HWID aniqlanmadi." });
-      }
-
-      const cleanKey = licenseKey.trim();
-      const client = SupabaseCloudService.getClient();
-      let club = null;
-
-      if (client) {
-        const { data } = await client.from('clubs')
-          .select('*')
-          .or(`api_secret_token.eq.${cleanKey},slug.eq.${cleanKey}`)
-          .maybeSingle();
-        club = data;
-      }
-
-      if (!club) {
-        return sendJson(res, 404, { success: false, error: "Kiritilgan litsenziya kaliti topilmadi yoki noto'g'ri. Super Admin paneldagi kalitni tekshiring." });
-      }
-
-      // Klubni ACTIVE qilish va HWID ga biriktirish
-      const finalPcs = parseInt(totalPcs || club.total_workstations || 16, 10);
-      if (client) {
-        await client.from('clubs').update({
-          status: 'ACTIVE',
-          hardware_fingerprint: hardwareFingerprint,
-          server_lan_ip: serverLanIp || club.server_lan_ip,
-          server_version: serverVersion || club.server_version,
-          total_workstations: finalPcs,
-          updated_at: new Date().toISOString()
-        }).eq('id', club.id);
-      }
-
-      // Kriptografik imzolangan litsenziyani yaratish
-      const CLOUD_MASTER_KEY = process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026';
-      const issuedAt = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-      const payload = {
-        clubId: club.id,
-        clubName: club.name,
-        hardwareFingerprint,
-        status: 'ACTIVE',
-        issuedAt,
-        expiresAt,
-        maxPcs: finalPcs,
-        verifiedAt: issuedAt
-      };
-      const signature = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
-      const signedLicense = { payload, signature };
-
-      // Telegram xabarnoma
-      try {
-        await TelegramBotService.sendMessage(
-          `✅ <b>LITSENZIYA FAOLLASHTIRILDI (KALIT BILAN)!</b>\n🏢 Klub: <b>${club.name}</b>\n🔑 Kalit: <code>${cleanKey}</code>\n🖥️ Mashina HWID: <code>${hardwareFingerprint}</code>\n💻 Kompyuterlar: <b>${finalPcs} ta PC</b>`
-        );
-      } catch (err) {}
-
-      return sendJson(res, 200, {
-        success: true,
-        message: "Litsenziya muvaffaqiyatli faollashtirildi!",
-        club: { id: club.id, name: club.name },
-        signedLicense
-      });
+      return sendJson(res, 200, await CloudActivationService.activateByKey(await getParsedBody(req)));
     }
-
-    // 2.7 So'rov holatini tekshirish (Polling Activation Status)
     if (pathname === '/api/telemetry/activation-status' && method === 'GET') {
-      const hwid = url.searchParams.get('hwid');
-      if (!hwid) return sendJson(res, 200, { success: true, status: 'NONE' });
-
-      const client = SupabaseCloudService.getClient();
-      if (client) {
-        const { data: club } = await client.from('clubs')
-          .select('*')
-          .eq('hardware_fingerprint', hwid)
-          .maybeSingle();
-
-        if (club && club.status === 'ACTIVE') {
-          const CLOUD_MASTER_KEY = process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026';
-          const issuedAt = new Date().toISOString();
-          const expiresAt = club.license_expires_at || new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-          const payload = {
-            clubId: club.id,
-            clubName: club.name,
-            hardwareFingerprint: hwid,
-            status: 'ACTIVE',
-            issuedAt,
-            expiresAt,
-            maxPcs: club.total_workstations || 16,
-            verifiedAt: issuedAt
-          };
-          const signature = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
-          return sendJson(res, 200, {
-            success: true,
-            status: 'APPROVED',
-            club: { id: club.id, name: club.name },
-            signedLicense: { payload, signature }
-          });
-        }
-      }
-
-      return sendJson(res, 200, { success: true, status: 'PENDING' });
+      return sendJson(res, 200, await CloudActivationService.getActivationStatus(url.searchParams.get('hwid')));
     }
-
     if (pathname === '/api/telemetry/activation-requests' && method === 'GET') {
-      const auth = getAuthUser(req);
-      if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
-
-      const client = SupabaseCloudService.getClient();
-      if (client) {
-        const { data } = await client.from('clubs').select('*').eq('status', 'PENDING');
-        return sendJson(res, 200, { success: true, requests: data || [] });
-      }
-      return sendJson(res, 200, { success: true, requests: [] });
+      if (!getAuthUser(req)) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+      return sendJson(res, 200, { success: true, requests: await CloudActivationService.getPendingRequests() });
+    }
+    const activationMatch = pathname.match(/^\/api\/telemetry\/activation-requests\/(\d+)\/(approve|reject)$/);
+    if (activationMatch && method === 'POST') {
+      if (!getAuthUser(req)) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
+      const body = await getParsedBody(req);
+      const result = activationMatch[2] === 'approve'
+        ? await CloudActivationService.approveActivation(Number(activationMatch[1]), body)
+        : await CloudActivationService.rejectActivation(Number(activationMatch[1]), body.reason);
+      return sendJson(res, 200, result);
     }
 
     // ========================================================================
@@ -505,8 +317,9 @@ export default async function handler(req, res) {
     // 6. TELEGRAM BOT WEBHOOK
     // ========================================================================
     if (pathname === '/api/telegram/webhook' && method === 'POST') {
+      if (!TelegramBotService.verifyWebhook(req)) return sendJson(res, 403, { success: false, error: 'Telegram webhook ruxsati yo\'q.' });
       const update = await getParsedBody(req);
-      const result = await TelegramBotService.handleWebhookUpdate(update);
+      const result = await TelegramBotService.handleWebhookUpdate(update, CloudActivationService);
       return sendJson(res, 200, result);
     }
 
@@ -514,6 +327,6 @@ export default async function handler(req, res) {
     return sendJson(res, 404, { success: false, error: `API yo'nalishi topilmadi: ${pathname}` });
   } catch (error) {
     console.error('API Error:', error);
-    return sendJson(res, 500, { success: false, error: error.message });
+    return sendJson(res, error.statusCode || 500, { success: false, error: error.message });
   }
 }

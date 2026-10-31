@@ -1,500 +1,217 @@
-using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
-using NetCafeClient;
-using NetCafeClient.Services.Security;
+using Softech.Updates;
 
 namespace NetCafeClient.Services;
 
-/// <summary>
-/// AutoUpdateService — Enterprise-grade Zero-Downtime GitHub Releases Over-The-Air (OTA) Auto-Updater.
-/// O'yin klubi qoidalari:
-/// 1. Faol seans vaqtida o'yinchi aslo to'xtatilmaydi.
-/// 2. Yangilanish orqa fonda yuklanib, staging katalogida tayyor turadi.
-/// 3. Seans tugagan zahoti (AVAILABLE/LOCKED holatida) SoftechUpdater ga topshiriladi.
-/// 4. GitHub direct static endpointlari: User-Agent: Softech-Updater sarlavhasi bilan so'raladi.
-/// </summary>
-public class AutoUpdateService
+public sealed class AutoUpdateService
 {
-    private static readonly Lazy<AutoUpdateService> _instance = new(() => new AutoUpdateService());
-    public static AutoUpdateService Instance => _instance.Value;
-
-    // ---- Manifest Modeli (GitHub Releases version.json) ----
-    public class UpdateFileItem
-    {
-        [JsonPropertyName("downloadUrl")]
-        public string? DownloadUrl { get; set; }
-
-        [JsonPropertyName("url")]
-        public string? Url { get; set; }
-
-        [JsonIgnore]
-        public string EffectiveUrl => !string.IsNullOrWhiteSpace(DownloadUrl) ? DownloadUrl : (Url ?? string.Empty);
-
-        [JsonPropertyName("sha256")]
-        public string? Sha256 { get; set; }
-    }
-
-    public class UpdateManifest
-    {
-        [JsonPropertyName("version")]
-        public string Version { get; set; } = "1.0.0";
-
-        [JsonPropertyName("releaseDate")]
-        public string? ReleaseDate { get; set; }
-
-        [JsonPropertyName("client")]
-        public UpdateFileItem? Client { get; set; }
-
-        [JsonPropertyName("server")]
-        public UpdateFileItem? Server { get; set; }
-
-        [JsonPropertyName("changelog")]
-        public string? Changelog { get; set; }
-    }
-
-    // ---- State & Fields ----
-    private readonly HttpClient _httpClient;
-    private PeriodicTimer? _checkTimer;
-    private CancellationTokenSource? _cts;
-    private Func<bool>? _isSessionActiveFunc;
-
-    private readonly string _stagingDir;
-    private readonly string _extractedDir;
-    private readonly string _currentVersion;
-
-    public string CurrentVersion => _currentVersion;
-    public string? StagedVersion { get; private set; }
-    public bool IsUpdateStaged { get; private set; }
+    public static AutoUpdateService Instance { get; } = new();
+    private readonly HttpClient http = new() { Timeout = TimeSpan.FromMinutes(15) };
+    private readonly SemaphoreSlim checkLock = new(1, 1);
+    private readonly SemaphoreSlim applyLock = new(1, 1);
+    private readonly CancellationTokenSource stopping = new();
+    private Func<bool>? sessionActive;
+    private Func<bool>? maintenance;
+    private string? staged;
+    private string? stagedVersion;
+    private int idleSeconds = 10;
+    private DateTime nextApplyAttempt;
+    private readonly string root = AppContext.BaseDirectory;
+    private readonly string staging;
+    public string CurrentVersion { get; } = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
+    public string? StagedVersion => stagedVersion;
+    public bool IsUpdateStaged => staged != null;
     public bool IsChecking { get; private set; }
     public bool IsDownloading { get; private set; }
-
     public string? ManifestUrl { get; set; }
-
-    // ---- Events ----
-    public event Action<string, string>? OnUpdateAvailable; // (version, changelog)
-    public event Action<string>? OnUpdateStaged;           // (version)
-    public event Action<string>? OnUpdatePendingSession;   // (version)
-    public event Action<int>? OnDownloadProgress;          // (percentage)
-    public event Action<string>? OnUpdateError;             // (errorMessage)
 
     private AutoUpdateService()
     {
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        // GitHub API va Releases 403 xatosini oldini olish uchun User-Agent sarlavhasi
-        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Softech-Updater", "1.0"));
-
-        _stagingDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SoftechClient",
-            "staging"
-        );
-        _extractedDir = Path.Combine(_stagingDir, "extracted");
-
-        Version? v = Assembly.GetExecutingAssembly().GetName().Version;
-        _currentVersion = v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.0.0";
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Softech-Updater/2.0");
+        // Per-installation staging avoids collisions between separate installations.
+        staging = Path.Combine(root, "updates", "staging");
     }
 
-    /// <summary>
-    /// Xizmatni initsializatsiya qilish
-    /// </summary>
-    public void Initialize(string? manifestUrl, Func<bool> isSessionActiveFunc)
+    public void Initialize(string? manifestUrl, Func<bool> isSessionActiveFunc, Func<bool>? isMaintenance = null)
     {
-        _isSessionActiveFunc = isSessionActiveFunc;
-        ManifestUrl = ResolveManifestUrl(manifestUrl);
-
-        Directory.CreateDirectory(_stagingDir);
+        sessionActive = isSessionActiveFunc;
+        maintenance = isMaintenance;
+        ManifestUrl = manifestUrl;
+        try
+        {
+            using var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "config.json")));
+            if (config.RootElement.TryGetProperty("updateIdleSeconds", out var idle))
+                idleSeconds = idle.GetInt32() == 30 ? 10 : Math.Clamp(idle.GetInt32(), 5, 3600);
+            if (ManifestUrl == null && config.RootElement.TryGetProperty("updateManifestUrl", out var url))
+                ManifestUrl = url.GetString();
+        }
+        catch { }
+        ManifestUrl ??= "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json";
+        Directory.CreateDirectory(staging);
     }
 
-    /// <summary>
-    /// Davriy tekshirishni boshlash (Standart: har 15 daqiqada)
-    /// </summary>
     public void StartPeriodicChecks(TimeSpan? interval = null)
     {
-        TimeSpan checkInterval = interval ?? TimeSpan.FromMinutes(15);
-        _cts?.Cancel();
-        _cts = new CancellationTokenSource();
-
         _ = Task.Run(async () =>
         {
-            // Dastur ishga tushgach 5 soniya kutib, birinchi tekshiruvni o'tkazamiz
-            await Task.Delay(TimeSpan.FromSeconds(5), _cts.Token);
-            await CheckForUpdatesAsync();
-
-            _checkTimer = new PeriodicTimer(checkInterval);
             try
             {
-                while (await _checkTimer.WaitForNextTickAsync(_cts.Token))
+                await Task.Delay(TimeSpan.FromSeconds(5), stopping.Token);
+                while (!stopping.IsCancellationRequested)
                 {
                     await CheckForUpdatesAsync();
+                    await Task.Delay(interval ?? TimeSpan.FromSeconds(60), stopping.Token);
                 }
+            }
+            catch (OperationCanceledException) { }
+        });
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+                while (await timer.WaitForNextTickAsync(stopping.Token)) await TryApplyAsync();
             }
             catch (OperationCanceledException) { }
         });
     }
 
-    /// <summary>
-    /// GitHub Releases manifest orqali yangilanish mavjudligini tekshirish
-    /// </summary>
+    public void Stop() => stopping.Cancel();
+    public void OnSessionEnded() { /* The one-second safety loop makes the decision. */ }
+    public void ApplyStagedUpdate() => _ = TryApplyAsync(); // Manual callers cannot bypass safety.
+
     public async Task<bool> CheckForUpdatesAsync()
     {
-        if (IsChecking || IsDownloading || string.IsNullOrWhiteSpace(ManifestUrl))
-            return false;
-
+        if (!await checkLock.WaitAsync(0)) return false;
         IsChecking = true;
         try
         {
-            Debug.WriteLine($"🌐 [AutoUpdate] GitHub Manifest tekshirilmoqda: {ManifestUrl}");
-            using var request = new HttpRequestMessage(HttpMethod.Get, ManifestUrl);
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await http.GetAsync(ManifestUrl, stopping.Token);
+            if (!response.IsSuccessStatusCode) return false;
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(stopping.Token));
+            var manifest = document.RootElement;
+            string version = manifest.GetProperty("version").GetString() ?? "";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$") ||
+                Version.Parse(version) <= Version.Parse(CurrentVersion)) return false;
+            if (IsFailedVersion(version) || stagedVersion == version) return false;
+            var file = manifest.GetProperty("client");
+            string url = file.TryGetProperty("downloadUrl", out var download) ? download.GetString()! : file.GetProperty("url").GetString()!;
+            string hash = file.GetProperty("sha256").GetString() ?? "";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(hash, "^[a-fA-F0-9]{64}$")) throw new InvalidDataException("SHA256 is required.");
+            var uri = new Uri(url);
+            if (uri.Scheme != "https" && !(uri.IsLoopback && uri.Scheme == "http")) throw new InvalidDataException("HTTPS download required.");
 
-            if (!response.IsSuccessStatusCode)
+            IsDownloading = true;
+            string candidate = Path.Combine(staging, "v" + version + "-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(candidate);
+            string zip = Path.Combine(candidate, "download.zip");
+            using (var downloadResponse = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, stopping.Token))
             {
-                Debug.WriteLine($"⚠️ [AutoUpdate] Manifestni yuklab bo'lmadi: HTTP {response.StatusCode}");
-                return false;
+                downloadResponse.EnsureSuccessStatusCode();
+                await using var stream = await downloadResponse.Content.ReadAsStreamAsync(stopping.Token);
+                await using var destination = File.Create(zip);
+                await stream.CopyToAsync(destination, stopping.Token);
             }
-
-            string json = await response.Content.ReadAsStringAsync();
-            var manifest = JsonSerializer.Deserialize<UpdateManifest>(json);
-
-            if (manifest?.Client == null || string.IsNullOrWhiteSpace(manifest.Client.EffectiveUrl))
+            using (var stream = File.OpenRead(zip))
             {
-                Debug.WriteLine("[AutoUpdate] Manifestda client yangilanish fayli (downloadUrl) topilmadi.");
-                return false;
+                if (!Convert.ToHexString(SHA256.HashData(stream)).Equals(hash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Downloaded package SHA256 mismatch.");
             }
-
-            if (IsNewerVersion(manifest.Version, _currentVersion))
-            {
-                Debug.WriteLine($"🚀 [AutoUpdate] Yangi versiya aniqlandi: v{manifest.Version} (Joriy: v{_currentVersion})");
-                OnUpdateAvailable?.Invoke(manifest.Version, manifest.Changelog ?? "VIP narxlar to'g'rilandi va xavfsizlik kuchaytirildi.");
-
-                // Agar bu versiya allaqachon staging papkasida mavjud bo'lsa
-                if (IsUpdateStaged && StagedVersion == manifest.Version)
-                {
-                    EvaluateStateAndHandover();
-                    return true;
-                }
-
-                // Orqa fonda yuklab, staging ga tayyorlaymiz
-                return await DownloadAndStageUpdateAsync(manifest);
-            }
-            else
-            {
-                Debug.WriteLine($"✓ [AutoUpdate] NetCafeClient eng so'nggi versiyada (v{_currentVersion}).");
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"❌ [AutoUpdate] Tekshirishda xatolik: {ex.Message}");
-            OnUpdateError?.Invoke(ex.Message);
-        }
-        finally
-        {
-            IsChecking = false;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// SoftechClient.zip arxivini fonda yuklab olish, SHA256 tekshirish va staging ga ochish
-    /// </summary>
-    private async Task<bool> DownloadAndStageUpdateAsync(UpdateManifest manifest)
-    {
-        if (manifest.Client == null || string.IsNullOrWhiteSpace(manifest.Client.EffectiveUrl))
-            return false;
-
-        IsDownloading = true;
-        string downloadUrl = manifest.Client.EffectiveUrl;
-        string zipPath = Path.Combine(_stagingDir, $"client_v{manifest.Version}.zip");
-
-        try
-        {
-            Debug.WriteLine($"⬇️ [AutoUpdate] GitHub Release yuklanmoqda: {downloadUrl}");
-
-            using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
-            {
-                response.EnsureSuccessStatusCode();
-
-                long? totalBytes = response.Content.Headers.ContentLength;
-                await using var stream = await response.Content.ReadAsStreamAsync();
-                await using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None);
-
-                var buffer = new byte[81920];
-                long totalRead = 0;
-                int bytesRead;
-
-                while ((bytesRead = await stream.ReadAsync(buffer)) > 0)
-                {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
-                    totalRead += bytesRead;
-
-                    if (totalBytes.HasValue && totalBytes.Value > 0)
-                    {
-                        int progress = (int)((totalRead * 100) / totalBytes.Value);
-                        OnDownloadProgress?.Invoke(progress);
-                    }
-                }
-            }
-
-            Debug.WriteLine($"✅ [AutoUpdate] Arxiv yuklandi ({new FileInfo(zipPath).Length / 1024} KB).");
-
-            // SHA256 Tekshiruvi (agar manifestda taqdim etilgan bo'lsa)
-            if (!string.IsNullOrWhiteSpace(manifest.Client.Sha256))
-            {
-                string computedHash = ComputeSha256(zipPath);
-                if (!string.Equals(computedHash, manifest.Client.Sha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    Debug.WriteLine($"❌ [AutoUpdate] SHA256 mos kelmadi! Kutilgan: {manifest.Client.Sha256}, Olingan: {computedHash}");
-                    File.Delete(zipPath);
-                    OnUpdateError?.Invoke("Yuklangan fayl yaxlitligi tekshiruvdan o'tmadi (SHA256 mismatch).");
-                    return false;
-                }
-                Debug.WriteLine("🔒 [AutoUpdate] SHA256 yaxlitligi tasdiqlandi.");
-            }
-
-            // Staging extracted papkasiga ochish
-            if (Directory.Exists(_extractedDir))
-            {
-                Directory.Delete(_extractedDir, recursive: true);
-            }
-            Directory.CreateDirectory(_extractedDir);
-
-            ZipFile.ExtractToDirectory(zipPath, _extractedDir, overwriteFiles: true);
-            File.Delete(zipPath); // ZIP faylni o'chiramiz
-
-            // SoftechUpdater.exe ni ham staging katalogiga tayyorlab qo'yamiz
-            StageCompanionUpdater();
-
-            IsUpdateStaged = true;
-            StagedVersion = manifest.Version;
-
-            Debug.WriteLine($"📦 [AutoUpdate] Versiya v{manifest.Version} staging katalogiga muvaffaqiyatli tayyorlandi.");
-            OnUpdateStaged?.Invoke(manifest.Version);
-
-            // Holatni tekshirish: Seans yo'q bo'lsa darhol, aks holda seans tugashini kutish
-            EvaluateStateAndHandover();
+            string extracted = Path.Combine(candidate, "package");
+            ZipFile.ExtractToDirectory(zip, extracted);
+            PackageManifest.Validate(extracted, version, "client");
+            File.Delete(zip);
+            // Publish the staged state only after the whole package is validated.
+            staged = extracted;
+            stagedVersion = version;
             return true;
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"❌ [AutoUpdate] Yuklash yoki ochishda xatolik: {ex.Message}");
-            OnUpdateError?.Invoke(ex.Message);
-            return false;
-        }
-        finally
-        {
-            IsDownloading = false;
-        }
+        catch (Exception ex) { Log(ex.Message); return false; }
+        finally { IsChecking = false; IsDownloading = false; checkLock.Release(); }
     }
 
-    /// <summary>
-    /// Seans tugaganida App.xaml.cs yoki WebSocket xabaridan chaqiriladi
-    /// </summary>
-    public void OnSessionEnded()
+    private bool IsFailedVersion(string version)
     {
-        if (IsUpdateStaged)
-        {
-            Debug.WriteLine("🔔 [AutoUpdate] Seans tugadi! Staged yangilanish darhol qo'llanilmoqda...");
-            ApplyStagedUpdate();
-        }
-    }
-
-    /// <summary>
-    /// Workstation holatini tekshirish va Handover rejimini tanlash
-    /// </summary>
-    private void EvaluateStateAndHandover()
-    {
-        bool sessionActive = _isSessionActiveFunc?.Invoke() ?? false;
-
-        if (sessionActive)
-        {
-            Debug.WriteLine("🎮 [AutoUpdate] Workstation hozir BAND (faol seans ketmoqda). Yangilanish seans tugaguncha kechiktirildi.");
-            if (StagedVersion != null)
-            {
-                OnUpdatePendingSession?.Invoke(StagedVersion);
-            }
-        }
-        else
-        {
-            Debug.WriteLine("🟢 [AutoUpdate] Workstation BO'SH / QULFLANGAN. Yangilanish darhol o'rnatiladi!");
-            ApplyStagedUpdate();
-        }
-    }
-
-    /// <summary>
-    /// SoftechUpdater.exe orqali xavfsiz fayllarni almashtirish va dasturni qayta yoqish
-    /// </summary>
-    public void ApplyStagedUpdate()
-    {
-        if (!IsUpdateStaged || !Directory.Exists(_extractedDir))
-        {
-            Debug.WriteLine("⚠️ [AutoUpdate] Yangilanish staging da topilmadi.");
-            return;
-        }
-
         try
         {
-            string appBaseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
-            string updaterExePath = Path.Combine(_stagingDir, "SoftechUpdater.exe");
+            using var failed = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "updates-failed-version.json")));
+            return failed.RootElement.GetProperty("version").GetString() == version;
+        }
+        catch { return false; }
+    }
 
-            if (!File.Exists(updaterExePath))
+    private bool SafeOnUiThread(bool programsOpen, double idle)
+    {
+        var app = System.Windows.Application.Current;
+        if (app == null || app.Dispatcher.HasShutdownStarted) return false;
+        return app.Dispatcher.Invoke(() => IdleSafety.CanApply(sessionActive?.Invoke() ?? true,
+            maintenance?.Invoke() ?? true, idle, programsOpen, idleSeconds) && !App.IsDevMode);
+    }
+
+    private async Task TryApplyAsync()
+    {
+        if (staged == null || stagedVersion == null || DateTime.UtcNow < nextApplyAttempt ||
+            IsDownloading || !await applyLock.WaitAsync(0)) return;
+        string? cancel = null;
+        try
+        {
+            if (!SafeOnUiThread(false, IdleSafety.IdleSeconds())) return;
+            if (IdleSafety.HasUserPrograms(root)) return;
+            string handover = Path.Combine(staging, "handover-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(handover);
+            string updater = Path.Combine(handover, "SoftechUpdater.exe");
+            File.Copy(Path.Combine(staged, "SoftechUpdater.exe"), updater);
+            var plan = new UpdatePlan
             {
-                updaterExePath = Path.Combine(appBaseDir, "SoftechUpdater.exe");
-            }
-
-            if (!File.Exists(updaterExePath))
-            {
-                Debug.WriteLine("❌ [AutoUpdate] SoftechUpdater.exe topilmadi!");
-                OnUpdateError?.Invoke("SoftechUpdater.exe topilmadi.");
-                return;
-            }
-
-            int currentPid = Process.GetCurrentProcess().Id;
-
-            // 1. Watchdog uchun ruxsatli chiqish markerini yozamiz
-            WatchdogService.RequestGracefulShutdown();
-
-            // 2. Klaviatura va Windows taskbarni tiklaymiz
-            try
-            {
-                LockWindow.ShowWindowsTaskbar();
-                KeyboardHook.Stop();
-                TaskManagerBlocker.DisableRestrictions();
-                UsbGuardService.Instance.RestoreRegistryPolicies();
-            }
-            catch { }
-
-            // 3. SoftechUpdater ni detached jarayon sifatida ishga tushiramiz
-            var psi = new ProcessStartInfo
-            {
-                FileName = updaterExePath,
-                Arguments = $"--target \"{appBaseDir}\" --source \"{_extractedDir}\" --pid {currentPid} --restart NetCafeClient.exe --timeout 15",
-                WorkingDirectory = _stagingDir,
-                UseShellExecute = true,
-                CreateNoWindow = false
+                Source = staged, Target = root, Version = stagedVersion, Kind = "client",
+                ParentPids = new[] { Environment.ProcessId }, RestartExecutable = Path.Combine(root, "NetCafeClient.exe"),
+                ReadyFile = Path.Combine(handover, "ready"), CommitFile = Path.Combine(handover, "commit"),
+                CancelFile = Path.Combine(handover, "cancel"), HealthFile = Path.Combine(handover, "healthy")
             };
-
-            Debug.WriteLine($"🚀 [AutoUpdate] SoftechUpdater ishga tushirilmoqda: {psi.FileName} {psi.Arguments}");
-            Process.Start(psi);
-
-            // 4. NetCafeClient ni toza to'xtatamiz
-            App.Current.Dispatcher.Invoke(() =>
+            cancel = plan.CancelFile;
+            string planPath = Path.Combine(handover, "plan.json");
+            File.WriteAllText(planPath, JsonSerializer.Serialize(plan, PackageManifest.JsonOptions));
+            var info = new ProcessStartInfo(updater)
             {
-                App.Current.Shutdown(0);
+                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+                WorkingDirectory = handover
+            };
+            info.ArgumentList.Add("--plan"); info.ArgumentList.Add(planPath);
+            using var helper = Process.Start(info) ?? throw new IOException("Updater did not start.");
+            var deadline = DateTime.UtcNow.AddSeconds(55);
+            while (!File.Exists(plan.ReadyFile))
+            {
+                if (helper.HasExited || File.Exists(plan.ReadyFile + ".error") || DateTime.UtcNow > deadline)
+                    throw new IOException("Updater preparation failed; keeping the current client running.");
+                await Task.Delay(100, stopping.Token);
+            }
+            // Recheck after all disk I/O. A newly started game or mouse movement cancels handover.
+            bool programsOpen = IdleSafety.HasUserPrograms(root);
+            var app = System.Windows.Application.Current;
+            app.Dispatcher.Invoke(() =>
+            {
+                if (!IdleSafety.CanApply(sessionActive?.Invoke() ?? true, maintenance?.Invoke() ?? true,
+                    IdleSafety.IdleSeconds(), programsOpen, idleSeconds))
+                    throw new InvalidOperationException("Computer became busy; update postponed.");
+                WatchdogService.PrepareForUpdate();
+                File.WriteAllText(plan.CommitFile, stagedVersion);
+                cancel = null;
+                app.Shutdown(0);
             });
         }
-        catch (Exception ex)
+        catch (Exception ex) { nextApplyAttempt = DateTime.UtcNow.AddSeconds(60); Log(ex.Message); }
+        finally
         {
-            Debug.WriteLine($"❌ [AutoUpdate] ApplyStagedUpdate xatosi: {ex.Message}");
-            OnUpdateError?.Invoke(ex.Message);
+            if (cancel != null) try { File.WriteAllText(cancel, "cancel"); } catch { }
+            applyLock.Release();
         }
     }
 
-    private void StageCompanionUpdater()
-    {
-        try
-        {
-            string appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string localUpdater = Path.Combine(appBaseDir, "SoftechUpdater.exe");
-            string stagingUpdater = Path.Combine(_stagingDir, "SoftechUpdater.exe");
-
-            if (File.Exists(localUpdater))
-            {
-                File.Copy(localUpdater, stagingUpdater, overwrite: true);
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"⚠️ [AutoUpdate] StageCompanionUpdater: {ex.Message}");
-        }
-    }
-
-    private static string ComputeSha256(string filePath)
-    {
-        using var sha256 = SHA256.Create();
-        using var stream = File.OpenRead(filePath);
-        byte[] hash = sha256.ComputeHash(stream);
-        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-    }
-
-    private static bool IsNewerVersion(string remoteVer, string localVer)
-    {
-        try
-        {
-            var r = ParseVersion(remoteVer);
-            var l = ParseVersion(localVer);
-            return r > l;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static Version ParseVersion(string vStr)
-    {
-        string clean = vStr.Trim().TrimStart('v', 'V');
-        string[] parts = clean.Split('.');
-        int major = parts.Length > 0 && int.TryParse(parts[0], out int mj) ? mj : 1;
-        int minor = parts.Length > 1 && int.TryParse(parts[1], out int mn) ? mn : 0;
-        int build = parts.Length > 2 && int.TryParse(parts[2], out int bd) ? bd : 0;
-        return new Version(major, minor, build);
-    }
-
-    private static string ResolveManifestUrl(string? rawUrl)
-    {
-        if (!string.IsNullOrWhiteSpace(rawUrl))
-            return rawUrl.Trim();
-
-        // config.json dan tekshiramiz
-        try
-        {
-            string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-            if (File.Exists(configPath))
-            {
-                string json = File.ReadAllText(configPath);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                // 1. To'g'ridan-to'g'ri manifest URL ko'rsatilgan bo'lsa
-                if (root.TryGetProperty("updateManifestUrl", out var updateProp) && !string.IsNullOrWhiteSpace(updateProp.GetString()))
-                {
-                    return updateProp.GetString()!.Trim();
-                }
-
-                // 2. GitHub repo ko'rsatilgan bo'lsa: githubOwner va githubRepo
-                string githubOwner = root.TryGetProperty("githubOwner", out var oProp) ? oProp.GetString()?.Trim() ?? "" : "";
-                string githubRepo = root.TryGetProperty("githubRepo", out var rProp) ? rProp.GetString()?.Trim() ?? "" : "";
-                if (!string.IsNullOrEmpty(githubOwner) && !string.IsNullOrEmpty(githubRepo))
-                {
-                    return $"https://github.com/{githubOwner}/{githubRepo}/releases/latest/download/version.json";
-                }
-
-                // 3. Mahalliy serverdan olish fallback
-                if (root.TryGetProperty("serverUrl", out var serverProp))
-                {
-                    string wsUrl = serverProp.GetString() ?? "";
-                    if (!string.IsNullOrWhiteSpace(wsUrl))
-                    {
-                        var uri = new Uri(wsUrl.Replace("ws://", "http://").Replace("wss://", "https://"));
-                        return $"{uri.Scheme}://{uri.Authority}/api/updates/version.json";
-                    }
-                }
-            }
-        }
-        catch { }
-
-        // Standart GitHub reliz URL fallback
-        return "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json";
-    }
+    private static void Log(string message) => Debug.WriteLine("[AutoUpdate] " + message);
 }

@@ -1,0 +1,71 @@
+SOFTECH - SILENT AUTO UPDATE
+
+Runtime behavior
+- Both apps check the release manifest every 60 seconds; first check is after 5 seconds.
+- Downloads, SHA256 verification, extraction and file preparation happen in the background.
+- A separate safety check runs every second after an update is staged.
+- Default inactivity requirement is 10 seconds with no keyboard or mouse input.
+  Change updateIdleSeconds in each installation's config.json (minimum 5 seconds).
+- Client additionally requires no active session, no maintenance mode, and no other
+  user application in the interactive Windows session. Minimized apps and background
+  games/launchers also block installation. Unknown process state postpones the update.
+- Server additionally requires zero active sessions and no pending write requests.
+  Active games are never forcibly ended to install an update.
+- No update modal, toast, console window or per-update UAC prompt is displayed.
+  Client must already be running with the privileges required by its normal installation.
+- Files are copied and backed up BEFORE shutdown, then replaced on the same volume.
+  Restart is optimized for a short interruption; exactly 1 second cannot be guaranteed.
+- Client startup and server version/health are monitored after restart.
+  On failure, all replaced files are restored. Server database snapshots are also restored.
+  The failed version is recorded and not retried until a new release is published.
+- Configuration, .env files, workstation identity, license files and databases are preserved.
+  Hashes of cashier tokens are stored in SQLite so a restart does not log out the cashier.
+- Logs: <installation>/logs/updater.log
+  Failed release: <installation>/updates-failed-version.json
+  Last successful release: <installation>/updates-last-success.json
+  Backups for inspection: <installation>/.ota/
+
+FIRST ROLLOUT
+Existing machines have the old updater. Install the prepared bootstrap setup once:
+  Releases/v1.0.6/SoftechServerSetup.exe on server computers
+  Releases/v1.0.6/SoftechClientSetup.exe on client computers
+Do this when the affected computer is free. Retain the correct server IP and PC number.
+No remote access to installed machines is provided by this repository alone.
+
+SUBSEQUENT RELEASES
+Each push to main/master now builds and publishes the next patch release automatically.
+Explicit version tags and manual workflow runs are also supported.
+The GitHub Actions workflow .github/workflows/release.yml tests and builds both packages,
+creates a draft release, uploads all assets, and only then publishes it as latest.
+A published version is immutable: always increase the version.
+The latest version.json points at immutable /releases/download/vVERSION/ ZIP URLs.
+The app's default update feed is:
+https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json
+The repository/release assets must be readable by the installed machines.
+
+Local release build (PowerShell):
+  npm ci
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version 1.0.7
+With the project-local SDK, pass -Dotnet "<project>/.tools/dotnet/dotnet.exe".
+The script builds self-contained Windows x64 programs and bundles Node.js/dependencies
+for the server. It never includes development machine credentials or its databases.
+
+VALIDATION
+  npm test
+  dotnet run --project tests/UpdatePolicy/UpdatePolicy.csproj
+  dotnet build SoftechUpdater/SoftechUpdater.csproj
+  dotnet build tests/FixtureClient/FixtureClient.csproj
+  Set DOTNET_EXE to your dotnet.exe, then run:
+  node tests/updater-transaction.mjs
+
+Tests use dummy applications, not the real kiosk, and verify cancellation,
+corrupt package rejection, successful restart, rollback and data preservation.
+Physical-PC behavior, Windows privileges, installed third-party apps and firewall
+configuration still need a pilot on one server and one client before fleet rollout.
+
+Official workflow/release command references:
+https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
+https://cli.github.com/manual/gh_release_create
+
+Legacy updateIdleSeconds=30 settings are treated as 10 seconds by the new client/server.
+The open server control panel does not block updates; active sessions and pending writes still do.

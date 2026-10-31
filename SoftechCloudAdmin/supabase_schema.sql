@@ -184,3 +184,6 @@ INSERT INTO public.super_admins (
 -- Serial sanagichni to'g'rilash
 SELECT setval('public.super_admins_id_seq', (SELECT COALESCE(MAX(id), 1) FROM public.super_admins));
 
+
+-- One server per hardware fingerprint; required for activation upserts.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clubs_hardware_unique ON public.clubs(hardware_fingerprint);

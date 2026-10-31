@@ -34,4 +34,5 @@
     <Resource Include="app.ico" />
   </ItemGroup>
 
+<ItemGroup><Compile Include="../../Shared/Updates/*.cs" Link="Updates/%(Filename)%(Extension)" /></ItemGroup>
 </Project>

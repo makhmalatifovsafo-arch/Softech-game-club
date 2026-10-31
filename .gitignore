@@ -18,7 +18,6 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
 
 # SQLite & Local Databases
 data/*.db
@@ -54,3 +53,7 @@ $RECYCLE.BIN/
 # Environment Secrets
 .env
 .env.local
+
+# Local build tools and isolated checks
+.tools/
+.test-output/

@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Ma'lumotlar bazasi fayli joylashuvi
-const DB_DIR = path.resolve(__dirname, '../../data');
+const DB_DIR = process.env.SOFTECH_CLOUD_DATA_DIR || path.resolve(__dirname, '../../data');
 const DB_FILE = path.resolve(DB_DIR, 'softech_cloud.db');
 const SCHEMA_FILE = path.resolve(__dirname, 'schema.sql');
 
@@ -162,14 +162,17 @@ export function initDatabase() {
   // Boshlang'ich Super Admin mavjudligini tekshirish va yaratish
   const adminCount = db.prepare('SELECT COUNT(*) as count FROM super_admins').get();
   if (!adminCount || adminCount.count === 0) {
-    const defaultPassword = 'admin';
+    const defaultPassword = process.env.SUPERADMIN_INITIAL_PASSWORD;
+    const initialPin = process.env.SUPERADMIN_INITIAL_PIN || null;
+    if (!defaultPassword || defaultPassword.length < 12) throw new Error('First start requires SUPERADMIN_INITIAL_PASSWORD (at least 12 characters).');
+    if (!initialPin || !/^\d{4}$/.test(initialPin)) throw new Error('SUPERADMIN_INITIAL_PIN must be four digits.');
     const pwdHash = hashPassword(defaultPassword);
     db.prepare(`
       INSERT INTO super_admins (username, password_hash, pin_code, full_name, phone)
       VALUES (?, ?, ?, ?, ?)
-    `).run('admin', pwdHash, '7777', 'Bosh Administrator', '+998901234567');
+    `).run('admin', pwdHash, initialPin, 'Bosh Administrator', '+998901234567');
 
-    console.log('👑 [Database] Standart Super Admin tayyor: login: admin / PIN: 7777');
+    console.log('[Database] Super Admin created from environment configuration.');
   }
 
   console.log('✅ [Database] SQLite WAL Rejimi faollashtirildi va jadvallar muvaffaqiyatli tayyorlandi.');

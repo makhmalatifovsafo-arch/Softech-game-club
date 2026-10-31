@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
+const [target, version] = process.argv.slice(2);
+if (!target || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid package metadata arguments');
+const pkg = JSON.parse(fs.readFileSync('NetCafeServer/package.json', 'utf8'));
+pkg.version = version;
+const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+lock.name = pkg.name; lock.version = version;
+lock.packages[''].name = pkg.name; lock.packages[''].version = version;
+lock.packages[''].dependencies = pkg.dependencies;
+fs.writeFileSync(path.join(target, 'package.json'), JSON.stringify(pkg, null, 2));
+fs.writeFileSync(path.join(target, 'package-lock.json'), JSON.stringify(lock, null, 2));

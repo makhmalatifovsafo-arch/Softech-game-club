@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node SoftechCloudAdmin/src/server.js"
+    "start": "node --env-file-if-exists=.env SoftechCloudAdmin/src/server.js",
+    "start:server": "node --env-file-if-exists=.env NetCafeServer/src/server.js",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
     "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=22.16.0"
   }
 }

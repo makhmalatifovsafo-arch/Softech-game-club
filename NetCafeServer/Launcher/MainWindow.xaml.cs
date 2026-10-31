@@ -15,6 +15,7 @@ public partial class MainWindow : Window
 {
     private readonly NodeProcessManager _nodeManager = new();
     private bool _isInitialized;
+    private UpdateMonitor? _updateMonitor;
 
     public MainWindow()
     {
@@ -34,7 +35,9 @@ public partial class MainWindow : Window
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         // Standalone oynasi yopilganda fondagi Node.js serverni toza to'xtatish
-        _nodeManager.StopNodeServer();
+        bool updating = _updateMonitor?.IsUpdateShutdown == true;
+        _updateMonitor?.Dispose();
+        _nodeManager.StopNodeServer(forUpdate: updating);
     }
 
     private void MainWindow_StateChanged(object? sender, EventArgs e)
@@ -100,6 +103,7 @@ public partial class MainWindow : Window
             // 5. Asosiy Kassa Dashboard manziliga yo'naltirish
             CockpitWebView.Source = new Uri(NodeProcessManager.ServerUrl);
             _isInitialized = true;
+            _updateMonitor = new UpdateMonitor(_nodeManager.ServerDirectory, () => System.Windows.Application.Current.Shutdown());
         }
         catch (Exception ex)
         {

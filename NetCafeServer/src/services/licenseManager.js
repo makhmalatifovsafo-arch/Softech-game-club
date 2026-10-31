@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 import { HwidService } from './hwidService.js';
+import { resolveCloudUrl } from './cloudUrl.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,34 +44,22 @@ export class LicenseManager {
   /**
    * 1. Litsenziya tizimini initsializatsiya qilish (Server ishga tushganda chaqiriladi)
    */
-  static init({ clientBroadcaster = null, sessionDropper = null } = {}) {
+  static init({ clientBroadcaster = null, sessionDropper = null, onLicenseActivated = null } = {}) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
     this.clientBroadcaster = clientBroadcaster;
     this.sessionDropper = sessionDropper;
+    this.onLicenseActivated = onLicenseActivated;
 
-    // Bulut URL ni config.json dan yuklash va localhost bo'lsa darhol Vercel ga yo'naltirish
-    try {
-      const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
-      if (fs.existsSync(CONFIG_FILE)) {
-        const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        if (cfg.cloudUrl && !cfg.cloudUrl.includes('localhost') && !cfg.cloudUrl.includes('127.0.0.1')) {
-          this.cloudUrl = cfg.cloudUrl.trim();
-        } else {
-          this.cloudUrl = 'https://softech-game-club.vercel.app';
-        }
-      } else {
-        this.cloudUrl = 'https://softech-game-club.vercel.app';
-      }
-    } catch (e) {
-      this.cloudUrl = 'https://softech-game-club.vercel.app';
+    let config = {};
+    const configFile = path.resolve(__dirname, '../../config.json');
+    if (fs.existsSync(configFile)) {
+      config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
     }
-
-    if (!this.cloudUrl || this.cloudUrl.includes('localhost') || this.cloudUrl.includes('127.0.0.1')) {
-      this.cloudUrl = 'https://softech-game-club.vercel.app';
-    }
+    this.cloudUrl = resolveCloudUrl(config);
+    this.cloudWsUrl = process.env.SOFTECH_CLOUD_WS || (new URL(this.cloudUrl).hostname.endsWith('.vercel.app') ? null : this.cloudUrl.replace(/^http/, 'ws') + '/cloud-ws');
 
     console.log(`🌐 [Anti-Piracy] Markaziy Cloud URL: ${this.cloudUrl}`);
     console.log('🔒 [Anti-Piracy] Softech HWID & Kill-Switch xavfsizlik dvigateli yuklanmoqda...');
@@ -111,6 +100,7 @@ export class LicenseManager {
       console.log(`📡 [Activation] Bulutga faollashtirish so'rovi yuborilmoqda: ${url}`);
       const res = await fetch(url, {
         method: 'POST',
+        signal: AbortSignal.timeout(15000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clubName,
@@ -120,6 +110,7 @@ export class LicenseManager {
         })
       });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Bulut litsenziya so\'rovini qabul qilmadi.');
       console.log('✅ [Activation] So\'rov muvaffaqiyatli yuborildi:', data.message || data);
 
       if (!this.approvalPollTimer) {
@@ -146,6 +137,7 @@ export class LicenseManager {
       console.log(`📡 [Activation] Bulutdan kalit bilan faollashtirish: ${url}`);
       const res = await fetch(url, {
         method: 'POST',
+        signal: AbortSignal.timeout(15000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           licenseKey: licenseKey.trim(),
@@ -160,24 +152,9 @@ export class LicenseManager {
         return { success: false, error: data.error || "Faollashtirib bo'lmadi" };
       }
 
-      if (data.signedLicense) {
-        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.writeFileSync(LICENSE_FILE, JSON.stringify(data.signedLicense, null, 2), 'utf8');
-      }
-
-      if (data.club?.id) {
-        try {
-          const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
-          let cfg = {};
-          if (fs.existsSync(CONFIG_FILE)) cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-          cfg.clubId = data.club.id;
-          cfg.cloudUrl = this.cloudUrl;
-          fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
-        } catch (e) {}
-      }
-
-      const verified = this.loadAndVerifyLocalLicense();
-      if (this.approvalPollTimer) {
+      this.saveSignedLicense(data.signedLicense);
+      const verified = this.state === 'ACTIVE';
+      if (verified && this.approvalPollTimer) {
         clearInterval(this.approvalPollTimer);
         this.approvalPollTimer = null;
       }
@@ -194,43 +171,23 @@ export class LicenseManager {
   }
 
   static async checkApprovalStatus() {
-    if (this.state !== 'PENDING_ACTIVATION') {
-      if (this.approvalPollTimer) {
-        clearInterval(this.approvalPollTimer);
-        this.approvalPollTimer = null;
-      }
-      return;
-    }
-
-    const hwid = HwidService.getHardwareFingerprint();
-    const url = `${this.cloudUrl}/api/telemetry/activation-status?hwid=${encodeURIComponent(hwid)}`;
-
+    if (this.approvalCheckInFlight) return;
+    this.approvalCheckInFlight = true;
     try {
-      const res = await fetch(url);
-      if (!res.ok) return;
+      const hwid = HwidService.getHardwareFingerprint();
+      const res = await fetch(this.cloudUrl + '/api/telemetry/activation-status?hwid=' + encodeURIComponent(hwid), { signal: AbortSignal.timeout(10000) });
       const data = await res.json();
-      if (data.status === 'APPROVED' && data.signedLicense) {
-        console.log('🎉 [Activation] Super Admin so\'rovni tasdiqladi! Litsenziya avtomatik saqlanmoqda...');
-        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.writeFileSync(LICENSE_FILE, JSON.stringify(data.signedLicense, null, 2), 'utf8');
-
-        if (data.club?.id) {
-          try {
-            const CONFIG_FILE = path.resolve(__dirname, '../../config.json');
-            let cfg = {};
-            if (fs.existsSync(CONFIG_FILE)) cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-            cfg.clubId = data.club.id;
-            fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
-          } catch (e) {}
-        }
-
-        this.loadAndVerifyLocalLicense();
-        if (this.approvalPollTimer) {
-          clearInterval(this.approvalPollTimer);
-          this.approvalPollTimer = null;
-        }
+      if (!res.ok) throw new Error(data.error || 'Bulut javobida xatolik.');
+      if (data.status === 'APPROVED') {
+        this.saveSignedLicense(data.signedLicense);
+        if (this.approvalPollTimer) { clearInterval(this.approvalPollTimer); this.approvalPollTimer = null; }
+      } else if (data.status === 'REJECTED') {
+        if (this.state === 'ACTIVE') this.enforceLockdown('REMOTE_BLOCKED', data.reason);
+        else this.lockMessage = data.reason || 'So\'rov rad etildi.';
       }
-    } catch (e) {}
+    } catch (error) {
+      console.warn('[License] Bulut tekshiruvi:', error.message);
+    } finally { this.approvalCheckInFlight = false; }
   }
 
   /**
@@ -280,7 +237,7 @@ export class LicenseManager {
 
       // 3. Muddatni tekshirish
       const expiresAt = new Date(payload.expiresAt).getTime();
-      if (Date.now() > expiresAt) {
+      if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) {
         console.warn('⚠️ [Anti-Piracy] Litsenziya muddati tugagan!');
         this.enforceLockdown('LICENSE_EXPIRED', 'Softech obuna muddati tugadi. Xizmatni davom ettirish uchun ta\'minotchi bilan bog\'laning: +998 95 222 06 44, +998 99 563 45 16');
         this.state = 'EXPIRED';
@@ -364,6 +321,7 @@ export class LicenseManager {
    * 4. Bulut bilan doimiy WebSocket ulanish (Real-Time Kill-Switch Kanali)
    */
   static connectCloudWebSocket() {
+    if (!this.cloudWsUrl) return;
     try {
       const currentHwid = HwidService.getHardwareFingerprint();
       const clubId = this.licenseData?.clubId || 1;
@@ -497,19 +455,33 @@ export class LicenseManager {
    * 7. Imzolangan litsenziyani saqlash
    */
   static saveSignedLicense(signedLicenseObj) {
-    fs.writeFileSync(LICENSE_FILE, JSON.stringify(signedLicenseObj, null, 2), 'utf8');
-    this.licenseData = signedLicenseObj.payload;
-    this.state = 'ACTIVE';
-    this.lockReason = '';
-    this.lockMessage = '';
-    this.lastVerifiedCloudTimestamp = Date.now();
-    this.recordClockState();
+    const payload = signedLicenseObj?.payload;
+    if (!payload || typeof signedLicenseObj.signature !== 'string') throw new Error('Bulut imzolangan litsenziyani qaytarmadi.');
+    const signature = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
+    if (signature !== signedLicenseObj.signature) throw new Error('Litsenziya imzosi mos emas. SOFTECH_CLOUD_KEY sozlamalarini tekshiring.');
+    if (payload.hardwareFingerprint !== HwidService.getHardwareFingerprint()) throw new Error('Litsenziya boshqa kompyuter uchun.');
+    if (payload.status !== 'ACTIVE' || !Number.isFinite(Date.parse(payload.expiresAt)) || Date.parse(payload.expiresAt) <= Date.now()) throw new Error('Litsenziya faol emas yoki muddati tugagan.');
+    if (!Number.isInteger(Number(payload.clubId)) || Number(payload.clubId) <= 0) throw new Error('Klub ID noto\'g\'ri.');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const configFile = path.resolve(__dirname, '../../config.json');
+    const config = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')) : {};
+    const changedClub = config.clubId !== payload.clubId;
+    const wasActive = this.state === 'ACTIVE';
+    config.clubId = payload.clubId;
+    config.cloudUrl = this.cloudUrl;
+    fs.writeFileSync(configFile + '.tmp', JSON.stringify(config, null, 2), 'utf8');
+    fs.renameSync(configFile + '.tmp', configFile);
+    fs.writeFileSync(LICENSE_FILE + '.tmp', JSON.stringify(signedLicenseObj, null, 2), 'utf8');
+    fs.renameSync(LICENSE_FILE + '.tmp', LICENSE_FILE);
+    this.loadAndVerifyLocalLicense();
+    if (changedClub || !wasActive) this.onLicenseActivated?.(payload);
   }
 
   /**
    * 8. Davriy litsenziya tekshiruvi (Har 1 daqiqada)
    */
   static periodicLicenseCheck() {
+    this.checkApprovalStatus();
     if (this.state === 'LOCKED_BY_ADMIN' || this.state === 'HWID_MISMATCH') {
       // Qulflangan holatda mijozlarga qulfni eslatib turish
       this.broadcastLockdownToWorkstations();

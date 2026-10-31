@@ -94,11 +94,7 @@ export async function handleAuthRoute(req, res, pathname) {
       } catch {}
 
       if (!admin || !verifyPassword(password, admin.password_hash)) {
-        if (username === 'admin' && password === 'admin123') {
-          admin = { id: 1, username: 'admin', full_name: 'Super Admin', phone: '+998 95 222 06 44' };
-        } else {
-          return sendJson(res, 401, { success: false, error: 'Noto\'g\'ri login yoki parol.' });
-        }
+        return sendJson(res, 401, { success: false, error: 'Login yoki parol noto‘g‘ri.' });
       }
 
       const tokenPayload = { sub: admin.id, username: admin.username, role: 'superadmin' };
@@ -150,13 +146,8 @@ export async function handleAuthRoute(req, res, pathname) {
       } catch {}
 
       if (!admin || admin.pin_code !== userPin) {
-        // Fallback master PIN 7777
-        if (userPin === '7777') {
-          admin = { id: 1, username: 'admin', full_name: 'Super Admin', phone: '+998 95 222 06 44' };
-        } else {
-          recordFailedPinAttempt(rateLimitKey);
-          return sendJson(res, 401, { success: false, error: 'PIN-kod noto\'g\'ri kiritildi.' });
-        }
+        recordFailedPinAttempt(rateLimitKey);
+        return sendJson(res, 401, { success: false, error: 'PIN-kod noto‘g‘ri.' });
       }
 
       // To'g'ri PIN kiritilganda hisoblagichni tozalaymiz
