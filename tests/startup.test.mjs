@@ -50,7 +50,8 @@ test('isolated cloud and club server start and accept a client handshake', { tim
   const children = [];
   let socket;
   function start(dir, port) {
-    const child = spawn(process.execPath, ['src/server.js'], { cwd: dir, env: { ...env, PORT: String(port) }, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
+    const entry = dir === cloud ? 'src/local-server.js' : 'src/server.js';
+    const child = spawn(process.execPath, [entry], { cwd: dir, env: { ...env, PORT: String(port) }, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
     let logs = '';
     child.stdout.on('data', chunk => { logs += chunk; });
     child.stderr.on('data', chunk => { logs += chunk; });

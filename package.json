@@ -3,7 +3,7 @@
   "version": "1.0.17",
   "type": "module",
   "scripts": {
-    "start": "node --env-file-if-exists=.env SoftechCloudAdmin/src/server.js",
+    "start": "node --env-file-if-exists=.env SoftechCloudAdmin/src/local-server.js",
     "start:server": "node --env-file-if-exists=.env NetCafeServer/src/server.js",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs"
   },

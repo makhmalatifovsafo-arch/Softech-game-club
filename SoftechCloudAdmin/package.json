@@ -2,11 +2,11 @@
   "name": "softech-cloud-admin",
   "version": "1.0.17",
   "description": "Softech Game Club — Multi-Club Central SaaS & Telemetry Core Engine",
-  "main": "src/server.js",
+  "main": "src/local-server.js",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node src/local-server.js",
+    "dev": "node --watch src/local-server.js",
     "test-db": "node src/db/test.js"
   },
   "keywords": [
