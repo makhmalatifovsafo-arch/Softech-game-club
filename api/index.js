@@ -11,7 +11,7 @@ import { CloudActivationService } from '../src/services/cloudActivationService.j
 import { SupabaseCloudService } from '../src/services/supabaseClient.js';
 import { TelegramBotService } from '../src/services/telegramBot.js';
 
-import { signAccessToken, verifyAccessToken } from '../src/utils/jwt.js';
+import { signAccessToken, signRefreshToken, verifyAccessToken } from '../src/utils/jwt.js';
 
 function generateJwt(user) {
   return signAccessToken({ id: user.id, sub: user.id, username: user.username, role: 'superadmin' }, 7 * 24 * 3600);
@@ -87,7 +87,7 @@ export default async function handler(req, res) {
     // ========================================================================
     // 1. AUTENTIFIKATSIYA (AUTH)
     // ========================================================================
-    if (pathname.includes('pin-login') && method === 'POST') {
+    if ((pathname === '/api/auth/pin-login' || pathname === '/api/auth/verify-pin') && method === 'POST') {
       const body = await getParsedBody(req);
       const { pinCode } = body;
 
@@ -101,7 +101,11 @@ export default async function handler(req, res) {
       }
 
       const token = generateJwt(user);
-      return sendJson(res, 200, { success: true, token, accessToken: token, user });
+      const refreshToken = signRefreshToken(
+        { id: user.id, sub: user.id, username: user.username, role: 'superadmin' },
+        30 * 24 * 3600
+      );
+      return sendJson(res, 200, { success: true, token, accessToken: token, refreshToken, user });
     }
 
     if ((pathname.includes('auth/login') || pathname.endsWith('/login')) && !pathname.includes('pin-login') && method === 'POST') {

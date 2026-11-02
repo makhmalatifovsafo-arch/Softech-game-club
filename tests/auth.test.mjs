@@ -71,6 +71,13 @@ for (const prefix of ['', 'SoftechCloudAdmin/']) {
     assert.equal(result.status, 200);
     assert.equal((await call(api, '/api/auth/me', undefined, result.body.token)).body.user.sub, 9);
   });
+  test(label + 'cloud PIN endpoint used by the login page returns both tokens', async () => {
+    SupabaseCloudService.verifyPinCode = async pin => pin === '2468' ? ({ id: 10, username: 'owner' }) : null;
+    const result = await call(api, '/api/auth/verify-pin', { username: 'owner', pinCode: '2468' });
+    assert.equal(result.status, 200);
+    assert.equal(jwt.verifyAccessToken(result.body.accessToken).sub, 10);
+    assert.equal(jwt.verifyRefreshToken(result.body.refreshToken).sub, 10);
+  });
   test(label + 'tokens reject tampering, expiry and refresh/access confusion', () => {
     const token = jwt.signAccessToken({ sub: 1, role: 'superadmin' });
     assert.equal(jwt.verifyAccessToken(token).sub, 1);

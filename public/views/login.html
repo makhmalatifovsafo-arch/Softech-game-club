@@ -321,7 +321,13 @@
           })
         });
 
-        const data = await res.json();
+        const rawResponse = await res.text();
+        let data;
+        try {
+          data = rawResponse ? JSON.parse(rawResponse) : {};
+        } catch {
+          data = { error: `Server xatosi (${res.status}). Vercel Logs va Environment Variables ni tekshiring.` };
+        }
 
         if (res.ok && data.success) {
           triggerHaptic([30, 50, 30]);
