@@ -58,7 +58,7 @@ export default async function handler(req, res) {
   }
 
   // Vercel path normalization (handles rewrites, dynamic routes, query params)
-  const rawPath = req.headers['x-matched-path'] || req.headers['x-forwarded-uri'] || req.url || '/';
+  const rawPath = req.url || req.headers['x-forwarded-uri'] || '/';
   const url = new URL(rawPath, `http://${req.headers.host || 'localhost'}`);
   let pathname = url.pathname;
   const method = req.method;
@@ -76,6 +76,8 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Mobile and other routers must see the same resolved path, including query filters.
+    req.url = pathname + url.search;
     if(await handleMobileRoute(req,res,{client:SupabaseCloudService.getClient()}))return;
     const managerPath=pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
     if(managerPath && ['GET','PUT'].includes(method)){
