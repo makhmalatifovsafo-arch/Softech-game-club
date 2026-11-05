@@ -4,6 +4,9 @@
   "description": "Softech Game Club — Multi-Club Central SaaS & Telemetry Core Engine",
   "main": "src/local-server.js",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "start": "node src/local-server.js",
     "dev": "node --watch src/local-server.js",
