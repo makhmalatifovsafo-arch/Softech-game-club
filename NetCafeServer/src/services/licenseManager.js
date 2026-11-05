@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 import { HwidService } from './hwidService.js';
 import { resolveCloudUrl } from './cloudUrl.js';
+import { readCloudResponse } from './cloudResponse.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +29,11 @@ const CLOCK_GUARD_FILE = path.resolve(DATA_DIR, 'clock_guard.sec');
 // Shared Cloud Crypto Salt
 const CLOUD_MASTER_KEY = process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026';
 const MAX_OFFLINE_LEASE_MS = 72 * 60 * 60 * 1000; // 72 soat
+const ACTIVATION_RETRY_MS = 60000;
+function installedVersion() {
+  try { return JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8')).version; }
+  catch { return 'unknown'; }
+}
 
 export class LicenseManager {
   static state = 'PENDING_ACTIVATION'; // 'ACTIVE' | 'PENDING_ACTIVATION' | 'LOCKED_BY_ADMIN' | 'EXPIRED' | 'HWID_MISMATCH' | 'CLOCK_TAMPERED'
@@ -41,6 +47,9 @@ export class LicenseManager {
   static sessionDropper = null; // SessionScheduler hook
   static lastVerifiedCloudTimestamp = 0;
   static checkIntervalTimer = null;
+  static activationRequestInFlight = false;
+  static lastActivationAttempt = null;
+  static pendingClubName = 'Yangi Game Club';
 
   /**
    * 1. Litsenziya tizimini initsializatsiya qilish (Server ishga tushganda chaqiriladi)
@@ -96,6 +105,10 @@ export class LicenseManager {
   }
 
   static async requestActivation(clubName = 'Softech Game Club') {
+    if (this.activationRequestInFlight) return { success: false, error: 'Aktivatsiya so‘rovi yuborilmoqda. Biroz kuting.' };
+    this.pendingClubName = clubName;
+    this.lastActivationAttempt = Date.now();
+    this.activationRequestInFlight = true;
     const hwid = HwidService.getHardwareFingerprint();
     const url = `${this.cloudUrl}/api/telemetry/activation-request`;
     try {
@@ -108,10 +121,10 @@ export class LicenseManager {
           clubName,
           hardwareFingerprint: hwid,
           totalPcs: 16,
-          serverVersion: '1.0.1'
+          serverVersion: installedVersion()
         })
       });
-      const data = await res.json();
+      const data = await readCloudResponse(res);
       if (!res.ok || !data.success) throw new Error(data.error || 'Bulut litsenziya so\'rovini qabul qilmadi.');
       console.log('✅ [Activation] So\'rov muvaffaqiyatli yuborildi:', data.message || data);
 
@@ -125,7 +138,7 @@ export class LicenseManager {
     } catch (err) {
       console.warn('⚠️ [Activation] Bulutga so\'rov yuborishda xatolik:', err.message);
       return { success: false, error: err.message };
-    }
+    } finally { this.activationRequestInFlight = false; }
   }
 
   static async activateWithKey(licenseKey) {
@@ -145,11 +158,11 @@ export class LicenseManager {
           licenseKey: licenseKey.trim(),
           hardwareFingerprint: hwid,
           totalPcs: 16,
-          serverVersion: '1.0.1'
+          serverVersion: installedVersion()
         })
       });
 
-      const data = await res.json();
+      const data = await readCloudResponse(res);
       if (!res.ok || !data.success) {
         return { success: false, error: data.error || "Faollashtirib bo'lmadi" };
       }
@@ -178,13 +191,18 @@ export class LicenseManager {
     try {
       const hwid = HwidService.getHardwareFingerprint();
       const res = await fetch(this.cloudUrl + '/api/telemetry/activation-status?hwid=' + encodeURIComponent(hwid), { signal: AbortSignal.timeout(10000) });
-      const data = await res.json();
+      const data = await readCloudResponse(res);
       if (!res.ok) throw new Error(data.error || 'Bulut javobida xatolik.');
       if (data.status === 'APPROVED') {
         this.saveSignedLicense(data.signedLicense);
         if (this.approvalPollTimer) { clearInterval(this.approvalPollTimer); this.approvalPollTimer = null; }
       } else if (data.status === 'NONE' && this.licenseData) {
         this.enforceLockdown('CLUB_REMOVED', 'Klub markaziy tizimdan o‘chirilgan.');
+      } else if (data.status === 'NONE' && this.state === 'PENDING_ACTIVATION' &&
+                 !this.activationRequestInFlight &&
+                 (this.lastActivationAttempt === null || Date.now() - this.lastActivationAttempt >= ACTIVATION_RETRY_MS)) {
+        // Only retry unregistered installations. PENDING requests and known bans stay untouched.
+        await this.requestActivation(this.pendingClubName);
       } else if (data.status === 'REJECTED') {
         if (this.state !== 'LOCKED_BY_ADMIN') this.enforceLockdown('REMOTE_BLOCKED', data.reason);
         else this.lockMessage = data.reason || 'So\'rov rad etildi.';

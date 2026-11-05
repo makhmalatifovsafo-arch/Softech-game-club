@@ -1,0 +1,82 @@
+SOFTECH: SERVER, CLIENT VA AKTIVATSIYA TEKSHIRUVI
+Sana: 2026-11-05. Mahalliy reliz: 1.0.18.
+
+TOPILGAN VA TUZATILGAN XATOLAR
+1. Birinchi ishga tushishda internet bo'lmasa, aktivatsiya so'rovi muvaffaqiyatsiz
+   tugab, keyinchalik faqat holat tekshirilardi. Ro'yxatdan o'tmagan yangi
+   o'rnatish endi aloqa tiklangach so'rovni qayta yuboradi (kamida 60 soniya
+   oralig'ida). PENDING so'rov qayta yuborilmaydi; ban yoki o'chirilgan klub
+   qaytadan ro'yxatdan o'tmaydi. Parallel so'rovlar birlashtiriladi.
+2. Aktivatsiyada eski 1.0.1 versiyasi yuborilardi. Endi o'rnatilgan paketning
+   haqiqiy versiyasi yuboriladi. Bulut HTML/matn qaytarsa, JSON parser xatosi
+   o'rniga HTTP statusi bilan tushunarli xabar beriladi.
+3. Client setupda oldindan yozilgan begona IP manzili olib tashlandi.
+   Foydalanuvchi ws://SERVER_IP:5000/ws manzilini kiritadi; noto'g'ri manzil
+   fayllarni almashtirishdan oldin rad etiladi.
+4. Client qayta o'rnatilganda yangi server manzili va stol nomi e'tiborga
+   olinmasdi. Endi kiritilgan qiymatlar qo'llanadi, boshqa sozlamalar saqlanadi.
+5. Server ochuvchisi 5000-portdagi istalgan HTTP 200 javobini Softech deb
+   qabul qilishi yoki shu portdagi boshqa jarayonni o'chirishi mumkin edi.
+   Endi health javobidagi app/status tekshiriladi. Begona yoki javob bermayotgan
+   jarayon portni band qilsa, tushunarli xabar chiqadi; u majburan o'chirilmaydi.
+
+SHU TEKSHIRUVDA O'TGAN TESTLAR
+- npm test: 61/61, 0 failed, 0 skipped.
+  Aktivatsiya so'rovi/tasdiqlash/kalit; muddati tugagan va bloklangan klub;
+  noto'g'ri HWID; 72 soat oflayn muddat; restartdan keyin ban saqlanishi;
+  administrator/menejer huquqlari; oldindan to'lov va bir martalik qaytim;
+  naqd/karta/balans savdosi, hisobotlar va mobil relay; Vercel routing/startup.
+- tests/StartupSafety: haqiqiy installer konfiguratsiya kodi va server
+  ochuvchisining health tekshiruvlari. Noto'g'ri URL, buzilgan config,
+  qayta sozlash, sozlamalar saqlanishi, begona HTTP javoblari va uzilish.
+- Haqiqiy C# ClientProtocol: WebSocket handshake, bo'lingan paketlar,
+  prepaid/nol balans, seans vaqti, config, lock/stop, qayta ulanish.
+  Power buyrug'i event sifatida tekshirildi; kompyuter o'chirilmadi.
+- Native UpdatePolicy: bandlik va yangilanishni kutish qoidalari.
+- PGlite PostgreSQL: schema/migratsiya, to'lov idempotentligi, rollback,
+  service-role va ommaviy akkaunt ruxsatlari; API adapter orqali billing,
+  telemetriya, staff, remote commands, ban/unban va mobil relay.
+- v1.0.18 client, launcher, updater va ikkala setup muvaffaqiyatli yig'ildi.
+- tests/release-artifacts.mjs 1.0.18: ikkala ZIP hash/manifest, native helper,
+  paketdagi Node.js/dependencylar bilan serverning alohida portda ishga tushishi.
+- Jonli Vercelga faqat o'qish so'rovlari: activation-status noma'lum test
+  HWID uchun HTTP 200/NONE; auth/me tokensiz HTTP 401. Bu kutilgan javoblar.
+  Klub yaratilmagan, Telegram xabari yuborilmagan, bulut ma'lumotlari o'zgarmagan.
+
+TAYYOR SETUP FAYLLARI
+Releases/v1.0.18/SoftechServerSetup.exe
+Releases/v1.0.18/SoftechClientSetup.exe
+Bu mahalliy fayllar. GitHubga commit/push va deploy ushbu tekshiruvda bajarilmadi.
+Release papkasi gitignore orqali chiqarilgan; GitHub workflow pushdan so'ng
+testlardan o'tgan setup va OTA paketlarini alohida release sifatida yig'adi.
+
+HALI TO'LIQ TASDIQLANMAGAN JOYLAR
+- Haqiqiy Telegram tasdiqlash -> klubda aktivatsiya -> xodim akkaunti bilan
+  kirish zanjiri jonli klubda sinovdan o'tkazilishi kerak. Testlar tashqi
+  Telegram javoblarini nazorat qilinadigan fixture orqali tekshiradi.
+- Windows installer GUI, WebView2, firewall, kiosk/watchdog, haqiqiy o'yin
+  bandligi, shutdown/reboot va BIOS/NIC Wake-on-LAN alohida client talab qiladi.
+- HWID kodi wmic bo'lmagan holatda CIM urinishiga o'tmasdan fallback olishi
+  mumkin; MAC/tarmoq adapterlari o'zgarishi ham HWIDga ta'sir qiladi.
+  Bu reliz HWID algoritmini o'zgartirmaydi: aks holda mavjud litsenziyalar
+  mos kelmay qolishi mumkin. Barqaror yangi HWID uchun migratsiya kerak.
+- Litsenziya HMAC kaliti klub dasturiga ham kerak va kodda standart kalit
+  mavjud. Bu nusxa ko'chirishga qarshi kuchli kriptografik kafolat bermaydi.
+  Alohida xavfsizlik ishlari uchun markaziy private key va klubdagi public key
+  bilan imzo tekshirishga o'tish, mavjud litsenziyalarni migratsiya qilish kerak.
+
+PILOT KLUBDA TEKSHIRISH
+1. Server/client bir LANda bo'lsin. Setupga serverning haqiqiy IP manzilini
+   kiriting; Windows firewall klub tarmog'idan TCP 5000 ulanishiga ruxsat bersin.
+2. Aktivatsiya so'rovi kelishi, Telegram tasdiqlash va server holati ACTIVE
+   bo'lishini tekshiring. Web super admin orqali alohida staff akkauntlarini bering.
+3. Seans ochish/yopish, mijoz balansi, bar savdosi, qaytim va kunlik hisobotni
+   haqiqiy kichik summalar yoki alohida test bazasida solishtiring.
+4. Telefon orqali ban bering, server/client bloklanishini va restartdan keyin
+   ban saqlanishini tekshiring. Internet uzilishi va qaytishini ham sinang.
+5. O'yin ochiq paytda update kutishi, bo'sh clientda 10 soniya harakatsizlik,
+   serverda 10 soniya harakatsizlik, qayta ulanish, power va WOLni tekshiring.
+
+XULOSA: topilgan xatolar tuzatildi va ko'rsatilgan avtomatik testlar o'tdi.
+Bu barcha ehtimoliy xatolar yo'qligi yoki barcha Windows qurilmalarida
+muammosiz ishlash kafolati emas. Ommaviy tarqatishdan oldin pilot sinov zarur.

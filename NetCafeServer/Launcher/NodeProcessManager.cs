@@ -2,6 +2,8 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.NetworkInformation;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,10 +15,12 @@ namespace SoftechCockpit;
 /// </summary>
 public class NodeProcessManager
 {
-    private static readonly HttpClient HttpClient = new()
+    private static readonly HttpClient DefaultHttpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(2)
     };
+    private readonly HttpClient _httpClient;
+    public NodeProcessManager(HttpClient? httpClient = null) => _httpClient = httpClient ?? DefaultHttpClient;
 
     private Process? _spawnedProcess;
     private bool _isSpawnedByThisInstance;
@@ -36,21 +40,16 @@ public class NodeProcessManager
     {
         try
         {
-            using var response = await HttpClient.GetAsync(HealthCheckUrl);
-            return response.IsSuccessStatusCode;
+            using var response = await _httpClient.GetAsync(HealthCheckUrl);
+            if (!response.IsSuccessStatusCode) return false;
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = payload.RootElement;
+            return root.TryGetProperty("app", out var app) && app.GetString() == "NetCafeServer" &&
+                root.TryGetProperty("status", out var status) && status.GetString() == "ok";
         }
         catch
         {
-            // Fallback check to root or license status
-            try
-            {
-                using var fallbackResp = await HttpClient.GetAsync(ServerUrl);
-                return fallbackResp.IsSuccessStatusCode;
-            }
-            catch
-            {
-                return false;
-            }
+            return false;
         }
     }
 
@@ -69,8 +68,10 @@ public class NodeProcessManager
             return true;
         }
 
-        // Port 5000 da qotib qolgan zombi jarayon bo'lsa tozalash
-        KillProcessOnPort(5000);
+        // A port number alone does not identify our process. Never kill another application.
+        foreach (var endpoint in IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners())
+            if (endpoint.Port == 5000)
+                throw new InvalidOperationException("5000-port band, ammo Softech serveri javob bermayapti. Portni ishlatayotgan dasturni tekshiring va qayta urining.");
 
         // 2. Node.js ijro faylini va server ildiz papkasini topish
         var (nodePath, serverDir) = ResolveNodeAndServerPaths();
@@ -260,46 +261,4 @@ public class NodeProcessManager
         }
     }
 
-    /// <summary>
-    /// Port band bo'lsa (masalan qotib qolgan zombi Node instansiyasi), uning jarayonini to'xtatadi.
-    /// </summary>
-    public static void KillProcessOnPort(int port)
-    {
-        try
-        {
-            var p = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c netstat -ano | findstr :{port}",
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true
-                }
-            };
-            p.Start();
-            string output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(1000);
-
-            foreach (var line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (line.Contains("LISTENING", StringComparison.OrdinalIgnoreCase))
-                {
-                    var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length > 0 && int.TryParse(parts[^1], out int pid) && pid > 0)
-                    {
-                        try
-                        {
-                            var procToKill = Process.GetProcessById(pid);
-                            procToKill.Kill(entireProcessTree: true);
-                            procToKill.WaitForExit(1000);
-                        }
-                        catch { }
-                    }
-                }
-            }
-        }
-        catch { }
-    }
 }

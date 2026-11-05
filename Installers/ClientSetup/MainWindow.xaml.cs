@@ -3,8 +3,6 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Win32;
@@ -46,12 +44,17 @@ namespace ClientSetup
                 return;
             }
 
-            // Extract number from name if possible (e.g. PC-01 -> 1)
-            int pcNumber = 1;
-            var match = Regex.Match(wsName, @"\d+");
-            if (match.Success && int.TryParse(match.Value, out int parsedNum))
+            string mergedConfiguration;
+            try
             {
-                pcNumber = parsedNum;
+                string configPath = Path.Combine(targetDir, "config.json");
+                mergedConfiguration = ClientSetupConfiguration.Merge(
+                    File.Exists(configPath) ? File.ReadAllText(configPath) : null, serverUrl, wsName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Sozlamani tekshiring", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
 
             installedDirectory = targetDir;
@@ -122,16 +125,7 @@ namespace ClientSetup
 
                     // Write config.json
                     string configPath = Path.Combine(targetDir, "config.json");
-                    var configObj = new
-                    {
-                        serverUrl = serverUrl,
-                        pcNumber = wsName,
-                        workstationName = wsName,
-                        heartbeatIntervalSeconds = 5,
-                        updateIdleSeconds = 10
-                    };
-                    string json = JsonSerializer.Serialize(configObj, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(configPath, previousConfiguration ?? json);
+                    File.WriteAllText(configPath, mergedConfiguration);
 
                     // Shortcuts
                     string exePath = Path.Combine(targetDir, "NetCafeClient.exe");

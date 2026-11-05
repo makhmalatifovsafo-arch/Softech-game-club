@@ -1,5 +1,8 @@
 Softech Game Club - local development
 
+2026-11-05: current local installers are in Releases/v1.0.18/.
+See AUDIT-20261105.txt for activation/install fixes, tests and pilot checks.
+
 1. Use Node.js 22.16+ (node:sqlite is required).
 2. Run npm ci in this repository root. Dependencies are shared by the Node apps.
 3. Copy .env.example to .env and set a unique initial admin password (12+ characters).
