@@ -14,9 +14,6 @@
     <!-- Optimizatsiyalar -->
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
 
   <!-- Standalone Single-File Binary Properties (win-x64 self-contained for publish) -->

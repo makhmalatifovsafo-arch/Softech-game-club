@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using Microsoft.Web.WebView2.Core;
 
@@ -16,6 +17,27 @@ public partial class MainWindow : Window
     private readonly NodeProcessManager _nodeManager = new();
     private bool _isInitialized;
     private UpdateMonitor? _updateMonitor;
+    private HwndSource? _windowSource;
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        _windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        _windowSource?.AddHook(WindowMessageHook);
+    }
+
+    private IntPtr WindowMessageHook(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message == 0x0024 && WindowWorkArea.Apply(hwnd, lParam)) // WM_GETMINMAXINFO
+            handled = true;
+        return IntPtr.Zero;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _windowSource?.RemoveHook(WindowMessageHook);
+        base.OnClosed(e);
+    }
 
     public MainWindow()
     {

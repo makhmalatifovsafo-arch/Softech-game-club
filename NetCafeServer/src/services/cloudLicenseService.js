@@ -1,6 +1,7 @@
 import { commandResults, applyCloudCommands } from './cloudCommands.js';
 import { execFile } from 'node:child_process';
 import { applyManagerAccount, getManagerRevision, applyAdministratorAccount, getAdministratorRevision } from './localOwnerSetup.js';
+import { createStaffAccountSync } from './staffAccountSync.js';
 import { BarLedgerService } from './barLedgerService.js';
 /**
  * Softech Game Club Management System — Supabase-Driven Cloud Licensing & Kill-Switch
@@ -321,10 +322,17 @@ export class CloudLicenseService {
 
     // Dastlabki birinchi chaqiriq
     this.sendHeartbeat().catch(() => {});
+    this.syncStaffAccounts();
 
     this.heartbeatTimer = setInterval(async () => {
-      await this.sendHeartbeat();
+      await Promise.allSettled([this.sendHeartbeat(), this.syncStaffAccounts()]);
     }, intervalMs);
+  }
+
+  static syncStaffAccounts() {
+    this.staffSync ??= createStaffAccountSync({ db, getLicense: () => LicenseManager.licenseData,
+      getSignedLicense: () => LicenseManager.getSignedLicense(), getCloudUrl: () => LicenseManager.cloudUrl });
+    return this.staffSync();
   }
 
   static async sendHeartbeat() {

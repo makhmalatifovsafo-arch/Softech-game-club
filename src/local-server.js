@@ -1,4 +1,6 @@
 import { handleMobileRoute } from './services/mobileRelay.js';
+import { appVersion } from './services/appVersion.js';
+import { handleStaffSyncRoute } from './services/staffAccountSync.js';
 import { ManagerAccountService } from './services/managerAccountService.js';
 import { db as managerDb } from './db/connection.js';
 import http from 'node:http';
@@ -62,6 +64,11 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/api/version') {
+    res.setHeader('Cache-Control', 'no-store');
+    return sendJson(res, 200, { app: 'Softech Cloud', version: appVersion });
+  }
+  if(await handleStaffSyncRoute(req,res,{db:managerDb}))return;
   if(await handleMobileRoute(req,res,{db:managerDb}))return;
   const managerPath=new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
   if(managerPath && ['GET','PUT'].includes(req.method)){
@@ -307,6 +314,29 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+
+  // 1.1 Litsenziya kaliti orqali darhol faollashtirish (Activate by Key)
+  if (pathname === '/api/telemetry/activate-by-key' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const data = body ? JSON.parse(body) : {};
+        const result = await ActivationService.activateByKey(data);
+        return sendJson(res, 200, result);
+      } catch (err) {
+        return sendJson(res, 400, { success: false, error: err.message });
+      }
+    });
+    return;
+  }
+
+  // 1.2 NetCafeServer dan so'rov holatini tekshirish (Polling Activation Status)
+  if (pathname === '/api/telemetry/activation-status' && req.method === 'GET') {
+    const hwid = url.searchParams.get('hwid');
+    const result = ActivationService.getActivationStatus(hwid);
+    return sendJson(res, 200, { success: true, ...result });
   }
 
   // 2. Kutilayotgan litsenziya so'rovlarini olish (Super Admin PWA)

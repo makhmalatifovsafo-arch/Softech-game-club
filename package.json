@@ -1,10 +1,14 @@
 {
   "name": "softech-game-club",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "type": "module",
   "scripts": {
+    "version:set": "node scripts/set-version.mjs",
     "start": "node --env-file-if-exists=.env SoftechCloudAdmin/src/local-server.js",
     "start:server": "node --env-file-if-exists=.env NetCafeServer/src/server.js",
+    "sync:cloud": "node scripts/sync-cloud.mjs",
+    "check:cloud": "node scripts/sync-cloud.mjs --check",
+    "pretest": "npm run check:cloud",
     "test": "node --test --test-concurrency=1 tests/*.test.mjs"
   },
   "dependencies": {

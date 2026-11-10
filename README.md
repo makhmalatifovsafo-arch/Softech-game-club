@@ -10,7 +10,7 @@ Loyihada 3 ta asosiy mustaqil komponent mavjud:
 
 ```
 Softech-game-club/
-├── NetCafeServer/           # Lokal Kassa Serveri (Node.js 24 + Standalone WPF Cockpit)
+├── NetCafeServer/           # Lokal Kassa Serveri (Node.js 22.x + Standalone WPF Cockpit)
 ├── NetCafeClient/           # Mijoz Kompyuterlari uchun Kiosk (C# WPF .NET 8, AAA UI)
 ├── SoftechCloudAdmin/       # Vercel & Supabase asosidagi Mobil Super Admin PWA
 ├── Installers/              # Server va Client uchun avtomatlashtirilgan o'rnatuvchilar
@@ -42,3 +42,15 @@ Softech-game-club/
 
 ---
 *Copyright © 2026 Softech Cloud Systems. Barcha huquqlar himoyalangan.*
+
+## Dasturchilar uchun
+
+- Reliz versiyasini bir joydan yangilang: `npm run version:set -- 1.0.19`. Bu barcha Node paketlari, lockfile va .NET `Directory.Build.props` versiyasini moslaydi. Keyingi reliz uchun yangi raqam kiriting.
+- Push relizi `package.json` dagi versiyani ishlatadi; mavjud reliz qayta yozilmaydi. Server/bulut sahifalari ishlayotgan backend versiyasini, Windows ilovalari esa o'z assembly versiyasini ko'rsatadi.
+
+- Node.js 22.x ishlating (release CI va cloud paketlari bilan bir xil). Versiya .nvmrc faylida ham belgilangan.
+- Bulut kodi uchun asosiy manba root ichidagi src/, api/, public/, migrations/, supabase_schema.sql va vercel.json hisoblanadi.
+- SoftechCloudAdmin/ mustaqil deploy uchun saqlangan nusxa. Yuqoridagi fayllarni root ichida tahrirlang, keyin npm run sync:cloud bajaring va hosil bo'lgan o'zgarishlarni ham commit qiling. Skript .env, config.json yoki bazalarni ko'chirmaydi.
+- npm test avval bulut nusxalarining mosligini tekshiradi; farq bo'lsa test/release to'xtaydi. npm run check:cloud faqat tekshiradi.
+- NetCafeServer/src/ ichidagi .js fayllar ishlaydigan implementatsiyadir. Eski parallel .ts implementatsiyalar olib tashlangan; types/protocol.ts protokol turlari uchun ma'lumotnoma sifatida saqlangan. TypeScript build talab qilinmaydi.
+- Lokal ishga tushirish: npm ci, npm start (cloud), npm run start:server (kassa). Root .env shu start buyruqlarida yuklanadi.

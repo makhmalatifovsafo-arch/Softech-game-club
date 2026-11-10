@@ -26,12 +26,13 @@ async function waitFor(url, child, logs) {
   }
   throw new Error('Startup timeout: ' + logs());
 }
-test('isolated cloud and club server start and accept a client handshake', { timeout: 120000 }, async () => {
+for (const cloudSource of ['.', 'SoftechCloudAdmin']) {
+test(cloudSource + ': isolated cloud and club server start and accept a client handshake', { timeout: 120000 }, async () => {
   mkdirSync('.test-output', { recursive: true });
   const fixture = mkdtempSync(path.resolve('.test-output/startup-'));
   const cloud = path.join(fixture, 'cloud');
   const club = path.join(fixture, 'club');
-  for (const [source, target] of [['SoftechCloudAdmin', cloud], ['NetCafeServer', club]]) {
+  for (const [source, target] of [[cloudSource, cloud], ['NetCafeServer', club]]) {
     mkdirSync(target);
     for (const file of ['src', 'public', 'package.json']) cpSync(path.join(source, file), path.join(target, file), { recursive: true });
   }
@@ -61,6 +62,8 @@ test('isolated cloud and club server start and accept a client handshake', { tim
   try {
     let c = start(cloud, cloudPort);
     const loginPage = await waitFor(env.SOFTECH_CLOUD_URL + '/login', c.child, c.logs);
+    const expectedVersion = JSON.parse(await (await import('node:fs/promises')).readFile('package.json', 'utf8')).version;
+    assert.equal((await (await fetch(env.SOFTECH_CLOUD_URL + '/api/version')).json()).version, expectedVersion);
     assert.match(await loginPage.text(), /html/i);
     const login = await fetch(env.SOFTECH_CLOUD_URL + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: env.SUPERADMIN_INITIAL_PASSWORD }) });
     assert.equal(login.status, 200);
@@ -68,7 +71,9 @@ test('isolated cloud and club server start and accept a client handshake', { tim
     assert.ok(accessToken);
     let s = start(club, clubPort);
     const health = await waitFor('http://127.0.0.1:' + clubPort + '/api/health', s.child, s.logs);
-    assert.equal((await health.json()).status, 'ok');
+    const healthData = await health.json();
+    assert.equal(healthData.status, 'ok');
+    assert.equal(healthData.version, expectedVersion);
     const localUrl = 'http://127.0.0.1:' + clubPort;
     const jsonHeaders = { 'Content-Type': 'application/json' };
     const adminHeaders = { ...jsonHeaders, Authorization: 'Bearer ' + accessToken };
@@ -166,12 +171,10 @@ test('isolated cloud and club server start and accept a client handshake', { tim
     const administratorUrl=env.SOFTECH_CLOUD_URL+'/api/clubs/'+approved.club.id+'/administrator';
     const assigned=await fetch(administratorUrl,{method:'PUT',headers:adminHeaders,body:JSON.stringify({username:'shift_admin',password:'cashier-operating-password'})});
     const assignment=await assigned.json();assert.equal(assigned.status,200,JSON.stringify(assignment));assert.equal(assignment.administrator.username,'shift_admin');assert.equal(assignment.administrator.applied,false);
-    stop=once(s.child,'exit');s.child.kill();await stop;s=start(club,clubPort);await waitFor(localUrl+'/api/health',s.child,s.logs);
-    let cashier;
-    for(let i=0;i<80;i++){
-      const r=await fetch(localUrl+'/api/auth/login',{method:'POST',headers:jsonHeaders,body:JSON.stringify({username:'shift_admin',password:'cashier-operating-password'})});
-      if(r.status===200){cashier=await r.json();break;}await new Promise(r=>setTimeout(r,100));
-    }
+    // Login immediately after cloud assignment: no server restart or heartbeat wait.
+    const immediateLogin=await fetch(localUrl+'/api/auth/login',{method:'POST',headers:jsonHeaders,body:JSON.stringify({username:' shift_admin ',password:'cashier-operating-password'})});
+    assert.equal(immediateLogin.status,200,s.logs());
+    const cashier=await immediateLogin.json();
     assert.ok(cashier,s.logs());assert.equal(cashier.user.role,'administrator');
     const cashierHeaders={...jsonHeaders,Authorization:'Bearer '+cashier.token};
     const cashierApi=async(route,method='GET',body)=>{const r=await fetch(localUrl+route,{method,headers:cashierHeaders,...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
@@ -226,3 +229,4 @@ test('isolated cloud and club server start and accept a client handshake', { tim
     }
   }
 });
+}

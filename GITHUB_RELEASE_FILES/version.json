@@ -1,15 +1,13 @@
 {
-  "version": "1.0.5",
-  "releaseDate": "2026-10-24",
-  "client": {
-    "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
-    "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechClient.zip",
-    "sha256": "db6153f5e020900e67d4e64ff755fdd0200d810a6066fb93fe90214ce3ef4381"
-  },
-  "server": {
-    "downloadUrl": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "url": "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/SoftechServer.zip",
-    "sha256": "39448a33c5bbb554c1fc8849253dc104c3e79a977a361dab36b226217abd0801"
-  },
-  "changelog": "Yangi reliz chiqqanida ekranda 'Uni o'rnating' interaktiv oynasi avtomatik ko'rsatilishi yoqildi."
+    "releaseDate":  "2026-10-31",
+    "changelog":  "Silent background staging; idle-only installation; protected games; transactional rollback.",
+    "server":  {
+                   "downloadUrl":  "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/download/v1.0.17/SoftechServer.zip",
+                   "sha256":  "3247f96a1edf453bc51ced9fe1eb59caab59b89d5cfc8065be7a27ea6f10d31b"
+               },
+    "version":  "1.0.17",
+    "client":  {
+                   "downloadUrl":  "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/download/v1.0.17/SoftechClient.zip",
+                   "sha256":  "d2de9e5687ee0706e51bc9813f92b5df3e54bb81652fd4b2be348b894df9cb19"
+               }
 }

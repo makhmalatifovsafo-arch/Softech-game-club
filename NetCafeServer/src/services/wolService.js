@@ -1,4 +1,5 @@
 import dgram from 'node:dgram';
+import { normalizeMacAddress } from './macAddress.js';
 
 /**
  * Wake-on-LAN (WoL) Magic Packet yuborish
@@ -17,7 +18,7 @@ export function sendWakeOnLan(macAddress, broadcastIp = '255.255.255.255', port 
     }
 
     // 1. MAC manzilni tozalash (faqat hex belgilar: 0-9, A-F)
-    const cleanMac = macAddress.replace(/[^0-9A-Fa-f]/g, '');
+    const cleanMac = normalizeMacAddress(macAddress).replace(/:/g, '');
     if (cleanMac.length !== 12) {
       return reject(new Error(`Noto'g'ri MAC manzil formati: "${macAddress}". 12 ta hex belgi bo'lishi kerak.`));
     }

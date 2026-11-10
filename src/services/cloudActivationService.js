@@ -32,6 +32,8 @@ export class CloudActivationService {
   }
   static async result(query) {
     const { data, error } = await query;
+    if (error?.code === '42P10') throw activationError(
+      'Bulut bazasining aktivatsiya migratsiyasi bajarilmagan. Supabase SQL Editor orqali migrations/20261110_activation_hwid_unique.sql faylini bajaring.', 503);
     if (error) throw activationError('Bulut bazasida xatolik: ' + error.message, 503);
     return data;
   }

@@ -1,4 +1,6 @@
 import { handleMobileRoute } from './services/mobileRelay.js';
+import { appVersion } from './services/appVersion.js';
+import { handleStaffSyncRoute } from './services/staffAccountSync.js';
 import { ManagerAccountService } from './services/managerAccountService.js';
 import { db as managerDb } from './db/connection.js';
 import http from 'node:http';
@@ -62,6 +64,11 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/api/version') {
+    res.setHeader('Cache-Control', 'no-store');
+    return sendJson(res, 200, { app: 'Softech Cloud', version: appVersion });
+  }
+  if(await handleStaffSyncRoute(req,res,{db:managerDb}))return;
   if(await handleMobileRoute(req,res,{db:managerDb}))return;
   const managerPath=new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
   if(managerPath && ['GET','PUT'].includes(req.method)){

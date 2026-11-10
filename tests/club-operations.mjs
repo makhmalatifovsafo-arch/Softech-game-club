@@ -18,6 +18,25 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const list=Array.isArray(computers.body)?computers.body:computers.body.computers;
   assert.ok(list?.length,JSON.stringify(computers.body));
   const pc=list.find(x=>x.name==='PC-01')||list[0];
+  assert.equal(pc.isOnline, true, 'Handshaken client must be online');
+  assert.ok(pc.lastHeartbeat, 'Handshake must persist connection history');
+  assert.equal(pc.macAddress, '02:00:00:00:00:01', 'Client handshake automatically saves MAC');
+  const added = await api('/api/admin/computers', 'POST', { name: 'Never connected test', pcNumber: 901 });
+  assert.equal(added.status, 201, JSON.stringify(added.body));
+  assert.equal(added.body.computer.status, 'OFFLINE');
+  assert.equal(added.body.computer.isOnline, false);
+  const addedId = added.body.computer.id;
+  assert.equal((await api('/api/admin/computers/' + addedId, 'PUT', { macAddress: '00:00:00:00:00:00', zone: 'STANDARD' })).status, 400);
+  assert.equal((await api('/api/admin/computers/' + addedId, 'PUT', { macAddress: '02-AB-CD-EF-00-07', zone: 'STANDARD' })).status, 200);
+  const fixtureDb = new DatabaseSync(databasePath);
+  try { fixtureDb.prepare("UPDATE computers SET status='LOCKED' WHERE id=?").run(addedId); }
+  finally { fixtureDb.close(); }
+  const refreshed = await api('/api/computers');
+  const newPc = (Array.isArray(refreshed.body) ? refreshed.body : refreshed.body.computers).find(row => row.id === addedId);
+  assert.equal(newPc.isOnline, false, 'Legacy LOCKED rows must not imply a live connection');
+  assert.equal(newPc.lastHeartbeat, null);
+  assert.equal(newPc.macAddress, '02:AB:CD:EF:00:07');
+  assert.equal((await api('/api/admin/computers/' + addedId, 'DELETE')).status, 200);
   const started=await api('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60,paymentType:'CASH'});
   assert.equal(started.status,201,JSON.stringify(started.body));
   const sessionId=started.body.sessionId, gameAmount=started.body.amount;

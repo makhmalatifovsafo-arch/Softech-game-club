@@ -3,6 +3,15 @@
  */
 
 /* SPA View Transitions */
+#appShell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+#sidebarFooter {
+  padding-bottom: max(0.875rem, env(safe-area-inset-bottom, 0px));
+}
+
 .spa-view {
   animation: spaFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -319,8 +328,11 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   #sidebarNav { padding-inline: 8px; }
   #sidebarNav .nav-label, #sidebarNav .sidebar-nav-btn > span:last-child { display: none; }
   #sidebarNav .sidebar-nav-btn { justify-content: center; }
-  #leftSidebar > div > div:not(:first-child), #leftSidebar > div:last-child { display: none; }
-  #leftSidebar > div:first-of-type { overflow: visible; }
+  #sidebarScrollable > div { display: none; }
+  #sidebarFooter { padding: 8px; }
+  #sidebarFooter > div:not(:last-child) { display: none; }
+  #sidebarFooter > div:last-child { display: flex; flex-direction: column; }
+  #sidebarFooter .sidebar-action-btn > span:last-child { display: none; }
   .report-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {

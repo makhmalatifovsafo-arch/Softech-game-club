@@ -5,6 +5,7 @@ import { ClientManager } from '../services/clientManager.js';
 import { verifyPassword } from '../auth.js';
 import { calculateTimeFromAmount, resolveZoneIdForComputer, getActiveRateForMoment } from '../services/pricingEngine.js';
 import { LicenseManager } from '../services/licenseManager.js';
+import { normalizeMacAddress } from '../services/macAddress.js';
 
 export class ProtocolDispatcher {
   static handleMessage(socket, rawMessage) {
@@ -63,7 +64,8 @@ export class ProtocolDispatcher {
     const payload = message.payload || message;
     const pcNumberRaw = message.pcNumber || payload.pcNumber || '';
     const ipAddress = message.ip || payload.ipAddress || payload.ip || socket._remoteAddress || socket._socket?.remoteAddress?.replace('::ffff:', '') || '127.0.0.1';
-    const macAddress = payload.macAddress || '';
+    let macAddress = '';
+    try { macAddress = normalizeMacAddress(payload.macAddress) || ''; } catch { /* Keep the last valid MAC when a client reports an invalid adapter. */ }
     const agentVersion = payload.agentVersion || '2.0.0';
     const osInfo = payload.osInfo || '';
     const clubId = 1; // Each installed server owns its local club; clients cannot select another tenant.

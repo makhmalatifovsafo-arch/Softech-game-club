@@ -2,8 +2,10 @@
 <html lang="uz" data-theme="dark">
 <head>
   <meta charset="UTF-8">
+  <script src="/version-label.js" defer></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Softech OS — Game Club Boshqaruv Tizimi</title>
+  <script src="/computer-state.js"></script>
   
   <!-- Shriftlar: Plus Jakarta Sans va JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -415,7 +417,7 @@
       <!-- Specular Highlight Top Border (1px Caustic Edge) -->
       <div class="specular-top-highlight"></div>
 
-      <div class="relative z-10">
+      <div id="sidebarScrollable" class="relative z-10 flex-1 min-h-0 overflow-y-auto">
         <!-- Top: Logo & Network status -->
         <div class="p-4 border-b border-white/10 flex items-center justify-between relative bg-white/[0.02]">
           <div class="flex items-center gap-3">
@@ -514,7 +516,7 @@
       </div>
 
       <!-- Bottom: User profile, Settings, Logout (Liquid Glass Card) -->
-      <div class="p-3.5 border-t border-white/10 space-y-2.5 bg-black/40 backdrop-blur-xl relative z-10">
+      <div id="sidebarFooter" class="shrink-0 p-3.5 border-t border-white/10 space-y-2.5 bg-black/40 backdrop-blur-xl relative z-10">
         <!-- Specular Highlight for Bottom Widget -->
         <div class="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none"></div>
 
@@ -799,6 +801,14 @@
     </div>
 
     <!-- Grid Konteyneri (Drag and drop yoki oddiy ko'rinish) -->
+    <div class="flex flex-wrap gap-x-4 gap-y-2 mb-3 text-[11px]" aria-label="Kompyuter holatlari">
+      <span style="color:#a1a1aa" title="Klient hali biror marta ulanmagan">● Hali ulanmagan</span>
+      <span style="color:#fb7185" title="Avval ulangan klient bilan hozir aloqa yo‘q">● Aloqa uzilgan</span>
+      <span style="color:#34d399">● Bo‘sh / tayyor</span>
+      <span style="color:#fbbf24">● Band</span>
+      <span style="color:#c084fc" title="Klient ulangan, ekran qulflangan">● Qulflangan</span>
+      <span style="color:#38bdf8">● Texnik xizmat</span>
+    </div>
     <div id="pcGrid" class="hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 transition-all select-none mb-6">
       <div class="col-span-full py-20 text-center text-[var(--text-muted)] text-sm">
         Stantsiyalar yuklanmoqda...
@@ -841,7 +851,7 @@
     </div>
 
     <!-- FLOATING ACTION BAR FOR MULTI-SELECT (Desktop Style) -->
-    <div id="multiSelectBar" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 hidden items-center gap-3 px-5 py-3 rounded-2xl bg-[#121216]/95 border border-sky-500/60 shadow-[0_10px_35px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-all animate-in fade-in slide-in-from-bottom-4 duration-200">
+    <div id="multiSelectBar" style="bottom: calc(4rem + env(safe-area-inset-bottom, 0px))" class="fixed left-1/2 -translate-x-1/2 z-40 hidden items-center gap-3 px-5 py-3 rounded-2xl bg-[#121216]/95 border border-sky-500/60 shadow-[0_10px_35px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-all animate-in fade-in slide-in-from-bottom-4 duration-200">
       <div class="flex items-center gap-2 pr-1">
         <span class="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
         <span id="multiSelectCountLabel" class="text-xs font-bold text-white whitespace-nowrap">0 ta kompyuter tanlandi</span>
@@ -2043,6 +2053,7 @@
           <h3 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
             <span>⚙️</span>
             <span>Klub Sozlamalari</span>
+            <span data-app-version="/api/health" class="text-[11px] font-mono text-zinc-400">Versiya —</span>
           </h3>
           <span id="settingsRoleBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400">MANAGER ACCESS</span>
         </div>
@@ -2467,6 +2478,28 @@
     </div>
   </div>
 
+  <div id="pcWakeSetupModal" class="fixed inset-0 z-[60] hidden bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+    <form onsubmit="savePcWakeSetup(event)" class="w-full max-w-md rounded-2xl bg-[#121216] border border-[#27272a] p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white">MAC / Avtoyoqish — <span id="pcWakeSetupName"></span></h3>
+        <button type="button" onclick="closeModal('pcWakeSetupModal')" aria-label="Yopish" class="text-zinc-400 text-xl">×</button>
+      </div>
+      <input type="hidden" id="pcWakeSetupId">
+      <p class="text-xs text-zinc-300 leading-relaxed">Eng oson usul: kompyuterni bir marta qo‘lda yoqing va klientni serverga ulang. MAC avtomatik saqlanadi. Keyingi safar seans ochishda yoqish signali yuboriladi.</p>
+      <div>
+        <label for="pcWakeSetupMac" class="block text-xs text-zinc-400 mb-2">Ethernet MAC manzili</label>
+        <input id="pcWakeSetupMac" required placeholder="AA:BB:CC:DD:EE:FF" maxlength="17" autocomplete="off" spellcheck="false" class="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-3 py-2 text-sm text-white font-mono uppercase">
+        <p class="text-[11px] text-zinc-500 mt-2">Qo‘lda olish: klient kompyuterda ipconfig /all → Ethernet → Physical Address. Tireli format ham qabul qilinadi.</p>
+      </div>
+      <p class="text-xs text-zinc-400 leading-relaxed">Bir martalik sozlama: BIOS/UEFI’da Wake-on-LAN, Ethernet adapterida Wake on Magic Packet yoqilgan bo‘lsin. Kompyuter tokka va LAN kabeliga ulangan bo‘lishi kerak. O‘chiq holatdan yoqish qurilma imkoniyatlariga bog‘liq.</p>
+      <p id="pcWakeSetupError" role="alert" class="text-xs text-rose-400"></p>
+      <div class="flex justify-end gap-3">
+        <button type="button" onclick="closeModal('pcWakeSetupModal')" class="text-xs text-zinc-400">Bekor qilish</button>
+        <button id="pcWakeSetupSave" type="submit" class="softech-btn-primary text-xs px-4 py-2">Saqlash</button>
+      </div>
+    </form>
+  </div>
+
   <!-- Quick Add PC Modal (Layout Builder orqali tezkor qo'shish) -->
   <div id="addPcModal" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
     <div class="softech-glass w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]">
@@ -2506,6 +2539,7 @@
           <label class="block text-[11px] text-[#71717a] mb-1 uppercase font-semibold">MAC Manzil (Wake-on-LAN uchun)</label>
           <input type="text" id="quickPcMac" placeholder="00:1A:2B:3C:4D:5E" 
                  class="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-3.5 py-2 text-xs text-white font-mono uppercase focus:outline-none focus:border-sky-500">
+          <p class="text-[11px] text-zinc-500 mt-2">Ixtiyoriy: klient birinchi ulanganda MAC avtomatik saqlanadi.</p>
         </div>
         <div class="flex items-center justify-end gap-2 pt-2">
           <button type="button" onclick="closeModal('addPcModal')" class="px-4 py-2 text-xs text-zinc-400 hover:text-white">
@@ -3238,7 +3272,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div class="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800">
             <span class="text-zinc-500 text-[10px] block">Joriy versiya</span>
-            <span id="updateCurrentVer" class="text-white font-mono font-bold text-sm">v1.0.0</span>
+            <span id="updateCurrentVer" class="text-white font-mono font-bold text-sm">—</span>
           </div>
           <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
             <span class="text-amber-400/80 text-[10px] block">Mavjud yangi versiya</span>
@@ -3705,9 +3739,9 @@
       if (!menu) return;
 
       const isOccupied = pc.status === 'OCCUPIED' || Boolean(pc.activeSession || pc.active_session);
-      const isOnline = Boolean(pc.is_online === 1 || pc.isOnline === true || pc.status === 'ONLINE' || pc.status === 'AVAILABLE' || isOccupied || pc.status === 'LOCKED');
-      const isOffline = !isOnline || pc.status === 'OFFLINE';
-      const isLocked = pc.status === 'LOCKED' && !isOccupied;
+      const isOnline = computerState(pc).online;
+      const isOffline = !isOnline;
+      const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
 
       const dot = document.getElementById('ctxPcStatusDot');
       if (dot) {
@@ -3716,6 +3750,10 @@
             isLocked ? 'w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]' : 'w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
           )
         );
+        const state = computerState(pc);
+        dot.style.background = state.color;
+        dot.style.boxShadow = '0 0 8px ' + state.color + '80';
+        dot.title = state.label;
       }
 
       document.getElementById('ctxPcName').textContent = pc.name;
@@ -3874,7 +3912,7 @@
       const pc = computersData.find(c => c.id === pcId);
       closeContextMenu();
       if (!pc) return;
-      openPowerMenu(pcId, pc.status === 'OFFLINE');
+      openPowerMenu(pcId, !computerState(pc).online);
       setPowerActionChoice(action);
     }
 
@@ -4013,9 +4051,9 @@
       }
 
       const isOccupied = pc.status === 'OCCUPIED' || Boolean(pc.activeSession || pc.active_session);
-      const isOnline = Boolean(pc.is_online === 1 || pc.isOnline === true || pc.status === 'ONLINE' || pc.status === 'AVAILABLE' || isOccupied || pc.status === 'LOCKED');
-      const isAvailable = (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-      const isOffline = !isOnline || pc.status === 'OFFLINE';
+      const isOnline = computerState(pc).online;
+      const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
+      const isOffline = !isOnline;
 
       let html = '';
 
@@ -4090,8 +4128,8 @@
 
       const ids = Array.from(selectedPcIds);
       const pcs = ids.map(id => (window.workstationsMap && window.workstationsMap[id]) || (computersData || []).find(c => c.id === id)).filter(Boolean);
-      const hasOffline = pcs.some(p => p.status === 'OFFLINE' || p.is_online === 0);
-      const hasOnline = pcs.some(p => p.status !== 'OFFLINE' && (p.is_online === 1 || p.isOnline === true));
+      const hasOffline = pcs.some(p => !computerState(p).online);
+      const hasOnline = pcs.some(p => computerState(p).online);
 
       let html = `
         <button onclick="openBatchSessionModal()" class="softech-btn-primary text-xs !py-1.5 px-3.5 font-semibold shadow-lg shadow-sky-500/20 whitespace-nowrap cursor-pointer">
@@ -4211,116 +4249,92 @@
     // ========================================================================
     // DRAG / MARQUEE SELECTION (To'rtburchak ramka bilan tortib tanlash)
     // ========================================================================
-    let isMarqueeDragging = false;
-    let marqueeStartX = 0;
-    let marqueeStartY = 0;
-    let marqueeInitialSelected = new Set();
-
     function initMarqueeSelection() {
       const container = document.getElementById('mainContainer');
       const marquee = document.getElementById('selectionMarquee');
       if (!container || !marquee) return;
+      let gesture = null;
+      let suppressClick = false;
+      const cardsSelector = '#pcGrid > [data-pc-id], #floorPlanDesksContainer .floor-desk[data-pc-id], #pcTableBody tr[data-pc-id]';
 
-      container.addEventListener('mousedown', (e) => {
-        // Faqat chap tugma (button === 0) orqali marquee selection qilinadi!
-        // Sichqoncha g'ildiragi (button === 1, o'rta tugma / pan) yoki o'ng tugma (button === 2) bilan belgilamaslik!
-        if (e.button !== 0) return;
-        if (isMainLayoutEdit) return;
-        if (typeof isPanning !== 'undefined' && isPanning) return;
-
-        // Agar kartochkaning o'zi, tugma, input yoki modal usti bosilgan bo'lsa marquee boshlamaslik
-        if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.softech-panel') || e.target.closest('#multiSelectBar') || e.target.closest('.floor-desk')) {
-          return;
-        }
-
-        // Oddiy fonda klik bo'lsa:
-        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-          clearMultiSelect();
-        }
-
-        isMarqueeDragging = true;
-        marqueeStartX = e.pageX;
-        marqueeStartY = e.pageY;
-        marqueeInitialSelected = new Set(selectedPcIds);
-
-        const containerRect = container.getBoundingClientRect();
-        const startXRel = marqueeStartX - (containerRect.left + window.scrollX);
-        const startYRel = marqueeStartY - (containerRect.top + window.scrollY);
-
-        marquee.style.left = `${startXRel}px`;
-        marquee.style.top = `${startYRel}px`;
-        marquee.style.width = '0px';
-        marquee.style.height = '0px';
-        marquee.style.display = 'block';
-
-        document.body.classList.add('select-none');
-      });
-
-      document.addEventListener('mousemove', (e) => {
-        if (!isMarqueeDragging) return;
-
-        const currentX = e.pageX;
-        const currentY = e.pageY;
-
-        const left = Math.min(marqueeStartX, currentX);
-        const top = Math.min(marqueeStartY, currentY);
-        const width = Math.abs(currentX - marqueeStartX);
-        const height = Math.abs(currentY - marqueeStartY);
-
-        const containerRect = container.getBoundingClientRect();
-        const leftRel = left - (containerRect.left + window.scrollX);
-        const topRel = top - (containerRect.top + window.scrollY);
-
-        marquee.style.left = `${leftRel}px`;
-        marquee.style.top = `${topRel}px`;
-        marquee.style.width = `${width}px`;
-        marquee.style.height = `${height}px`;
-
-        // Kesishuvni tekshirish (Bounding collision detection: Grid, Floor Plan Desks va Table rows)
-        const marqueeBox = {
-          left: left,
-          top: top,
-          right: left + width,
-          bottom: top + height
-        };
-
-        const cards = document.querySelectorAll('#pcGrid > [data-pc-id], #floorPlanDesksContainer .floor-desk[data-pc-id], #pcTableBody tr[data-pc-id]');
-        cards.forEach(card => {
-          const pcId = card.getAttribute('data-pc-id');
-          if (!pcId) return;
-          const rect = card.getBoundingClientRect();
-          const cardBox = {
-            left: rect.left + window.scrollX,
-            top: rect.top + window.scrollY,
-            right: rect.right + window.scrollX,
-            bottom: rect.bottom + window.scrollY
-          };
-
-          const isIntersecting = !(
-            cardBox.left > marqueeBox.right ||
-            cardBox.right < marqueeBox.left ||
-            cardBox.top > marqueeBox.bottom ||
-            cardBox.bottom < marqueeBox.top
-          );
-
-          if (isIntersecting) {
-            selectedPcIds.add(pcId);
-          } else if (!marqueeInitialSelected.has(pcId) && !e.ctrlKey && !e.shiftKey) {
-            selectedPcIds.delete(pcId);
-          }
-        });
-
-        updateMultiSelectUi();
-      });
-
-      document.addEventListener('mouseup', () => {
-        if (!isMarqueeDragging) return;
-        isMarqueeDragging = false;
+      function finish() {
+        if (!gesture) return;
+        suppressClick = gesture.dragging;
+        if (!gesture.dragging && gesture.background && !gesture.additive) selectedPcIds.clear();
+        gesture = null;
         marquee.style.display = 'none';
         document.body.classList.remove('select-none');
         updateMultiSelectUi();
+      }
+
+      container.addEventListener('mousedown', e => {
+        suppressClick = false;
+        if (e.button !== 0 || isMainLayoutEdit || isPanning || isSpacePressed) return;
+        if (!e.target.closest('#view-workstations')) return;
+        // Cards (including occupied cards) may start a drag; actual controls may not.
+        if (e.target.closest('button, input, select, textarea, a, [contenteditable="true"], [role="dialog"], #multiSelectBar, #floorPlanInspector, #figmaFloatingToolbar, #figmaAlignToolbar')) return;
+        if (e.target.closest('.softech-panel') && !e.target.closest('[data-pc-id]')) return;
+        gesture = {
+          x: e.clientX, y: e.clientY, dragging: false,
+          background: !e.target.closest('[data-pc-id]'),
+          additive: e.ctrlKey || e.metaKey || e.shiftKey,
+          initial: new Set(selectedPcIds)
+        };
+      });
+
+      document.addEventListener('mousemove', e => {
+        if (!gesture) return;
+        if (!(e.buttons & 1)) { finish(); return; }
+        if (!gesture.dragging) {
+          if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) < 5) return;
+          gesture.dragging = true;
+          document.body.classList.add('select-none');
+        }
+        e.preventDefault();
+        const left = Math.min(gesture.x, e.clientX);
+        const top = Math.min(gesture.y, e.clientY);
+        const right = Math.max(gesture.x, e.clientX);
+        const bottom = Math.max(gesture.y, e.clientY);
+        const containerRect = container.getBoundingClientRect();
+        marquee.style.left = `${left - containerRect.left + container.scrollLeft}px`;
+        marquee.style.top = `${top - containerRect.top + container.scrollTop}px`;
+        marquee.style.width = `${right - left}px`;
+        marquee.style.height = `${bottom - top}px`;
+        marquee.style.display = 'block';
+
+        // Re-query on every move: session/heartbeat updates can replace the cards.
+        selectedPcIds.clear();
+        if (gesture.additive) gesture.initial.forEach(id => selectedPcIds.add(id));
+        document.querySelectorAll(cardsSelector).forEach(card => {
+          const rect = card.getBoundingClientRect();
+          if (!rect.width || !rect.height) return; // Other, hidden dashboard views.
+          if (rect.left <= right && rect.right >= left && rect.top <= bottom && rect.bottom >= top)
+            selectedPcIds.add(card.getAttribute('data-pc-id'));
+        });
+        updateMultiSelectUi();
+      });
+
+      document.addEventListener('mouseup', finish);
+      // A completed drag must not become a card click (opening a modal or clearing selection).
+      document.addEventListener('click', e => {
+        if (!suppressClick) return;
+        suppressClick = false;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }, true);
+      container.addEventListener('dragstart', e => {
+        if (gesture) e.preventDefault();
+      });
+      window.addEventListener('blur', () => {
+        finish();
+        suppressClick = false;
+        isPanning = false;
+        isSpacePressed = false;
+        const canvas = document.getElementById('canvasWorldScroll');
+        if (canvas) canvas.style.cursor = 'default';
       });
     }
+
 
     // Mavzuni o'zgartirish
     function changeTheme(themeName) {
@@ -4707,25 +4721,16 @@
       filtered.forEach((pc, idx) => {
         const activeS = pc.activeSession || pc.active_session || null;
         const isOccupied = pc.status === 'OCCUPIED' || Boolean(activeS);
-        const isAvailable = (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-        const isLocked = pc.status === 'LOCKED' && !isOccupied;
-        const isOnline = Boolean(pc.is_online === 1 || pc.isOnline === true || pc.status === 'ONLINE' || pc.status === 'AVAILABLE' || isOccupied || isLocked);
-        const isOffline = pc.status === 'OFFLINE' || (!isOnline && !isOccupied && !isAvailable && !isLocked);
+        const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
+        const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
+        const isOnline = computerState(pc).online;
+        const isOffline = !isOnline;
         const isSelected = selectedPcIds.has(pc.id);
         const isPs = (pc.zone === 'PLAYSTATION') || String(pc.name).toLowerCase().includes('ps');
         const num = pc.pcNumber || (idx + 1);
 
-        // Holat badge
-        let statusBadge = '';
-        if (isOccupied) {
-          statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold text-[11px]"><span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(245,158,11,0.6)]"></span>Band</span>';
-        } else if (isAvailable) {
-          statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[11px]"><span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.6)]"></span>Bo\'sh</span>';
-        } else if (isLocked) {
-          statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-bold text-[11px]"><span class="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(168,85,247,0.6)]"></span>Yarim ulangan</span>';
-        } else {
-          statusBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-[11px]"><span class="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]"></span>O\'chiq</span>';
-        }
+        const state = computerState(pc);
+        const statusBadge = `<span title="${state.detail}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold" style="color:${state.color};border-color:${state.color}55;background:${state.color}15"><span class="w-2 h-2 rounded-full" style="background:${state.color}"></span>${state.label}</span>`;
 
         // Mijoz ma'lumoti
         let customerInfo = '<span class="text-zinc-600 font-mono">—</span>';
@@ -5313,10 +5318,10 @@
       filteredComputers.forEach(pc => {
         const activeS = pc.activeSession || pc.active_session || null;
         const isOccupied = pc.status === 'OCCUPIED' || Boolean(activeS);
-        const isAvailable = (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-        const isLocked = pc.status === 'LOCKED' && !isOccupied;
-        const isOnline = Boolean(pc.is_online === 1 || pc.isOnline === true || pc.status === 'ONLINE' || pc.status === 'AVAILABLE' || isOccupied || isLocked);
-        const isOffline = pc.status === 'OFFLINE' || (!isOnline && !isOccupied && !isAvailable && !isLocked);
+        const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
+        const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
+        const isOnline = computerState(pc).online;
+        const isOffline = !isOnline;
         const isSelected = selectedPcIds.has(pc.id) || (selectedDeskId === pc.id);
 
         const isPs = (pc.zone === 'PLAYSTATION') || String(pc.name).toLowerCase().includes('ps');
@@ -5350,6 +5355,14 @@
         }
 
         deskEl.className += ` ${border}`;
+        const state = computerState(pc);
+        if (!isSelected) {
+          deskEl.style.borderColor = state.color;
+          deskEl.style.backgroundColor = state.color + '15';
+          deskEl.style.boxShadow = '0 0 12px ' + state.color + '30';
+        }
+        deskEl.title = state.label + ': ' + state.detail;
+        deskEl.setAttribute('data-status', isOffline ? 'OFFLINE' : pc.status);
 
         const deskIcon = isPs ? '🎮' : '🖥️';
 
@@ -5374,12 +5387,13 @@
         } else if (isAvailable) {
           bottomText = `<span class="text-[9px] font-mono font-semibold text-emerald-400 leading-none">${isPs ? 'PS Bo\'sh' : 'Bo\'sh'}</span>`;
         } else if (isLocked) {
-          bottomText = `<span class="text-[9px] font-mono font-semibold text-purple-400 leading-none">Yarim ulangan</span>`;
+          bottomText = `<span class="text-[9px] font-mono font-semibold text-purple-400 leading-none">Qulflangan</span>`;
         } else {
           bottomText = `<span class="text-[9px] font-mono font-semibold text-rose-400 leading-none">O'chiq</span>`;
         }
 
-        let headerRightContent = `<span class="w-2 h-2 rounded-full ${statusDotClass} shrink-0"></span>`;
+        if (isOffline || state.key === 'MAINTENANCE') bottomText = `<span class="text-[9px] font-semibold leading-none" style="color:${state.color}">${state.label}</span>`;
+        let headerRightContent = `<span class="w-2 h-2 rounded-full ${statusDotClass} shrink-0" style="background:${state.color};box-shadow:0 0 6px ${state.color}"></span>`;
         if (isMainLayoutEdit) {
           headerRightContent = `
             <div class="flex items-center gap-1">
@@ -7496,6 +7510,7 @@
             <span class="text-[10px] font-mono px-2 py-0.5 rounded ${badgeBg}">${statusTitle}</span>
           </td>
           <td class="p-3 text-right">
+            <button type="button" onclick="openPcWakeSetup('${pc.id}')" class="text-sky-400 hover:text-white text-xs px-2 py-1">MAC / Avtoyoqish</button>
             <button onclick="deleteComputer('${pc.id}')" class="text-zinc-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 transition" title="O'chirish">
               🗑️
             </button>
@@ -7503,6 +7518,40 @@
         `;
         tbody.appendChild(row);
       });
+    }
+
+    function openPcWakeSetup(pcId) {
+      const pc = computersData.find(c => c.id === pcId);
+      if (!pc) return;
+      closeModal('powerModal');
+      document.getElementById('pcWakeSetupId').value = pc.id;
+      document.getElementById('pcWakeSetupName').textContent = pc.name;
+      document.getElementById('pcWakeSetupMac').value = pc.macAddress || '';
+      document.getElementById('pcWakeSetupError').textContent = '';
+      document.getElementById('pcWakeSetupModal').classList.remove('hidden');
+      document.getElementById('pcWakeSetupMac').focus();
+    }
+
+    async function savePcWakeSetup(event) {
+      event.preventDefault();
+      const pc = computersData.find(c => c.id === document.getElementById('pcWakeSetupId').value);
+      if (!pc) return;
+      const button = document.getElementById('pcWakeSetupSave');
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/admin/computers/' + encodeURIComponent(pc.id), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+          body: JSON.stringify({ macAddress: document.getElementById('pcWakeSetupMac').value.trim(), zone: pc.zone })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'MAC saqlanmadi.');
+        await fetchData();
+        renderAdminComputersTable();
+        closeModal('pcWakeSetupModal');
+        showToast('MAC saqlandi. Seans ochishda avtomatik yoqish signali yuboriladi.', 'success');
+      } catch (error) {
+        document.getElementById('pcWakeSetupError').textContent = error.message;
+      } finally { button.disabled = false; }
     }
 
     async function handleInlineAddComputer(e) {
@@ -8450,6 +8499,7 @@
             const payload = msg.payload || msg.data || msg;
             const updatedPc = payload.computer || payload;
             if (updatedPc && updatedPc.id) {
+              if (updatedPc.isOnline === true || updatedPc.is_online === 1) updatedPc.lastHeartbeat = new Date().toISOString();
               window.workstationsMap = window.workstationsMap || {};
               window.workstationsMap[updatedPc.id] = Object.assign(window.workstationsMap[updatedPc.id] || {}, updatedPc);
               if (Array.isArray(computersData)) {
@@ -8625,8 +8675,8 @@
       const noticeDesc = document.getElementById('updateNoticeDesc');
       const btnApply = document.getElementById('btnApplyUpdate');
 
-      if (curVer) curVer.textContent = `v${s.currentVersion || '1.0.0'}`;
-      if (newVer) newVer.textContent = `v${s.stagedVersion || s.latestVersion || '1.0.1'}`;
+      if (curVer) curVer.textContent = s.currentVersion ? `v${s.currentVersion}` : '—';
+      if (newVer) newVer.textContent = (s.stagedVersion || s.latestVersion) ? `v${s.stagedVersion || s.latestVersion}` : '—';
       if (changelog && s.changelog) changelog.textContent = s.changelog;
 
       const activeCount = s.activeSessions || 0;
@@ -8775,28 +8825,15 @@
       filtered.forEach((pc, idx) => {
         const activeS = pc.activeSession || pc.active_session || null;
         const isOccupied = pc.status === 'OCCUPIED' || Boolean(activeS);
-        const isAvailable = (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-        const isLocked = pc.status === 'LOCKED' && !isOccupied;
-        const isOnline = Boolean(pc.is_online === 1 || pc.isOnline === true || pc.status === 'ONLINE' || pc.status === 'AVAILABLE' || isOccupied || isLocked);
-        const isOffline = pc.status === 'OFFLINE' || (!isOnline && !isOccupied && !isAvailable && !isLocked);
+        const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
+        const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
+        const isOnline = computerState(pc).online;
+        const isOffline = !isOnline;
         const isSelected = selectedPcIds.has(pc.id);
 
-        let statusColor = 'bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)]';
-        let statusTitle = "O'chiq";
-
-        if (isOffline) {
-          statusColor = 'bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)]';
-          statusTitle = "O'chiq";
-        } else if (isOccupied) {
-          statusColor = 'bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.6)] animate-pulse';
-          statusTitle = 'Band';
-        } else if (isAvailable) {
-          statusColor = 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)]';
-          statusTitle = "Bo'sh";
-        } else if (isLocked) {
-          statusColor = 'bg-[#a855f7] shadow-[0_0_8px_rgba(168,85,247,0.6)]';
-          statusTitle = 'Yarim ulangan';
-        }
+        const state = computerState(pc);
+        const statusColor = '';
+        const statusTitle = state.label;
 
         // Zona nishoni (Badge)
         const zone = pc.zone || 'STANDARD';
@@ -8845,6 +8882,7 @@
                 [Col ${posX} : Row ${posY}]
               </span>
               <div class="text-[10px] text-zinc-500 font-mono mt-2">${pc.ipAddress || '192.168.1.x'}</div>
+              <div class="text-[11px] font-semibold mt-2" style="color:${state.color}">${state.label}</div>
             </div>
 
             <div class="pt-2 border-t border-[#27272a] text-center text-[10px] text-zinc-500">
@@ -8906,7 +8944,7 @@
                 ${pc.upcomingBooking ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse" title="Bron qilingan: ${escapeHtml(pc.upcomingBooking.customerName)}">📅 ${escapeHtml(pc.upcomingBooking.startTime)}</span>` : ''}
               </div>
               <div class="flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full ${statusColor}"></span>
+                <span class="w-2 h-2 rounded-full ${statusColor}" style="background:${state.color}"></span>
                 <span class="text-[11px] font-medium text-[var(--text-secondary)]">${statusTitle}</span>
               </div>
             </div>
@@ -8957,7 +8995,7 @@
                 </div>
               ` : (isLocked ? `
                 <div class="py-2.5">
-                  <div class="text-xs font-semibold text-purple-400">Yarim ulangan (Aloqa sust / Qulf)</div>
+                  <div class="text-xs font-semibold text-purple-400">Ulangan · Ekran qulflangan</div>
                   <div class="flex items-center justify-between text-[10px] font-mono text-zinc-500 mt-1.5">
                     <span>IP: ${pc.ipAddress || '192.168.1.x'}</span>
                     <span class="text-purple-400/80">Qulflangan</span>
@@ -8965,10 +9003,10 @@
                 </div>
               ` : `
                 <div class="py-2.5">
-                  <div class="text-xs font-semibold text-rose-400">Umuman o'chiq (Offline)</div>
+                  <div class="text-xs font-semibold" style="color:${state.color}">${state.label}</div>
                   <div class="flex items-center justify-between text-[10px] font-mono text-zinc-500 mt-1.5">
-                    <span>${pc.macAddress ? `MAC: ${pc.macAddress}` : 'Tarmoqdan uzilgan'}</span>
-                    <span class="text-rose-400 font-bold">O'chiq</span>
+                    <span>${state.detail}</span>
+                    <span class="font-bold" style="color:${state.color}">${state.label}</span>
                   </div>
                 </div>
               `))}
@@ -9028,6 +9066,12 @@
           `;
         }
 
+        card.title = state.label + ': ' + state.detail;
+        if (!isSelected) {
+          card.style.borderColor = state.color + '66';
+          card.style.backgroundColor = state.color + '10';
+          card.style.boxShadow = '0 0 12px ' + state.color + '20';
+        }
         grid.appendChild(card);
       });
     }
@@ -9791,7 +9835,7 @@
         item.className = 'p-2.5 rounded-xl bg-[#141418] hover:bg-[#202026] border border-[#27272a] hover:border-sky-500/50 cursor-pointer flex items-center justify-between text-xs transition';
         item.onclick = () => selectTransferTarget(c.id);
 
-        const isOnline = c.status === 'AVAILABLE' || c.status === 'ONLINE' || c.status === 'LOCKED';
+        const isOnline = computerState(c).online;
         item.innerHTML = `
           <div class="flex items-center gap-2">
             <span class="w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-zinc-600'}"></span>
@@ -9889,7 +9933,9 @@
         document.getElementById('powerModalAction').value = 'wake';
         document.getElementById('powerModalTitle').innerHTML = '<span>⚡</span><span>Wake-on-LAN (Yoqish)</span>';
         document.getElementById('powerModalMessage').innerHTML = `
-          Kompyuter hozirda o'chiq (Offline). Tarmoq orqali Wake-on-LAN Magic Packet yuborib uni masofadan yoqmoqchimisiz?
+          Klient bilan hozir aloqa yo‘q. Kompyuter o‘chiq yoki tarmoq uzilgan bo‘lishi mumkin. Wake-on-LAN orqali yoqish signalini yuborasizmi?
+          ${pc?.macAddress ? `<div class="mt-2 text-xs font-mono">MAC: ${escapeHtml(pc.macAddress)}</div>` : '<div class="mt-2 text-xs text-amber-400">MAC hali saqlanmagan. Klientni bir marta qo‘lda yoqib serverga ulang yoki MAC kiriting.</div>'}
+          <button type="button" onclick="openPcWakeSetup(document.getElementById('powerModalPcId').value)" class="mt-3 text-sky-400 underline text-xs">MAC / Avtoyoqishni sozlash</button>
         `;
         if (quickButtons) quickButtons.classList.add('hidden');
         document.getElementById('btnSubmitPowerAction').className = 'softech-btn-primary text-xs !py-2 px-5 font-semibold bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg shadow-emerald-500/20';

@@ -6,7 +6,7 @@ Mavjud webhook softech-game-club.vercel.app domeniga ulangan.
 Haqiqiy foydalanuvchilarga sinov xabari yuborilmadi.
 
 BULUTNI YANGILASH
-1. Supabase SQL Editor orqali migrations/20261031_activation_hwid.sql ni bajaring.
+1. Supabase SQL Editor orqali migrations/20261110_activation_hwid_unique.sql ni bajaring.
    Agar takroriy HWIDlar mavjud bo'lsa, migratsiya xato bilan to'xtaydi:
    SELECT hardware_fingerprint, count(*) FROM public.clubs
    WHERE hardware_fingerprint IS NOT NULL GROUP BY hardware_fingerprint HAVING count(*) > 1;

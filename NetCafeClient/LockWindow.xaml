@@ -1,6 +1,7 @@
 <Window x:Class="NetCafeClient.LockWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:updates="clr-namespace:Softech.Updates"
         Title="Softech NetCafe Standby Lock"
         WindowStyle="None"
         WindowState="Maximized"
@@ -259,7 +260,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="🛡️ Softech Kiosk Guard v2.4 • Himoyalangan Ish Stoli" FontSize="11" FontWeight="SemiBold" Foreground="#475569"/>
+                        <TextBlock Text="{x:Static updates:VersionInfo.ClientLabel}" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8"/>
                     </StackPanel>
                 </Grid>
             </Border>

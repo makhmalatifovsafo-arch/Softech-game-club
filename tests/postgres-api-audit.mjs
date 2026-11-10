@@ -41,6 +41,16 @@ try{
  const command=await api('/api/telemetry/commands/1','POST',{action:'BROADCAST_ANNOUNCEMENT',payload:{title:'Test',message:'Hello'}});assert.equal(command.status,200,JSON.stringify(command));
  assert.equal((await api('/api/clubs/1/manager','PUT',{username:'owner',password:'private-owner-pass'})).status,200);
  const club=(await db.query('SELECT * FROM clubs WHERE id=1')).rows[0];const license=signClubLicense(json(club),club.hardware_fingerprint);
+ const cashierSaved=await api('/api/clubs/1/administrator','PUT',{username:'cashier_sync',password:'cashier-sync-password'});
+ assert.equal(cashierSaved.status,200,JSON.stringify(cashierSaved));
+ assert.equal((await api('/api/telemetry/staff-accounts','POST',{clubId:1},false)).status,401);
+ const staffSync=await api('/api/telemetry/staff-accounts','POST',{clubId:1,signedLicense:license},false);
+ assert.equal(staffSync.status,200,JSON.stringify(staffSync));
+ assert.equal(staffSync.body.administratorAccount.payload.username,'cashier_sync');
+ assert.equal(staffSync.body.managerAccount.payload.username,'owner');
+ const staffAck=await api('/api/telemetry/staff-accounts','POST',{clubId:1,signedLicense:license,administratorRevision:staffSync.body.administratorAccount.payload.revision},false);
+ assert.equal(staffAck.status,200);
+ assert.equal((await api('/api/clubs/1/administrator')).body.administrator.applied,true);
  const {MobileRelay}=await import('../src/services/mobileRelay.js');const {makeRequest}=await import('../public/mobile/crypto.js');
  const relay=new MobileRelay({client});const {publicKey}=crypto.generateKeyPairSync('rsa',{modulusLength:2048});const jwk=publicKey.export({format:'jwk'});
  const registration=await api('/api/mobile/agent','POST',{signedLicense:license,publicKey:jwk},false);assert.equal(registration.status,200,JSON.stringify(registration));

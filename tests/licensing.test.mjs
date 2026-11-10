@@ -92,6 +92,15 @@ test('database failure cannot report successful request or registration',async()
   assert.equal((await api('/api/telemetry/activation-request','POST',{hardwareFingerprint:'HWID-FAILURE-123'},false)).status,503);
   assert.equal((await api('/api/telemetry/clubs','POST',{name:'Test'})).body.success,false);
 });
+
+test('missing activation constraint identifies the required migration without reporting success', async () => {
+  for (const prefix of ['', 'SoftechCloudAdmin/']) {
+    const { CloudActivationService } = await import('../' + prefix + 'src/services/cloudActivationService.js');
+    await assert.rejects(() => CloudActivationService.result(Promise.resolve({
+      data: null, error: { code: '42P10', message: 'no unique constraint matching ON CONFLICT' }
+    })), error => error.statusCode === 503 && error.message.includes('20261110_activation_hwid_unique.sql'));
+  }
+});
 test('blocked and expired clubs cannot activate, rejection remains rejected',async()=>{
   cloud.client=database();
   await activation.createActivationRequest({hardwareFingerprint:'HWID-REJECT-123'});

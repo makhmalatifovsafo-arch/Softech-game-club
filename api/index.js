@@ -1,4 +1,6 @@
 import { handleMobileRoute } from '../src/services/mobileRelay.js';
+import { appVersion } from '../src/services/appVersion.js';
+import { handleStaffSyncRoute } from '../src/services/staffAccountSync.js';
 import { CloudDashboardService } from '../src/services/cloudDashboardService.js';
 import { ManagerAccountService } from '../src/services/managerAccountService.js';
 /**
@@ -78,6 +80,11 @@ export default async function handler(req, res) {
   try {
     // Mobile and other routers must see the same resolved path, including query filters.
     req.url = pathname + url.search;
+    if (pathname === '/api/version' && method === 'GET') {
+      res.setHeader('Cache-Control', 'no-store');
+      return sendJson(res, 200, { app: 'Softech Cloud', version: appVersion });
+    }
+    if(await handleStaffSyncRoute(req,res,{client:SupabaseCloudService.getClient()}))return;
     if(await handleMobileRoute(req,res,{client:SupabaseCloudService.getClient()}))return;
     const managerPath=pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
     if(managerPath && ['GET','PUT'].includes(method)){

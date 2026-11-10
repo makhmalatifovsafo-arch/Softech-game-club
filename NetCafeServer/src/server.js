@@ -1,4 +1,5 @@
 import { autoWakeComputer } from './services/autoWake.js';
+import { normalizeMacAddress } from './services/macAddress.js';
 import { MobileAgent } from './services/mobileAgent.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
 import { createBooking, updateBookingStatus } from './services/bookingService.js';
@@ -156,22 +157,25 @@ function handleRequest(req, res) {
 
   // 1. POST /api/auth/login (Multi-Tenant & SaaS Login)
   if (url.pathname === '/api/auth/login' && req.method === 'POST') {
-    readBody(req, (body) => {
-      const { username, password } = body;
-      if (!username || !password) {
+    readBody(req, async (body) => {
+      const username = typeof body.username === 'string' ? body.username.trim() : '';
+      const password = body.password;
+      if (!username || typeof password !== 'string' || !password) {
         sendJson(res, 400, { error: 'Username va parol kiritilishi shart.' });
         return;
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-      if (!user) {
-        sendJson(res, 401, { error: 'Noto\'g\'ri login yoki parol.' });
-        return;
+      let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+      let syncResult;
+      if (!user || !verifyPassword(password, user.password_hash)) {
+        syncResult = await CloudLicenseService.syncStaffAccounts();
+        user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
       }
-
-      const isValid = verifyPassword(password, user.password_hash);
-      if (!isValid) {
-        sendJson(res, 401, { error: 'Noto\'g\'ri login yoki parol.' });
+      if (!user || !verifyPassword(password, user.password_hash)) {
+        const unavailable = syncResult && !syncResult.success && LicenseManager.licenseData;
+        sendJson(res, unavailable ? 503 : 401, { error: unavailable
+          ? 'Login tasdiqlanmadi. Bulutdagi yangi akkauntni sinxronlab bo‘lmadi. Internet va klub ulanishini tekshirib, qayta urinib ko‘ring.'
+          : 'Noto\'g\'ri login yoki parol.' });
         return;
       }
 
@@ -519,14 +523,16 @@ function handleRequest(req, res) {
       name = name || `PC-${String(pcNumber).padStart(2, '0')}`;
       ipAddress = ipAddress || `192.168.1.${100 + pcNumber}`;
       const validZone = ['STANDARD', 'VIP', 'PLAYSTATION'].includes(zone) ? zone : 'STANDARD';
-      const cleanMac = macAddress ? String(macAddress).trim().toUpperCase() : null;
+      let cleanMac;
+      try { cleanMac = normalizeMacAddress(macAddress); }
+      catch (error) { sendJson(res, 400, { error: error.message }); return; }
       const id = `pc_${effectiveClubId}_${pcNumber}`;
       const validZoneId = (zoneId && typeof zoneId === 'number') ? zoneId : null;
 
       try {
         db.prepare(`
           INSERT INTO computers (id, club_id, pc_number, name, ip_address, mac_address, zone, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'LOCKED')
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'OFFLINE')
         `).run(id, effectiveClubId, pcNumber, name, ipAddress, cleanMac, validZone);
 
         const col = (pcNumber - 1) % 5;
@@ -553,7 +559,10 @@ function handleRequest(req, res) {
             y: posY,
             rotation: 0,
             zoneId: validZoneId,
-            status: 'LOCKED'
+            status: 'OFFLINE',
+            is_online: 0,
+            isOnline: false,
+            lastHeartbeat: null
           }
         });
       } catch (err) {
@@ -574,7 +583,9 @@ function handleRequest(req, res) {
     readBody(req, (body) => {
       const { name, ipAddress, macAddress, zone, zoneId, zone_id } = body;
       const validZone = ['STANDARD', 'VIP', 'PLAYSTATION'].includes(zone) ? zone : 'STANDARD';
-      const cleanMac = macAddress ? String(macAddress).trim().toUpperCase() : null;
+      let cleanMac;
+      try { cleanMac = normalizeMacAddress(macAddress); }
+      catch (error) { sendJson(res, 400, { error: error.message }); return; }
       const cleanName = name !== undefined ? name : null;
       const cleanIp = ipAddress !== undefined ? ipAddress : null;
       const targetZoneId = (zoneId !== undefined ? zoneId : zone_id) ?? null;
@@ -1433,7 +1444,7 @@ function handleRequest(req, res) {
 
     const computers = clubId === null ? db.prepare(`
       SELECT 
-        c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status,
+        c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status, c.last_heartbeat,
         COALESCE(c.zone_id, g.zone_id) as zone_id,
         s.id as session_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
         (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as payment_type,
@@ -1450,7 +1461,7 @@ function handleRequest(req, res) {
       ORDER BY c.club_id ASC, c.pc_number ASC
     `).all() : db.prepare(`
       SELECT 
-        c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status,
+        c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status, c.last_heartbeat,
         COALESCE(c.zone_id, g.zone_id) as zone_id,
         s.id as session_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
         (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as payment_type,
@@ -1527,8 +1538,8 @@ function handleRequest(req, res) {
         }
       }
 
-      const isClientWsConnected = ClientManager.isConnected(pc.id) || ClientManager.isConnected(pc.name) || ClientManager.isConnected(`PC-${String(pc.pc_number).padStart(2, '0')}`);
-      const isOnlineVal = (isClientWsConnected || pc.status === 'AVAILABLE' || pc.status === 'ONLINE' || pc.status === 'OCCUPIED' || pc.status === 'LOCKED') && pc.status !== 'OFFLINE' ? 1 : 0;
+      const isClientWsConnected = ClientManager.clients.get(pc.id)?.socket?.readyState === WebSocket.OPEN;
+      const isOnlineVal = isClientWsConnected ? 1 : 0;
 
       return {
         id: pc.id,
@@ -1541,6 +1552,7 @@ function handleRequest(req, res) {
         status: pc.status,
         is_online: isOnlineVal,
         isOnline: isOnlineVal === 1,
+        lastHeartbeat: pc.last_heartbeat,
         gridX: pc.grid_x ?? 0,
         gridY: pc.grid_y ?? 0,
         x: (pc.x !== undefined && pc.x !== null && pc.x > 0) ? pc.x : (pc.grid_x !== undefined && pc.grid_x !== null ? pc.grid_x * 120 + 40 : 40),
