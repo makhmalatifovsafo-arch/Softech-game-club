@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readdir, readFile } from 'node:fs/promises';
 
 process.env.SUPABASE_URL = '';
 process.env.SUPABASE_SERVICE_ROLE_KEY = '';
@@ -7,6 +8,13 @@ process.env.SUPERADMIN_JWT_SECRET = 'routing-test-access-secret-at-least-32-byte
 process.env.REFRESH_SECRET = 'routing-test-refresh-secret-at-least-32-bytes';
 
 for (const prefix of ['', 'SoftechCloudAdmin/']) {
+  test(prefix + 'deploys one API function with a catch-all rewrite', async () => {
+    const apiDirectory = new URL('../' + prefix + 'api/', import.meta.url);
+    const entries = await readdir(apiDirectory, { recursive: true, withFileTypes: true });
+    assert.deepEqual(entries.filter(entry => entry.isFile()).map(entry => entry.name), ['index.js']);
+    const config = JSON.parse(await readFile(new URL('../' + prefix + 'vercel.json', import.meta.url), 'utf8'));
+    assert.ok(config.rewrites.some(rule => rule.source === '/api/:path*' && rule.destination === '/api/index?route=:path*'));
+  });
   const { default: handler } = await import('../' + prefix + 'api/index.js');
   const { SupabaseCloudService } = await import('../' + prefix + 'src/services/supabaseClient.js');
   async function request(url, body) {
