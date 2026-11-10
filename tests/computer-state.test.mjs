@@ -6,6 +6,13 @@ const context = {};
 vm.runInNewContext(fs.readFileSync('NetCafeServer/public/computer-state.js', 'utf8'), context);
 const state = context.computerState;
 
+test('mobile and desktop use the same computer connection states', () => {
+  const canonical = fs.readFileSync('NetCafeServer/public/computer-state.js', 'utf8');
+  for (const prefix of ['public/', 'SoftechCloudAdmin/public/']) {
+    assert.equal(fs.readFileSync(prefix + 'mobile/computer-state.js', 'utf8'), canonical);
+  }
+});
+
 test('new and legacy locked computers are never online without a live connection', () => {
   for (const status of ['OFFLINE', 'LOCKED', 'AVAILABLE', 'OCCUPIED']) {
     const pc = { status, isOnline: false, is_online: 0 };
