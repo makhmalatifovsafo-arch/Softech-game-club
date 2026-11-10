@@ -1,6 +1,8 @@
 import { autoWakeComputer } from './services/autoWake.js';
 import { normalizeMacAddress } from './services/macAddress.js';
 import { MobileAgent } from './services/mobileAgent.js';
+import { MobileSnapshotSync } from './services/mobileSnapshotSync.js';
+import { mobileCloudUser } from './services/mobileCloudSession.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
 import { createBooking, updateBookingStatus } from './services/bookingService.js';
 import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage } from './services/memberBilling.js';
@@ -87,6 +89,9 @@ function handleRequest(req, res) {
   }
 
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
+  if(mutating && /^\/api\/(sessions\/|bar\/|clients\/topup|shifts\/|bookings)/.test(url.pathname)){
+    res.once('finish',()=>{if(res.statusCode<400)mobileSnapshots.requestSoon();});
+  }
 
   // ==========================================================================
   // SAAS ANTI-PIRACY, HWID & LICENSE MANAGEMENT ENDPOINTS
@@ -1226,13 +1231,30 @@ function handleRequest(req, res) {
         return;
       }
 
-      for (const t of tariffs) {
-        db.prepare(`
-          UPDATE tariffs 
-          SET name = ?, price_per_hour = ?, fixed_price = ?, fixed_duration_minutes = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ? AND (club_id = ? OR ? = 1)
-        `).run(t.name, t.price_per_hour || 0, t.fixed_price || 0, t.fixed_duration_minutes || 60, t.id, clubId, req.user.role === 'superadmin' ? 1 : 0);
-      }
+      // Validate the entire batch before writing, preserving IDs used by sessions.
+      try {
+        const changes = tariffs.map(t => {
+          const existing = db.prepare('SELECT * FROM tariffs WHERE id = ? AND (club_id = ? OR ? = 1)').get(t.id, clubId, req.user.role === 'superadmin' ? 1 : 0);
+          if (!existing) throw new Error('Tarif topilmadi.');
+          const next = { ...existing, ...t };
+          const days = typeof next.days_of_week === 'string' ? JSON.parse(next.days_of_week) : next.days_of_week;
+          if (typeof next.name !== 'string' || !next.name.trim() || next.name.length > 100 ||
+              ![next.price_per_hour, next.fixed_price ?? 0].every(v => Number.isFinite(Number(v)) && Number(v) >= 0) ||
+              !Number.isFinite(Number(next.fixed_duration_minutes ?? 60)) || Number(next.fixed_duration_minutes ?? 60) <= 0 ||
+              (next.start_time != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(next.start_time)) ||
+              (next.end_time != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(next.end_time)) ||
+              (days != null && (!Array.isArray(days) || !days.length || days.some(d => !Number.isInteger(d) || d < 1 || d > 7)))) {
+            throw new Error('Tarif nomi, narxi, vaqt oralig‘i yoki hafta kunlari noto‘g‘ri.');
+          }
+          return { ...next, days_of_week: days == null ? null : JSON.stringify(days) };
+        });
+        db.exec('BEGIN');
+        try {
+          const update = db.prepare(`UPDATE tariffs SET name=?, price_per_hour=?, fixed_price=?, fixed_duration_minutes=?, start_time=?, end_time=?, days_of_week=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`);
+          for (const t of changes) update.run(t.name.trim(), Number(t.price_per_hour), Number(t.fixed_price ?? 0), Number(t.fixed_duration_minutes ?? 60), t.start_time, t.end_time, t.days_of_week, t.id);
+          db.exec('COMMIT');
+        } catch (error) { db.exec('ROLLBACK'); throw error; }
+      } catch (error) { return sendJson(res, 400, { error: error.message }); }
 
       broadcastAdminUpdate();
       sendJson(res, 200, { success: true });
@@ -3078,6 +3100,14 @@ function handleRequest(req, res) {
 
         db.exec('BEGIN TRANSACTION;');
         try {
+          if(validPayMethod==='CLIENT_BALANCE'){
+            const client=db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(userId||null,clubId);
+            if(!client)throw new Error('Balansdan to‘lash uchun shu klub mijozini tanlang.');
+          }
+          if(validPayMethod==='ON_PC_SESSION'){
+            const target=db.prepare("SELECT c.current_session_id FROM computers c JOIN sessions s ON s.id=c.current_session_id AND s.status='ACTIVE' WHERE c.club_id=? AND (c.id=? OR c.pc_number=?)").get(clubId,String(computerId||''),Number(String(computerId||'').replace(/\D/g,''))||-1);
+            if(!target||sessionId&&sessionId!==target.current_session_id)throw new Error('Bar qarzi uchun faol va mos kompyuter seansini tanlang.');
+          }
           let calculatedTotal = 0;
           const processedItems = [];
 
@@ -4195,9 +4225,16 @@ function getLocalLanIps() {
   return results;
 }
 
-const mobileAgent = new MobileAgent({db,getLicense:()=>LicenseManager.getSignedLicense(),getCloudUrl:()=>LicenseManager.cloudUrl,isOperational:()=>LicenseManager.isOperational()&&!CloudLicenseService.isBlocked(),localPort:PORT,staffSession:mobileStaffSession,logout:mobileLogout});
+const mobileOptions={db,getLicense:()=>LicenseManager.getSignedLicense(),getCloudUrl:()=>LicenseManager.cloudUrl,isOperational:()=>LicenseManager.isOperational()&&!CloudLicenseService.isBlocked(),localPort:PORT};
+const mobileAgent = new MobileAgent({...mobileOptions,staffSession:mobileStaffSession,logout:mobileLogout,onMutation:()=>mobileSnapshots.flush(),resolveCloudSession:async grant=>{
+  let user=mobileCloudUser(db,grant,LicenseManager.licenseData);
+  if(!user){await CloudLicenseService.syncStaffAccounts();user=mobileCloudUser(db,grant,LicenseManager.licenseData);}
+  return user?createSessionToken(user).token:null;
+}});
+const mobileSnapshots=new MobileSnapshotSync({...mobileOptions,createSession:createSessionToken,destroySession:mobileLogout});
 server.listen(PORT, '0.0.0.0', () => {
   mobileAgent.start();
+  mobileSnapshots.start();
   const lanIps = getLocalLanIps();
   console.log('================================================================');
   console.log(`🚀 NetCafe Pro Core Engine Server: http://0.0.0.0:${PORT}`);
@@ -4221,6 +4258,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 ServerUpdater.onShutdown = () => {
   mobileAgent.stop();
+  mobileSnapshots.stop();
   HeartbeatMonitor.stop();
   SessionScheduler.stop();
   db.exec('PRAGMA wal_checkpoint(TRUNCATE)');

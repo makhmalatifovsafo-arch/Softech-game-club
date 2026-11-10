@@ -1,4 +1,5 @@
 import { handleMobileRoute } from './services/mobileRelay.js';
+import { handleMobileDashboard } from './services/mobileDashboard.js';
 import { appVersion } from './services/appVersion.js';
 import { handleStaffSyncRoute } from './services/staffAccountSync.js';
 import { ManagerAccountService } from './services/managerAccountService.js';
@@ -69,6 +70,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { app: 'Softech Cloud', version: appVersion });
   }
   if(await handleStaffSyncRoute(req,res,{db:managerDb}))return;
+  if(await handleMobileDashboard(req,res,{db:managerDb}))return;
   if(await handleMobileRoute(req,res,{db:managerDb}))return;
   const managerPath=new URL(req.url || '/', 'http://localhost').pathname.match(/^\/api\/clubs\/(\d+)\/(manager|administrator)$/);
   if(managerPath && ['GET','PUT'].includes(req.method)){

@@ -218,10 +218,25 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     const cloudInspection=new DatabaseSync(path.join(cloud,'data/softech_cloud.db'));
     assert.equal(cloudInspection.prepare('SELECT total_workstations FROM clubs WHERE id=?').get(approved.club.id).total_workstations,24,'Heartbeat must not shrink the licensed PC count');cloudInspection.close();
     assert.equal((await fetch(localUrl+'/api/health')).status,200);
-
-
-
-
+    const reportBeforeStop=await(await fetch(localUrl+'/api/reports/financial',{headers:ownerHeaders})).json();
+    const dashboardLogin=async()=>{
+      const r=await fetch(env.SOFTECH_CLOUD_URL+'/api/mobile/dashboard/login',{method:'POST',headers:jsonHeaders,body:JSON.stringify({clubId:approved.club.id,username:'manager',password:'central-owner-password'})});
+      const data=await r.json();assert.equal(r.status,200,JSON.stringify(data));return data;
+    };
+    let mobile=await dashboardLogin(),snapshot;
+    for(let i=0;i<60;i++){
+      const r=await fetch(env.SOFTECH_CLOUD_URL+'/api/mobile/dashboard/data?resource=reports',{headers:{Authorization:'Bearer '+mobile.token}});
+      snapshot=await r.json();
+      if(r.ok&&JSON.stringify(snapshot.data.breakdown)===JSON.stringify(reportBeforeStop.breakdown))break;
+      await new Promise(resolve=>setTimeout(resolve,500));
+    }
+    assert.deepEqual(snapshot.data?.breakdown,reportBeforeStop.breakdown,s.logs());
+    socket.terminate();const offlineExit=once(s.child,'exit');s.child.kill();await offlineExit;
+    // A fresh login and report fetch must succeed while the real club process is stopped.
+    mobile=await dashboardLogin();
+    const offlineReport=await fetch(env.SOFTECH_CLOUD_URL+'/api/mobile/dashboard/data?resource=reports',{headers:{Authorization:'Bearer '+mobile.token}});
+    assert.equal(offlineReport.status,200);assert.deepEqual((await offlineReport.json()).data.breakdown,reportBeforeStop.breakdown);
+    console.log('PASS cloud dashboard: exact server ledger snapshot and fresh manager login after club shutdown');
   } finally {
     socket?.terminate();
     for (const child of children.reverse()) {

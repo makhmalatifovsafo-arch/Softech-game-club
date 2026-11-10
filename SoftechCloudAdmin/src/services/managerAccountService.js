@@ -66,4 +66,12 @@ export class ManagerAccountService {
     const signature=crypto.createHmac('sha256',process.env.SOFTECH_CLOUD_KEY || 'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026').update('manager-account:'+JSON.stringify(payload)).digest('hex');
     return {payload,signature};
   }
+  async authenticate(clubId, username, password) {
+    const row = await this.latest(clubId);
+    if (!row || row.payload.username !== username || typeof password !== 'string' || password.length > 128) return null;
+    const [salt, hash] = unseal(row.payload.credential, clubId).split(':');
+    const candidate = await new Promise((resolve, reject) => crypto.pbkdf2(password, salt, 100000, 64, 'sha512', (error, value) => error ? reject(error) : resolve(value)));
+    if (!crypto.timingSafeEqual(candidate, Buffer.from(hash, 'hex'))) return null;
+    return { username, role: this.role, revision: Number(row.id) };
+  }
 }
