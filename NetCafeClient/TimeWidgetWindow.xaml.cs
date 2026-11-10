@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -10,8 +11,16 @@ public partial class TimeWidgetWindow : Window
 {
     private int _remainingSeconds = 0;
     private readonly DispatcherTimer _timer;
+    private long? _expiresAtTimestamp;
 
     public event Action? OnLogoutRequested;
+    public event Action? OnSessionExpired;
+
+    private void SetRemainingTime(int seconds)
+    {
+        _remainingSeconds = seconds;
+        _expiresAtTimestamp = seconds < 0 ? null : Stopwatch.GetTimestamp() + (long)seconds * Stopwatch.Frequency;
+    }
 
     public TimeWidgetWindow()
     {
@@ -36,7 +45,7 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            _remainingSeconds = remainingSeconds;
+            SetRemainingTime(remainingSeconds);
             TxtPc.Text = $"PC #{pcNumber}";
             TxtMemberName.Text = $"👤 {username}";
             TxtBalance.Text = $"💳 {balance:N0} UZS";
@@ -57,7 +66,7 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            _remainingSeconds = remainingSeconds;
+            SetRemainingTime(remainingSeconds);
             TxtPc.Text = $"PC #{pcNumber}";
             TxtMemberName.Text = $"👤 {customerName}";
             TxtBalance.Visibility = Visibility.Collapsed;
@@ -74,7 +83,7 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            _remainingSeconds = remainingSeconds;
+            SetRemainingTime(remainingSeconds);
             UpdateDisplay();
         });
     }
@@ -92,23 +101,30 @@ public partial class TimeWidgetWindow : Window
         Dispatcher.Invoke(() =>
         {
             _timer.Stop();
+            _expiresAtTimestamp = null;
             Hide();
         });
     }
 
     private void Timer_Tick(object? sender, EventArgs e)
     {
-        if (_remainingSeconds > 0)
+        if (_expiresAtTimestamp is long deadline)
         {
-            _remainingSeconds--;
+            _remainingSeconds = (int)Math.Max(0, Math.Ceiling((deadline - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency));
             UpdateDisplay();
+            if (_remainingSeconds == 0)
+            {
+                _expiresAtTimestamp = null;
+                _timer.Stop();
+                OnSessionExpired?.Invoke();
+            }
         }
     }
 
     private void UpdateDisplay()
     {
         var ts = TimeSpan.FromSeconds(_remainingSeconds);
-        TxtRemainingTime.Text = $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        TxtRemainingTime.Text = _remainingSeconds < 0 ? "Ochiq seans" : $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
 
         // Agar 5 daqiqadan kam qolsa, qizil/ogohlantiruvchi rang
         if (_remainingSeconds < 300)

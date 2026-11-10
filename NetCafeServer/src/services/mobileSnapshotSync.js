@@ -5,6 +5,7 @@ export class MobileSnapshotSync {
  constructor({db,getLicense,getCloudUrl,isOperational,localPort,createSession,destroySession,fetcher=fetch}){
   Object.assign(this,{db,getLicense,getCloudUrl,isOperational,localPort,createSession,destroySession,fetcher});
   db.exec('CREATE TABLE IF NOT EXISTS mobile_snapshot_cursor(id INTEGER PRIMARY KEY,day TEXT NOT NULL)');
+  db.exec('CREATE TABLE IF NOT EXISTS mobile_report_refresh(day TEXT PRIMARY KEY);CREATE TABLE IF NOT EXISTS mobile_report_cursor(ledger TEXT PRIMARY KEY,last_rowid INTEGER NOT NULL)');
  }
  tick(){
   if(this.inFlight)return this.inFlight;
@@ -45,8 +46,26 @@ export class MobileSnapshotSync {
     if(!r.ok){const data=await r.json().catch(()=>({}));throw Error(data.error||'HTTP '+r.status);}
    };
    await upload(entries);
-   const sendDay=async day=>{const report=BarLedgerService.getDailyFinancialReport({clubId:1,fromDate:day,toDate:day});await upload([{key:'report:'+day,data:{filter:{from:day,to:day},breakdown:report.breakdown,summary:report.summary},capturedAt}]);};
+   const sendDay=async day=>{const report=BarLedgerService.getDailyFinancialReport({clubId:1,fromDate:day,toDate:day});await upload([{key:'report:'+day,data:{accountingVersion:2,filter:{from:day,to:day},breakdown:report.breakdown,summary:report.summary},capturedAt}]);};
+   // A refund can revise an older payment day. Persist that work across restarts
+   // and retry failed uploads before advancing the ordinary history backfill.
+   this.db.exec('BEGIN');
+   try {
+    for(const ledger of ['transactions','client_transactions']){
+     const cursor=this.db.prepare('SELECT last_rowid FROM mobile_report_cursor WHERE ledger=?').get(ledger)?.last_rowid||0;
+     const latest=this.db.prepare(`SELECT COALESCE(MAX(rowid),0) AS n FROM ${ledger}`).get().n;
+     const days=this.db.prepare(`SELECT DISTINCT date(p.created_at,'localtime') AS day FROM ${ledger} p
+      WHERE p.club_id=1 AND (p.rowid>? OR EXISTS(SELECT 1 FROM ${ledger} r
+       WHERE r.rowid>? AND r.club_id=p.club_id AND r.session_id=p.session_id))`).all(cursor,cursor);
+     for(const {day} of days)if(day&&day<today)this.db.prepare('INSERT OR IGNORE INTO mobile_report_refresh(day) VALUES(?)').run(day);
+     this.db.prepare('INSERT INTO mobile_report_cursor VALUES(?,?) ON CONFLICT(ledger) DO UPDATE SET last_rowid=excluded.last_rowid').run(ledger,latest);
+    }
+    this.db.exec('COMMIT');
+   }catch(error){this.db.exec('ROLLBACK');throw error;}
    await sendDay(today);
+   for(const {day} of this.db.prepare('SELECT day FROM mobile_report_refresh ORDER BY day DESC LIMIT 5').all()){
+    await sendDay(day);this.db.prepare('DELETE FROM mobile_report_refresh WHERE day=?').run(day);
+   }
    // Backfill all calendar days, including closed/zero-revenue days. Revisit them
    // on later cycles so refunds and late settlements replace previous snapshots.
    const oldest=this.db.prepare(`SELECT min(day) AS day FROM (

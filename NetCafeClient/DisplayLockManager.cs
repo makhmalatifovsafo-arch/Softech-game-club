@@ -58,14 +58,13 @@ public class DisplayLockManager : IDisposable
 
         _lockWindow.Dispatcher.Invoke(() =>
         {
-            _lockWindow.UnlockWithFadeOut(() =>
+            // Synchronous transition: a delayed fade must never hide a newer lock.
+            _lockWindow.Hide();
+            foreach (var bo in _blackouts)
             {
-                foreach (var bo in _blackouts)
-                {
-                    try { bo.Hide(); } catch { /* ignore */ }
-                }
-                onCompleted?.Invoke();
-            });
+                try { bo.Hide(); } catch { /* ignore */ }
+            }
+            onCompleted?.Invoke();
         });
     }
 

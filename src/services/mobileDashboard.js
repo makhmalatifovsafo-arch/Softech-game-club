@@ -80,9 +80,10 @@ export class MobileDashboard {
    const from=url.searchParams.get('from')||defaultDate,to=url.searchParams.get('to')||from;
    if(!from)throw fail('Server hali hisobot yubormagan. Server dasturini yangilang va bir marta internetga ulang.',409);
    if(!validDate(from)||!validDate(to)||from>to||(Date.parse(to)-Date.parse(from))/86400000>365)throw fail('1–366 kunlik sana oralig‘ini tanlang.');
-   const rows=this.db?this.db.prepare('SELECT * FROM mobile_dashboard_data WHERE club_id=? AND data_key BETWEEN ? AND ? ORDER BY data_key').all(id,'report:'+from,'report:'+to):await this.query(this.client.from('mobile_dashboard_data').select('*').eq('club_id',id).gte('data_key','report:'+from).lte('data_key','report:'+to).order('data_key').limit(366));
+   const snapshots=this.db?this.db.prepare('SELECT * FROM mobile_dashboard_data WHERE club_id=? AND data_key BETWEEN ? AND ? ORDER BY data_key').all(id,'report:'+from,'report:'+to):await this.query(this.client.from('mobile_dashboard_data').select('*').eq('club_id',id).gte('data_key','report:'+from).lte('data_key','report:'+to).order('data_key').limit(366));
+   const rows=snapshots.filter(r=>decode(r.payload).accountingVersion===2);
    const dates=new Set(rows.map(r=>r.data_key.slice(7)));for(let d=Date.parse(from);d<=Date.parse(to);d+=86400000){const date=new Date(d).toISOString().slice(0,10);if(!dates.has(date))missingDates.push(date);}
-   if(!rows.length)throw fail('Tanlangan sanalar hali bulutga sinxronlanmagan. Serverni internetga ulang.',409);
+   if(!rows.length)throw fail('Tanlangan sanalar uchun yangilangan hisobot tayyor emas. Server dasturini yangilang va internetga ulang.',409);
    data=combineDailyReports(rows.map(r=>decode(r.payload)),from,to);
    capturedAt=rows.map(r=>r.captured_at).sort()[0];
   } else {const row=await this.row(id,resource);if(!row)throw fail('Bu bo‘lim hali sinxronlanmagan. Server dasturini yangilang va internetga ulang.',409);data=row.payload;capturedAt=row.captured_at;}
@@ -92,8 +93,8 @@ export class MobileDashboard {
  }
 }
 export function combineDailyReports(reports,from,to){
- const breakdown={receipts:Object.fromEntries(['GAME','BAR','TOPUP','OTHER'].map(k=>[k,{CASH:0,CARD:0}])),cash:0,card:0,total:0,sessionsAndTopups:0,gameBalance:0,barBalance:0,rows:[]};
- for(const report of reports){const b=report.breakdown;for(const k of ['cash','card','total','sessionsAndTopups','gameBalance','barBalance'])breakdown[k]+=Number(b[k]||0);for(const category of Object.keys(breakdown.receipts))for(const method of ['CASH','CARD'])breakdown.receipts[category][method]+=Number(b.receipts?.[category]?.[method]||0);breakdown.rows.push(...b.rows);}
+ const breakdown={receipts:Object.fromEntries(['GAME','BAR','TOPUP','OTHER'].map(k=>[k,{CASH:0,CARD:0}])),cash:0,card:0,total:0,gameReceipts:0,topupReceipts:0,gameBalance:0,barBalance:0,rows:[]};
+ for(const report of reports){const b=report.breakdown;for(const k of ['cash','card','total','gameReceipts','topupReceipts','gameBalance','barBalance'])breakdown[k]+=Number(b[k]||0);for(const category of Object.keys(breakdown.receipts))for(const method of ['CASH','CARD'])breakdown.receipts[category][method]+=Number(b.receipts?.[category]?.[method]||0);breakdown.rows.push(...b.rows);}
  breakdown.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
  const dailyTotals=reports.map(r=>({date:r.filter.from,total:r.breakdown.total,cash:r.breakdown.cash,card:r.breakdown.card})).sort((a,b)=>a.date.localeCompare(b.date));
  const summaryComplete=reports.every(r=>r.summary&&typeof r.summary.barProfit==='number');

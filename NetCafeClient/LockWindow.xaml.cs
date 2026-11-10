@@ -22,8 +22,8 @@ namespace NetCafeClient;
 
 /// <summary>
 /// LockWindow.xaml.cs — Production Client Kiosk Lock Screen Code-Behind.
-/// AAA Gaming Interface, Unbypassable Desktop Confinement, Dynamic Phone Masking,
-/// Plaintext Password Toggle, Zero-Dependency QR Code Generator, and Smooth Unlock Animations.
+/// Lock-only login overlay. Unlocking reveals the club's existing desktop/shell.
+/// Windows secure attention is managed by the OS, not by this window.
 /// </summary>
 public partial class LockWindow : Window, INotifyPropertyChanged
 {
@@ -51,6 +51,10 @@ public partial class LockWindow : Window, INotifyPropertyChanged
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+    private static readonly System.Collections.Generic.Dictionary<IntPtr, bool> TaskbarVisibility = new();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
@@ -102,7 +106,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         LoadDynamicWallpaper();
 
         // 5. Initial QR code generation
-        GenerateDefaultQrToken();
+        // QR sign-in is not exposed in lock-only mode.
     }
 
     // -------------------------------------------------------------------------
@@ -157,10 +161,18 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         try
         {
             IntPtr hTray = FindWindow("Shell_TrayWnd", null);
-            if (hTray != IntPtr.Zero) ShowWindow(hTray, SW_HIDE);
+            if (hTray != IntPtr.Zero)
+            {
+                TaskbarVisibility.TryAdd(hTray, IsWindowVisible(hTray));
+                ShowWindow(hTray, SW_HIDE);
+            }
 
             IntPtr hSecondaryTray = FindWindow("Shell_SecondaryTrayWnd", null);
-            if (hSecondaryTray != IntPtr.Zero) ShowWindow(hSecondaryTray, SW_HIDE);
+            if (hSecondaryTray != IntPtr.Zero)
+            {
+                TaskbarVisibility.TryAdd(hSecondaryTray, IsWindowVisible(hSecondaryTray));
+                ShowWindow(hSecondaryTray, SW_HIDE);
+            }
         }
         catch { /* ignore */ }
     }
@@ -169,11 +181,10 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            IntPtr hTray = FindWindow("Shell_TrayWnd", null);
-            if (hTray != IntPtr.Zero) ShowWindow(hTray, SW_SHOW);
-
-            IntPtr hSecondaryTray = FindWindow("Shell_SecondaryTrayWnd", null);
-            if (hSecondaryTray != IntPtr.Zero) ShowWindow(hSecondaryTray, SW_SHOW);
+            // Preserve a RunPad/custom shell that deliberately hides Explorer's taskbar.
+            foreach (var entry in TaskbarVisibility)
+                ShowWindow(entry.Key, entry.Value ? SW_SHOW : SW_HIDE);
+            TaskbarVisibility.Clear();
         }
         catch { /* ignore */ }
     }
@@ -419,34 +430,21 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     // -------------------------------------------------------------------------
     // Phone Number Masking Engine (+998 (90) 123-45-67)
     // -------------------------------------------------------------------------
-    private void TxtPhone_PreviewTextInput(object sender, TextCompositionEventArgs e)
-    {
-        // Only allow decimal digits
-        if (!char.IsDigit(e.Text, 0))
-        {
-            e.Handled = true;
-            return;
-        }
-
-        e.Handled = true;
-        AppendPhoneDigit(e.Text[0]);
-    }
-
     private void TxtPhone_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Back)
+        if (e.Key == Key.Enter)
         {
             e.Handled = true;
-            RemovePhoneDigit();
+            if (_isPasswordRevealed) TxtPasswordPlain.Focus();
+            else TxtPassword.Focus();
         }
-        else if (e.Key == Key.Enter)
-        {
-            e.Handled = true;
-            if (_isPasswordRevealed)
-                TxtPasswordPlain.Focus();
-            else
-                TxtPassword.Focus();
-        }
+    }
+
+    public static string NormalizeLogin(string input)
+    {
+        string value = input.Trim();
+        return value.StartsWith("+", StringComparison.Ordinal)
+            ? Regex.Replace(value, @"[\s()-]", "") : value;
     }
 
     private void AppendPhoneDigit(char digit)
@@ -592,18 +590,12 @@ public partial class LockWindow : Window, INotifyPropertyChanged
 
     private void SubmitLogin()
     {
-        string phone = GetCleanPhoneNumber();
-        string rawDigits = ExtractPhoneDigits(TxtPhone.Text);
-        string password = _isPasswordRevealed ? TxtPasswordPlain.Text.Trim() : TxtPassword.Password.Trim();
+        string login = NormalizeLogin(TxtPhone.Text);
+        string password = _isPasswordRevealed ? TxtPasswordPlain.Text : TxtPassword.Password;
 
-        if (rawDigits.Length < 9)
+        if (string.IsNullOrWhiteSpace(login))
         {
-            ShowError(_currentLang switch
-            {
-                "RU" => "Пожалуйста, введите полный номер телефона (+998 XX XXX-XX-XX)!",
-                "EN" => "Please enter a valid complete phone number (+998 XX XXX-XX-XX)!",
-                _ => "Iltimos, to'liq telefon raqamingizni kiriting (+998 XX XXX-XX-XX)!"
-            });
+            ShowError("Login yoki telefon raqamingizni kiriting.");
             TxtPhone.Focus();
             return;
         }
@@ -631,7 +623,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         };
 
         int minutes = int.Parse(((System.Windows.Controls.ComboBoxItem)SessionMinutes.SelectedItem).Tag.ToString()!);
-        OnLoginRequested?.Invoke(phone, password, minutes);
+        OnLoginRequested?.Invoke(login, password, minutes);
     }
 
     // -------------------------------------------------------------------------
@@ -694,8 +686,16 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     {
         Dispatcher.Invoke(() =>
         {
+            TxtPhone.Clear();
             TxtPassword.Clear();
             TxtPasswordPlain.Clear();
+            _isPasswordRevealed = false;
+            TxtPassword.Visibility = Visibility.Visible;
+            TxtPasswordPlain.Visibility = Visibility.Collapsed;
+            TxtPhone.IsEnabled = TxtPassword.IsEnabled = TxtPasswordPlain.IsEnabled = true;
+            _adminAccessGranted = false;
+            _adminAuthGeneration++;
+            AdminModalOverlay.Visibility = Visibility.Collapsed;
             HideError();
             BtnLogin.IsEnabled = true;
             BtnLogin.Content = "🚀 KIRISH / SEANS BOSHLASH";
@@ -764,7 +764,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
                 TxtAuthSubHeader.Text = "Играйте свободно используя ваш баланс";
                 BtnTabPhone.Content = "📱 По телефону";
                 BtnTabQr.Content = "⚡ Быстрый QR";
-                LblPhone.Text = "Номер телефона (+998)";
+                LblPhone.Text = "\u041b\u043e\u0433\u0438\u043d / \u0442\u0435\u043b\u0435\u0444\u043e\u043d";
                 LblPassword.Text = "Пароль";
                 BtnLogin.Content = "🚀 ВОЙТИ / НАЧАТЬ СЕАНС";
                 BtnRefreshQr.Content = "🔄 Обновить QR-Код";
@@ -777,7 +777,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
                 TxtAuthSubHeader.Text = "Play seamlessly using your club balance";
                 BtnTabPhone.Content = "📱 By Phone";
                 BtnTabQr.Content = "⚡ Instant QR";
-                LblPhone.Text = "Phone number (+998)";
+                LblPhone.Text = "Login or phone number";
                 LblPassword.Text = "Password";
                 BtnLogin.Content = "🚀 LOGIN / START SESSION";
                 BtnRefreshQr.Content = "🔄 Refresh QR Code";
@@ -790,7 +790,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
                 TxtAuthSubHeader.Text = "Hisobingiz va balansingiz orqali erkin o'ynang";
                 BtnTabPhone.Content = "📱 Telefon orqali";
                 BtnTabQr.Content = "⚡ Tezkor QR-Kod";
-                LblPhone.Text = "Telefon raqami (+998)";
+                LblPhone.Text = "Login yoki telefon raqami";
                 LblPassword.Text = "Parol";
                 BtnLogin.Content = "🚀 KIRISH / SEANS BOSHLASH";
                 BtnRefreshQr.Content = "🔄 Yangi QR-Kod olish";
@@ -829,6 +829,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         Dispatcher.Invoke(() =>
         {
             _adminAccessGranted = false;
+            _adminAuthGeneration++;
             AdminModalOverlay.Visibility = Visibility.Visible;
             AdminAuthStepPanel.Visibility = Visibility.Visible;
             AdminDashboardStepPanel.Visibility = Visibility.Collapsed;
@@ -842,6 +843,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     private void BtnCloseAdminModal_Click(object sender, RoutedEventArgs e)
     {
         _adminAccessGranted = false;
+        _adminAuthGeneration++;
         AdminModalOverlay.Visibility = Visibility.Collapsed;
         TxtAdminPassword.Password = "";
         TxtAdminAuthError.Visibility = Visibility.Collapsed;
@@ -857,6 +859,8 @@ public partial class LockWindow : Window, INotifyPropertyChanged
 
     private bool _adminAccessGranted;
     private bool _adminAuthInProgress;
+    private int _adminAuthGeneration;
+    private readonly EmergencyAccessGuard _emergencyAccess = new();
 
     private async void BtnAdminAuthSubmit_Click(object sender, RoutedEventArgs e)
     {
@@ -867,26 +871,13 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         TxtAdminAuthError.Visibility = Visibility.Collapsed;
         try
         {
-            var source = new Uri(App.Instance?.WsService?.ServerUrl ?? "ws://localhost:5000/ws");
-            var address = new UriBuilder(source) { Scheme = source.Scheme == "wss" ? "https" : "http", Path = "/api/auth/login", Query = "", Fragment = "" };
-            using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(6) };
-            var json = System.Text.Json.JsonSerializer.Serialize(new { username = TxtAdminUsername.Text.Trim(), password = TxtAdminPassword.Password });
-            using var body = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-            using var response = await http.PostAsync(address.Uri, body);
-            if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Menejer login yoki paroli noto‘g‘ri.");
-            using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = document.RootElement;
-            var role = root.TryGetProperty("role", out var roleValue) ? roleValue.GetString() : null;
-            bool allowed = role is "club_owner" or "manager" or "superadmin";
-            if (root.TryGetProperty("token", out var token))
-            {
-                address.Path = "/api/auth/logout";
-                using var logout = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, address.Uri);
-                logout.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.GetString());
-                using var logoutResponse = await http.SendAsync(logout);
-            }
-            if (!allowed) throw new InvalidOperationException("Bu amal uchun klub menejeri akkaunti kerak.");
-            if (AdminModalOverlay.Visibility != Visibility.Visible) return;
+            int generation = _adminAuthGeneration;
+            string password = TxtAdminPassword.Password;
+            TxtAdminPassword.Password = "";
+            string path = System.IO.Path.Combine(AppContext.BaseDirectory, "config.json");
+            string? error = await System.Threading.Tasks.Task.Run(() => _emergencyAccess.Authenticate(path, password));
+            if (generation != _adminAuthGeneration || AdminModalOverlay.Visibility != Visibility.Visible) return;
+            if (error != null) throw new InvalidOperationException(error);
             _adminAccessGranted = true;
             TxtAdminPassword.Password = "";
             AdminAuthStepPanel.Visibility = Visibility.Collapsed;
@@ -897,7 +888,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         }
         catch (Exception error)
         {
-            TxtAdminAuthError.Text = error is InvalidOperationException ? error.Message : "Klub serveri bilan aloqa yo‘q. Server va ulanishni tekshiring.";
+            TxtAdminAuthError.Text = error is InvalidOperationException ? error.Message : "Parolni tekshirishda xatolik. Qayta urinib ko'ring.";
             TxtAdminAuthError.Visibility = Visibility.Visible;
         }
         finally

@@ -1040,7 +1040,7 @@
       <div>
         <h2 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
           <span>📊</span>
-          <span>Moliyaviy va Smena Otchyotlari</span>
+          <span>Moliyaviy hisobotlar</span>
         </h2>
         <p class="text-xs text-[var(--text-muted)] mt-0.5">Klub kassa tushumlari, o'yin seanslari, bar va to'lov turlari bo'yicha batafsil hisobotlar</p>
       </div>
@@ -1052,10 +1052,6 @@
         <button type="button" onclick="exportReportsCSV()" class="px-3 py-1.5 rounded-xl bg-[#141418] hover:bg-[#1a1a20] border border-[#27272a] text-xs font-semibold text-zinc-300 hover:text-white transition flex items-center gap-1.5 cursor-pointer" title="Excel / CSV formatida yuklab olish">
           <span>📥</span>
           <span>CSV / Excel</span>
-        </button>
-        <button type="button" onclick="closeShiftPrompt()" class="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-xs font-semibold text-rose-400 hover:text-rose-300 transition flex items-center gap-1.5 cursor-pointer">
-          <span>🔒</span>
-          <span>Smenani Yopish</span>
         </button>
       </div>
     </div>
@@ -1184,11 +1180,6 @@
             <span>Bar mahsulotlari</span>
             <span id="repTabCount-bar" class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-300">0</span>
           </button>
-          <button type="button" id="repTabBtn-shifts" onclick="switchReportTab('shifts')" class="px-3.5 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-white transition flex items-center gap-1.5 cursor-pointer">
-            <span>💼</span>
-            <span>Smenalar</span>
-            <span id="repTabCount-shifts" class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-zinc-800 text-zinc-300">0</span>
-          </button>
         </div>
         <span id="reportActiveRangeLabel" class="text-xs text-zinc-400 font-mono px-3 py-1 rounded-lg bg-[#0e0e12] border border-[#27272a] hidden sm:inline-block">Bugun</span>
       </div>
@@ -1282,28 +1273,7 @@
         </table>
       </div>
 
-      <!-- Tab 3: Smenalar Ro'yxati Jadvali -->
-      <div id="reportTabContent-shifts" class="hidden overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead class="bg-[#0e0e12] border-b border-[#27272a] text-zinc-400 uppercase tracking-wider text-[10px] font-bold">
-            <tr>
-              <th class="p-3.5">Smena #</th>
-              <th class="p-3.5">Kassir</th>
-              <th class="p-3.5">Ochilgan Vaqt</th>
-              <th class="p-3.5">Yopilgan Vaqt</th>
-              <th class="p-3.5">Boshlang'ich Kassa</th>
-              <th class="p-3.5">Tizim Naqd</th>
-              <th class="p-3.5">Tizim Karta</th>
-              <th class="p-3.5">Topshirilgan Naqd</th>
-              <th class="p-3.5">Kassa Farqi</th>
-              <th class="p-3.5 text-right">Holat</th>
-            </tr>
-          </thead>
-          <tbody id="reportShiftsTableBody" class="divide-y divide-[#27272a]/60 font-mono">
-            <!-- Dynamic rows -->
-          </tbody>
-        </table>
-      </div>
+
     </div>
 
     <!-- 4. KUNLIK TO'LIQ AMALLAR TARIXI (IMMUTABLE AUDIT TRAIL / AUDIT JURNALI) -->

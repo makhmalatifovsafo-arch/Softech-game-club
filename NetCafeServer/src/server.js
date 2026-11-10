@@ -1,3 +1,4 @@
+import { getFinancialBreakdown } from './services/financialBreakdown.js';
 import { autoWakeComputer } from './services/autoWake.js';
 import { normalizeMacAddress } from './services/macAddress.js';
 import { MobileAgent } from './services/mobileAgent.js';
@@ -1764,6 +1765,12 @@ function handleRequest(req, res) {
       `).get(clubId);
     }
 
+    if (canViewFinance) {
+      const today = db.prepare("SELECT date('now','localtime') AS day").get().day;
+      const retained = getFinancialBreakdown(db,today,today,clubId);
+      totalCash = {total:retained.cash}; totalCard = {total:retained.card};
+    }
+
     sendJson(res, 200, {
       totalRevenue: canViewFinance ? (Number(totalCash.total) + Number(totalCard.total)) : null,
       cashRevenue: canViewFinance ? Number(totalCash.total) : null,
@@ -1901,7 +1908,7 @@ function handleRequest(req, res) {
         if (paymentType === 'BALANCE') {
           const debit = db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(finalAmount,customerId,clubId,finalAmount);
           if (debit.changes !== 1) throw new Error('Mijoz balansi yetarli emas yoki mijoz topilmadi.');
-          db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME')").run(clubId,customerId,finalAmount);
+          db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category,session_id) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME',?)").run(clubId,customerId,finalAmount,sessionId);
         }
 
         // 1. Sessiya yaratish (club_id bilan)
@@ -2088,7 +2095,7 @@ function handleRequest(req, res) {
           usedAmount = Math.round((playedMinutes / 60) * hourlyRate);
           refundAmount = 0;
         } else {
-          const intervalCalc = calculateIntervalPrice(startedAt, now, false, sessionRow.club_id || clubId || 1);
+          const intervalCalc = calculateIntervalPrice(startedAt, now, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(compId, sessionRow.club_id || clubId || 1));
           usedAmount = Math.min(totalPaid, Math.max(0, intervalCalc.totalAmount));
           refundAmount = Math.max(0, Math.round(totalPaid - usedAmount));
         }
@@ -2101,9 +2108,9 @@ function handleRequest(req, res) {
           if (memberId && refundAmount > 0) {
             db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(refundAmount, memberId);
             db.prepare(`
-              INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method)
-              VALUES (?, ?, ?, 'REFUND', 'BALANCE')
-            `).run(sessionRow.club_id || 1, memberId, refundAmount);
+              INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method, category, session_id)
+              VALUES (?, ?, ?, 'REFUND', 'BALANCE', 'GAME', ?)
+            `).run(sessionRow.club_id || 1, memberId, refundAmount,sessionRow.id);
           }
         } else if (refundAmount > 0) {
           const origTx = db.prepare('SELECT payment_type FROM transactions WHERE session_id = ? ORDER BY created_at ASC LIMIT 1').get(sessionRow.id);
@@ -2670,7 +2677,7 @@ function handleRequest(req, res) {
           if(isPostpaid) throw new Error('Postpaid guruhni balansdan oldindan to‘lab bo‘lmaydi.');
           const debit=db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(totalAmountAllPcs,customerId,clubId,totalAmountAllPcs);
           if(debit.changes!==1)throw new Error('Mijoz balansi yetarli emas.');
-          db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME')").run(clubId,customerId,totalAmountAllPcs);
+
         }
 
         // Standart soatlik tarif
@@ -2699,6 +2706,8 @@ function handleRequest(req, res) {
             isPostpaid ? 0 : perPcAmount,
             notes
           );
+
+          if (paymentType === 'BALANCE') db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category,session_id) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME',?)").run(clubId,customerId,perPcAmount,sessionId);
 
           // 2. Tranzaksiya (club_id bilan)
           if (!isPostpaid && perPcAmount > 0 && paymentType !== 'BALANCE') {
@@ -3995,9 +4004,7 @@ function handleRequest(req, res) {
         const dayLabel = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`;
 
         // Shu kungi tushum
-        const txRow = clubId === null
-          ? db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE date(created_at, 'localtime') = ? AND amount > 0`).get(dStr)
-          : db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE club_id = ? AND date(created_at, 'localtime') = ? AND amount > 0`).get(clubId, dStr);
+        const netDay = getFinancialBreakdown(db,dStr,dStr,clubId);
 
         const barRow = clubId === null
           ? db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE date(created_at, 'localtime') = ? AND payment_status = 'PAID'`).get(dStr)
@@ -4006,7 +4013,7 @@ function handleRequest(req, res) {
         dailyRevenue.push({
           date: dStr,
           label: dayLabel,
-          revenue: Number(txRow?.total || 0),
+          revenue: netDay.total,
           barRevenue: Number(barRow?.total || 0)
         });
       }
@@ -4049,21 +4056,10 @@ function handleRequest(req, res) {
       });
 
       // 2.3 Daromad manbalari ulushi (O'yinlar vs Bar vs Top-up)
-      const totalGameRevRow = clubId === null
-        ? db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')`).get()
-        : db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE club_id = ? AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%'))`).get(clubId);
-
-      const totalBarRevRow = clubId === null
-        ? db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE payment_status = 'PAID'`).get()
-        : db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE club_id = ? AND payment_status = 'PAID'`).get(clubId);
-
-      const totalTopupRevRow = clubId === null
-        ? db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM client_transactions WHERE type = 'TOPUP'`).get()
-        : db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM client_transactions WHERE club_id = ? AND type = 'TOPUP'`).get(clubId);
-
-      const gameSum = Number(totalGameRevRow?.total || 0);
-      const barSum = Number(totalBarRevRow?.total || 0);
-      const topupSum = Number(totalTopupRevRow?.total || 0);
+      const retained = getFinancialBreakdown(db,'0001-01-01','9999-12-31',clubId);
+      const gameSum = retained.gameReceipts + retained.gameBalance;
+      const barSum = retained.receipts.BAR.CASH + retained.receipts.BAR.CARD + retained.barBalance;
+      const topupSum = retained.topupReceipts;
 
       // 2.4 Kun davomida zalning bandlik soatlari (Peak Hours 00:00 - 23:00)
       const hourlyDistribution = Array(24).fill(0);

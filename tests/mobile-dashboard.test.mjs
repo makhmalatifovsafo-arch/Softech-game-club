@@ -16,7 +16,7 @@ test('multi-day insights sum exact receipts and profit while excluding unpaid ba
  assert.deepEqual(r.products,[{name:'Cola',quantity:3,sales:300}]);
  assert.deepEqual(r.dailyTotals.map(d=>d.date),['2026-11-09','2026-11-10']);
 });
-function report(date,amount){return {filter:{from:date,to:date},breakdown:{cash:amount,card:0,total:amount,sessionsAndTopups:amount,receipts:{GAME:{CASH:amount,CARD:0}},rows:[{id:'tx:'+date,createdAt:date,amount}]}};}
+function report(date,amount){return {accountingVersion:2,filter:{from:date,to:date},breakdown:{cash:amount,card:0,total:amount,gameReceipts:amount,topupReceipts:0,receipts:{GAME:{CASH:amount,CARD:0}},rows:[{id:'tx:'+date,createdAt:date,amount}]}};}
 async function fixture(){
  const db=new DatabaseSync(':memory:');
  db.exec(`CREATE TABLE clubs(id INTEGER PRIMARY KEY,name TEXT,status TEXT,license_expires_at TEXT,hardware_fingerprint TEXT);

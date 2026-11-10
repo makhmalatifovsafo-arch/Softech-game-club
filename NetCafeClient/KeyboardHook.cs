@@ -8,7 +8,7 @@ namespace NetCafeClient;
 
 /// <summary>
 /// Low-Level Keyboard Hook (WH_KEYBOARD_LL = 13) — "Temir Qulf" Keyboard Security Layer.
-/// Barcha tizim tugmalarini (Win, Alt+Tab, Alt+F4, Ctrl+Esc, Ctrl+Alt+Del, Sticky Keys, va h.k.) bloklanadi.
+/// Barcha tizim tugmalarini (Win, Alt+Tab, Alt+F4, Ctrl+Esc, va h.k.) bloklanadi.
 /// LockWindow faol bo'lib, TextBox/PasswordBox fokusda bo'lsa, oddiy belgilar (harflar, raqamlar) o'tkazib yuboriladi.
 /// </summary>
 public static class KeyboardHook
@@ -128,15 +128,8 @@ public static class KeyboardHook
         bool isWin  = (GetAsyncKeyState(VK_LWIN)     & 0x8000) != 0
                    || (GetAsyncKeyState(VK_RWIN)     & 0x8000) != 0;
 
-        // ---- 0. Admin Yashirin Kombinatsiyalari:
-        // 1) Ctrl + Shift + Alt + F12
-        // 2) Ctrl + Alt + K (Kiosk Admin)
-        // 3) Ctrl + Alt + A (Admin Mode)
-        const int VK_K = 0x4B;
-        const int VK_A = 0x41;
-        bool isAdminCombo = (isCtrl && isAlt && isShift && vkCode == VK_F12)
-                         || (isCtrl && isAlt && vkCode == VK_K)
-                         || (isCtrl && isAlt && vkCode == VK_A);
+        // Owner emergency access. The shortcut only opens the password prompt.
+        bool isAdminCombo = isCtrl && isAlt && isShift && vkCode == VK_F12;
 
         if (isAdminCombo)
         {
@@ -174,7 +167,8 @@ public static class KeyboardHook
         if (isAlt && vkCode == VK_ESCAPE)
             return (IntPtr)1;
 
-        // ---- 6. Ctrl + Alt + Del ----
+        // Windows owns the physical Ctrl+Alt+Del secure attention sequence.
+        // A low-level hook only suppresses ordinary/injected Delete events here.
         if (isCtrl && isAlt && vkCode == VK_DELETE)
             return (IntPtr)1;
 

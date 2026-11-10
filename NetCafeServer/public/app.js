@@ -174,7 +174,7 @@ function switchView(viewName) {
   const viewTitleMap = {
     workstations: '🖥️ Kompyuterlar Boshqaruvi',
     bookings: '📅 Band Qilingan Stollar',
-    reports: '📊 Moliyaviy va Smena Otchyotlari',
+    reports: '📊 Moliyaviy hisobotlar',
     stats: '📈 Klub Statistikasi va Analitika',
     bar: '🛒 Bar va POS Savdo Tizimi',
     history: '📜 Smena Amallari Tarixi'
@@ -1205,6 +1205,7 @@ function renderReportShiftsTable(shifts) {
  * Tablar o'rtasida o'tish
  */
 function switchReportTab(tab) {
+  if (!['sessions', 'bar', 'payments'].includes(tab)) tab = 'sessions';
   reportActiveTab = tab;
   ['sessions', 'bar', 'shifts', 'payments'].forEach(t => {
     const cont = document.getElementById(`reportTabContent-${t}`);
@@ -1420,16 +1421,8 @@ function exportReportsCSV() {
   });
   csv += `\n`;
 
-  // Shifts Table
-  csv += `3. SMENALAR RO'YXATI\n`;
-  csv += `Smena #,Kassir,Ochilgan Vaqt,Yopilgan Vaqt,Boshlang'ich Kassa,Tizim Naqd,Tizim Karta,Topshirilgan Naqd,Kassa Farqi,Holat\n`;
-  (reportDataCache.shifts || []).forEach(sh => {
-    csv += `${sh.id},"${sh.cashierName}","${sh.openedAt}","${sh.closedAt || ''}",${sh.startCash},${sh.systemCash},${sh.systemCard},${sh.endCash},${sh.difference},"${sh.isClosed ? 'YOPILGAN' : 'OCHIQ'}"\n`;
-  });
-  csv += `\n`;
-
   // 4. Audit Trail Table
-  csv += `4. KUNLIK TO'LIQ AMALLAR TARIXI (AUDIT JURNALI - IMMUTABLE ZERO-DELETION)\n`;
+  csv += `3. KUNLIK TO'LIQ AMALLAR TARIXI (AUDIT JURNALI - IMMUTABLE ZERO-DELETION)\n`;
   csv += `ID,Vaqt,Sana,Kategoriya,Amal Turi,Sarlavha,Stol/Obyekt,Xodim,Tafsilotlar,Moliyaviy Ta'siri\n`;
   const auditLogs = reportDataCache.audit_trail || reportDataCache.auditTrail || [];
   auditLogs.forEach(a => {
@@ -3635,7 +3628,6 @@ const paymentSections = [
   ['GAME_PAID','Oddiy seanslar',r=>r.category==='GAME' && r.paymentMethod!=='BALANCE'],
   ['GAME_BALANCE','O‘yin — mijoz balansi',r=>r.category==='GAME' && r.paymentMethod==='BALANCE'],
   ['TOPUP','Balans to‘ldirish',r=>r.category==='TOPUP'],
-  ['GAME_TOPUP','Oddiy seans + balans to‘ldirish',r=>r.category==='TOPUP' || (r.category==='GAME' && r.paymentMethod!=='BALANCE')],
   ['BAR_CASH','Bar — naqd',r=>r.category==='BAR' && r.paymentMethod==='CASH'],
   ['BAR_CARD','Bar — karta',r=>r.category==='BAR' && r.paymentMethod==='CARD'],
   ['BAR_BALANCE','Bar — mijoz balansi',r=>r.category==='BAR' && r.paymentMethod==='BALANCE'],
@@ -3659,7 +3651,8 @@ function renderPaymentDetails(section) {
   matrix.innerHTML='<table class="w-full text-left text-sm"><thead><tr><th class="p-2">Kassaga kirim</th><th>Naqd</th><th>Karta / Click / Payme</th><th>Jami</th></tr></thead><tbody>'+
     Object.entries(b.receipts).map(([k,v])=>'<tr><td class="p-2">'+labels[k]+'</td><td>'+formatUzs(v.CASH)+'</td><td>'+formatUzs(v.CARD)+'</td><td>'+formatUzs(v.CASH+v.CARD)+'</td></tr>').join('')+
     '<tr class="font-bold"><td class="p-2">Jami kassa</td><td>'+formatUzs(b.cash)+'</td><td>'+formatUzs(b.card)+'</td><td>'+formatUzs(b.total)+'</td></tr></tbody></table>'+
-    '<p class="text-sm mt-3">Oddiy seanslar + balans to‘ldirish: <strong>'+formatUzs(b.sessionsAndTopups)+'</strong></p>';
+    '<p class="text-sm mt-3">Seans tushumi: <strong>'+formatUzs(b.receipts.GAME.CASH+b.receipts.GAME.CARD)+'</strong></p>' +
+    '<p class="text-sm mt-3">Balans to‘ldirish: <strong>'+formatUzs(b.receipts.TOPUP.CASH+b.receipts.TOPUP.CARD)+'</strong></p>';
   const filters=document.getElementById('reportPaymentFilters'); filters.replaceChildren();
   for (const [key,label] of paymentSections) {
     const button=document.createElement('button'); button.type='button'; button.textContent=label;

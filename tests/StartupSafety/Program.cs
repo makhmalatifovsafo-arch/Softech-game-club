@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json.Nodes;
 using ClientSetup;
 using SoftechCockpit;
+using Softech.Security;
 
 static void Check(bool condition, string label)
 {
@@ -29,6 +30,27 @@ foreach (var address in new[] { "", "http://server:5000/ws", "ws://server:5000/"
 foreach (var previous in new[] { "[]", "null", "broken json" })
     Reject(() => ClientSetupConfiguration.Merge(previous, "ws://server:5000/ws", "PC-01"), "Broken settings silently replaced");
 Reject(() => ClientSetupConfiguration.Merge(null, "ws://server:5000/ws", " "), "Empty name accepted");
+
+// Offline emergency access has no shared/default password and survives normal reconfiguration.
+const string ownerPassword = "test-only owner password";
+var configured = EmergencyPassword.Configure(fresh.ToJsonString(), "", ownerPassword, ownerPassword);
+var verifier = JsonNode.Parse(configured)!["emergencyAccess"];
+Check(!configured.Contains(ownerPassword), "Plaintext emergency password was stored");
+Check(EmergencyPassword.Verify(verifier, ownerPassword), "Owner password rejected");
+Check(!EmergencyPassword.Verify(verifier, "manager") && !EmergencyPassword.Verify(null, ownerPassword), "Unconfigured/default access accepted");
+Check(!EmergencyPassword.Verify(JsonNode.Parse("{}"), ownerPassword), "Damaged verifier accepted");
+Check(!EmergencyPassword.Verify(verifier, ownerPassword.ToUpperInvariant()), "Password must be case-sensitive");
+Check(verifier!["salt"]!.ToString() != EmergencyPassword.Create(ownerPassword)["salt"]!.ToString(), "Salt must be random per installation");
+Reject(() => EmergencyPassword.Configure(fresh.ToJsonString(), "", "", ""), "First install without password accepted");
+Reject(() => EmergencyPassword.Configure(fresh.ToJsonString(), "", "1234", "1234"), "Short emergency password accepted");
+Reject(() => EmergencyPassword.Configure(configured, "wrong", "new-owner-password", "new-owner-password"), "Unauthorized reset accepted");
+Reject(() => EmergencyPassword.Configure(configured, ownerPassword, "new-owner-password", "mismatch"), "Mismatched confirmation accepted");
+var reinstalled = ClientSetupConfiguration.Merge(configured, "ws://new-server:5000/ws", "PC-10");
+Check(EmergencyPassword.Verify(JsonNode.Parse(reinstalled)!["emergencyAccess"], ownerPassword), "Reinstall lost emergency access");
+Check(EmergencyPassword.Configure(reinstalled, ownerPassword, "", "") == reinstalled, "Reinstall should keep the existing verifier");
+var rotated = JsonNode.Parse(EmergencyPassword.Configure(configured, ownerPassword, "new-owner-password", "new-owner-password"))!["emergencyAccess"];
+Check(EmergencyPassword.Verify(rotated, "new-owner-password") && !EmergencyPassword.Verify(rotated, ownerPassword), "Password rotation failed");
+Console.WriteLine("PASS: emergency password hashing, fail-closed validation, provisioning, rotation and reinstall preservation");
 
 var cases = new (HttpStatusCode Status, string Body, bool Expected)[]
 {

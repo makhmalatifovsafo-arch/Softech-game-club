@@ -34,5 +34,5 @@
     </None>
   </ItemGroup>
 
-<ItemGroup><Compile Include="../Shared/Updates/*.cs" Link="Updates/%(Filename)%(Extension)" /></ItemGroup>
+<ItemGroup><Compile Include="../Shared/Updates/*.cs" Link="Updates/%(Filename)%(Extension)" /><Compile Include="../Shared/Security/EmergencyPassword.cs" Link="Security/EmergencyPassword.cs" /></ItemGroup>
 </Project>

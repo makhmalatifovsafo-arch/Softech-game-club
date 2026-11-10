@@ -207,7 +207,10 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     assert.equal((await cashierApi('/api/bookings/'+booking.body.booking.id+'/status','PUT',{status:'CANCELLED'})).status,200);
     const ownerLogin=await ownerStillWorks.json();const ownerHeaders={...jsonHeaders,Authorization:'Bearer '+ownerLogin.token};
     socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01',ipAddress:'127.0.0.1'}}));
-    await checkMobileFlow({cloudUrl:env.SOFTECH_CLOUD_URL,localUrl,clubId:approved.club.id,ownerToken:ownerLogin.token,reconnect:async()=>{
+    await checkMobileFlow({cloudUrl:env.SOFTECH_CLOUD_URL,localUrl,clubId:approved.club.id,ownerToken:ownerLogin.token,ageSession:async(id,minutes)=>{
+      const billingFixture=new DatabaseSync(path.join(club,'netcafe.db'));
+      try{billingFixture.prepare('UPDATE sessions SET started_at=?,ends_at=? WHERE id=?').run(new Date(Date.now()-minutes*60000).toISOString(),new Date(Date.now()+(60-minutes)*60000).toISOString(),id);}finally{billingFixture.close();}
+    },reconnect:async()=>{
       socket.terminate();socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');let restored;socket.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='START_SESSION')restored=m.payload||m;});await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01'}}));for(let i=0;i<60&&!restored;i++)await new Promise(r=>setTimeout(r,50));assert.ok(restored);return restored;
     }});
     const fixture=new DatabaseSync(path.join(club,'netcafe.db'));

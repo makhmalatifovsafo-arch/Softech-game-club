@@ -6,11 +6,6 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
  const clients=async()=>{const rows=await remote('/api/admin/users');return rows.filter(u=>u.role==='client');};
  const pcOptions=(pcs=state.pcs)=>pcs.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
  const clientOptions=users=>'<option value="">Tanlang</option>'+users.map(u=>`<option value="${u.id}">${esc(u.username)} · ${esc(money(u.balance))}</option>`).join('');
- function renderShift(d){
-  const s=d.shift;
-  content().innerHTML=`<section class="card"><span class="eyebrow">ADMINISTRATOR SMENASI</span><h2>${s?'Smena #'+esc(s.id):'Smena ochilmagan'}</h2><p>${s?'Ochilgan: '+esc(s.openedAt):'Ish boshlashdan oldin smenani oching.'}</p><p class="hint">Moliyaviy hisobotlar menejerga tegishli. Siz smenani ochish va topshirishni bajarasiz.</p><button id="shiftAction" class="primary" ${state.meta?.serverOnline?'':'disabled'}>${s?'Smenani topshirish':'Smena ochish'}</button></section>`;
-  $('#shiftAction').onclick=()=>modal(s?'Smenani topshirish':'Smena ochish',`<p>${s?'Kassadagi naqd pulni sanab kiriting.':'Smena boshidagi qaytim pulini kiriting.'}</p><label>${s?'Sanab chiqilgan naqd':'Boshlang‘ich naqd'}<input type="number" name="amount" min="0" step="0.01" required value="0"></label>`,v=>remote('/api/shifts/current','POST',{action:s?'CLOSE':'OPEN',...(s?{endCash:Number(v.amount)}:{startCash:Number(v.amount)})}));
- }
  async function startSession(pc){
   try{online();const users=await clients();
    modal(pc.name+' — yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo‘yicha</option><option value="price">Summa bo‘yicha</option><option value="postpaid">Keyin to‘lash</option></select></label><label>Mijoz nomi<input name="customerName" maxlength="100" value="Mijoz"></label><label>Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label>Summa (summa bo‘yicha seans uchun)<input name="amount" type="number" min="0" value="0"></label>${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}<label>Balans egasi<select name="customerId">${clientOptions(users)}</select></label>`,v=>{
@@ -81,5 +76,5 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
   content().innerHTML=`<h2>Administrator amallari</h2><p class="hint">Serverdagi akkaunt ruxsatlari har bir amalda tekshiriladi.</p><div class="grid">${[['bookings','Bronlar'],['customers','Mijozlar va balans'],['orders','Bar buyurtmalari'],['inventory','Bar ombori'],['batch','Guruh seansi'],['history','Amallar tarixi']].filter(([id])=>id!=='batch'||can('session:manage')).map(([id,label])=>`<button data-operation="${id}" ${state.meta?.serverOnline?'':'disabled'}>${label}</button>`).join('')}</div>`;
   const handlers={bookings,customers:customerList,orders,inventory,history,batch};for(const b of document.querySelectorAll('[data-operation]'))b.onclick=run(handlers[b.dataset.operation]);
  }
- return {renderMenu,renderBar,renderShift,startSession,checkout,transfer,message};
+ return {renderMenu,renderBar,startSession,checkout,transfer,message};
 }

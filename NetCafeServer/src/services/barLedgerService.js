@@ -270,41 +270,10 @@ export class BarLedgerService {
     const fromParam = fromDate || todayStr;
     const toParam = toDate || todayStr;
 
-    // 1. O'yinlar tushumi (Transactions orqali: PREPAID & POSTPAID_SETTLEMENT)
-    const gameCashRow = clubId === null
-      ? db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-          WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
-            AND COALESCE(NULLIF(payment_type, ''), payment_method) = 'CASH'
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
-        `).get(fromParam, toParam)
-      : db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-          WHERE club_id = ?
-            AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
-            AND COALESCE(NULLIF(payment_type, ''), payment_method) = 'CASH'
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))
-        `).get(clubId, fromParam, toParam);
-
-    const gameCardRow = clubId === null
-      ? db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-          WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
-            AND COALESCE(NULLIF(payment_type, ''), payment_method) IN ('CARD', 'CLICK', 'PAYME')
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))`
-        ).get(fromParam, toParam)
-      : db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-          WHERE club_id = ?
-            AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
-            AND COALESCE(NULLIF(payment_type, ''), payment_method) IN ('CARD', 'CLICK', 'PAYME')
-            AND (transaction_type IN ('PREPAID', 'POSTPAID_SETTLEMENT') AND (notes IS NULL OR (notes NOT LIKE 'BAR_SALE%' AND notes NOT LIKE 'CLIENT_TOPUP%' AND notes NOT LIKE '%REFUND%')))`
-        ).get(clubId, fromParam, toParam);
-
-    const gameCash = Number(gameCashRow?.total || 0);
-    const gameCard = Number(gameCardRow?.total || 0);
-    const balanceSql = "SELECT COALESCE(SUM(CASE WHEN type='REFUND' THEN -amount ELSE amount END),0) AS total FROM client_transactions WHERE type IN ('SESSION_DEDUCT','REFUND') AND category='GAME' AND date(created_at,'localtime') BETWEEN ? AND ?" + (clubId === null ? '' : ' AND club_id=?');
-    const gameBalance = Number(db.prepare(balanceSql).get(...(clubId === null ? [fromParam,toParam] : [fromParam,toParam,clubId])).total);
+    const breakdown = getFinancialBreakdown(db, fromParam, toParam, clubId);
+    const gameCash = breakdown.receipts.GAME.CASH;
+    const gameCard = breakdown.receipts.GAME.CARD;
+    const gameBalance = breakdown.gameBalance;
     const gameRevenue = gameCash + gameCard + gameBalance;
 
     // 2. Bar savdosi:
@@ -416,24 +385,8 @@ export class BarLedgerService {
       netProfit: Number(row.net_profit || 0)
     }));
 
-    // 5. Mijoz balansi to'ldirish (Topup)
-    const topupRow = clubId === null
-      ? db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM client_transactions
-          WHERE date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
-            AND type = 'TOPUP'
-        `).get(fromParam, toParam)
-      : db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM client_transactions
-          WHERE club_id = ?
-            AND date(created_at, 'localtime') >= ? AND date(created_at, 'localtime') <= ?
-            AND type = 'TOPUP'
-        `).get(clubId, fromParam, toParam);
-
-    const topupRevenue = Number(topupRow?.total || 0);
-    // Cash receipts already include topups and cash/card bar sales. Never add balance spending twice.
-    const receiptsSql = "SELECT COALESCE(SUM(amount),0) AS total FROM transactions WHERE COALESCE(payment_method,'')!='BALANCE' AND date(created_at,'localtime') BETWEEN ? AND ?" + (clubId === null ? '' : ' AND club_id=?');
-    const totalNetRevenue = Number(db.prepare(receiptsSql).get(...(clubId === null ? [fromParam,toParam] : [fromParam,toParam,clubId])).total);
+    const topupRevenue = breakdown.topupReceipts;
+    const totalNetRevenue = breakdown.total;
     const salesRevenue = gameRevenue + barRevenue;
 
     return {
@@ -454,7 +407,7 @@ export class BarLedgerService {
         topupRevenue
       },
       topSellingItems,
-      breakdown: getFinancialBreakdown(db, fromParam, toParam, clubId)
+      breakdown
     };
   }
 }

@@ -50,6 +50,8 @@ namespace ClientSetup
                 string configPath = Path.Combine(targetDir, "config.json");
                 mergedConfiguration = ClientSetupConfiguration.Merge(
                     File.Exists(configPath) ? File.ReadAllText(configPath) : null, serverUrl, wsName);
+                mergedConfiguration = Softech.Security.EmergencyPassword.Configure(mergedConfiguration,
+                    TxtCurrentEmergencyPassword.Password, TxtEmergencyPassword.Password, TxtEmergencyPasswordConfirm.Password);
             }
             catch (Exception ex)
             {
@@ -158,6 +160,9 @@ namespace ClientSetup
 
                 BtnStartClient.Visibility = Visibility.Visible;
                 BtnInstall.Content = "Qayta Sozlash";
+                TxtCurrentEmergencyPassword.Clear();
+                TxtEmergencyPassword.Clear();
+                TxtEmergencyPasswordConfirm.Clear();
             }
             catch (Exception ex)
             {

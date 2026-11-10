@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.Threading;
 using Microsoft.Win32;
 
@@ -19,6 +20,7 @@ public static class TaskManagerBlocker
 
     private static Thread? _watcherThread;
     private static volatile bool _isRunning = false;
+    private static readonly Dictionary<string, Dictionary<string, (object? Value, RegistryValueKind Kind)>> SavedPolicies = new();
 
     // -----------------------------------------------------------------------
     // Public API
@@ -27,6 +29,7 @@ public static class TaskManagerBlocker
     /// <summary>Barcha cheklovlarni yoqish (Qulflashda chaqiriladi)</summary>
     public static void EnableRestrictions()
     {
+        if (App.IsDevMode) return;
         ApplyPolicies(enable: true);
         StartWatcher();
     }
@@ -50,11 +53,10 @@ public static class TaskManagerBlocker
             using var sysKey = Registry.CurrentUser.CreateSubKey(SystemPoliciesPath, writable: true);
             if (sysKey != null)
             {
-                sysKey.SetValue("DisableTaskMgr",         val, RegistryValueKind.DWord);
-                sysKey.SetValue("DisableLockWorkstation", val, RegistryValueKind.DWord);
-                sysKey.SetValue("DisableChangePassword",  val, RegistryValueKind.DWord);
-                sysKey.SetValue("NoLogoff",               val, RegistryValueKind.DWord);
-                sysKey.SetValue("DisableRegistryTools",   val, RegistryValueKind.DWord);
+                SetTemporaryPolicy(sysKey, SystemPoliciesPath, "DisableTaskMgr", val);
+                SetTemporaryPolicy(sysKey, SystemPoliciesPath, "DisableLockWorkstation", val);
+                SetTemporaryPolicy(sysKey, SystemPoliciesPath, "DisableChangePassword", val);
+                SetTemporaryPolicy(sysKey, SystemPoliciesPath, "DisableRegistryTools", val);
             }
         }
         catch (Exception ex)
@@ -67,9 +69,10 @@ public static class TaskManagerBlocker
             using var expKey = Registry.CurrentUser.CreateSubKey(ExplorerPoliciesPath, writable: true);
             if (expKey != null)
             {
-                expKey.SetValue("NoRun",           val, RegistryValueKind.DWord);
-                expKey.SetValue("NoFind",          val, RegistryValueKind.DWord);
-                expKey.SetValue("NoTrayContextMenu", val, RegistryValueKind.DWord);
+                SetTemporaryPolicy(expKey, ExplorerPoliciesPath, "NoLogoff", val);
+                SetTemporaryPolicy(expKey, ExplorerPoliciesPath, "NoRun", val);
+                SetTemporaryPolicy(expKey, ExplorerPoliciesPath, "NoFind", val);
+                SetTemporaryPolicy(expKey, ExplorerPoliciesPath, "NoTrayContextMenu", val);
             }
         }
         catch (Exception ex)
@@ -78,7 +81,55 @@ public static class TaskManagerBlocker
         }
     }
 
-    private static void RevertPolicies() => ApplyPolicies(enable: false);
+    private static void SetTemporaryPolicy(RegistryKey key, string path, string name, int value)
+    {
+        if (!SavedPolicies.TryGetValue(path, out var saved))
+            SavedPolicies[path] = saved = new();
+        if (!saved.ContainsKey(name))
+        {
+            // Persist the original value so a watchdog restart does not mistake
+            // our temporary restrictions for the club's permanent configuration.
+            using var backup = Registry.CurrentUser.CreateSubKey(BackupPath(path), writable: true);
+            if (backup.GetValue(name + ".Exists") is int exists)
+                saved[name] = (exists == 1 ? backup.GetValue(name + ".Value") : null,
+                    (RegistryValueKind)(int)(backup.GetValue(name + ".Kind") ?? (int)RegistryValueKind.DWord));
+            else
+            {
+                object? previous = key.GetValue(name);
+                var kind = previous == null ? RegistryValueKind.DWord : key.GetValueKind(name);
+                saved[name] = (previous, kind);
+                if (previous != null) backup.SetValue(name + ".Value", previous, kind);
+                backup.SetValue(name + ".Kind", (int)kind, RegistryValueKind.DWord);
+                backup.SetValue(name + ".Exists", previous == null ? 0 : 1, RegistryValueKind.DWord);
+                backup.Flush();
+            }
+        }
+        key.SetValue(name, value, RegistryValueKind.DWord);
+    }
+
+    private static string BackupPath(string path) => @"SOFTWARE\Softech\KioskPolicyBackup\" +
+        (path == SystemPoliciesPath ? "System" : "Explorer");
+
+    private static void RevertPolicies()
+    {
+        // Restore the club's existing shell policies instead of forcing them all off.
+        foreach (var path in SavedPolicies)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(path.Key, writable: true);
+                if (key == null) continue;
+                foreach (var entry in path.Value)
+                {
+                    if (entry.Value.Value == null) key.DeleteValue(entry.Key, throwOnMissingValue: false);
+                    else key.SetValue(entry.Key, entry.Value.Value, entry.Value.Kind);
+                }
+                Registry.CurrentUser.DeleteSubKeyTree(BackupPath(path.Key), throwOnMissingSubKey: false);
+            }
+            catch (Exception ex) { Debug.WriteLine($"[Policies/Restore] {ex.Message}"); }
+        }
+        SavedPolicies.Clear();
+    }
 
     // -----------------------------------------------------------------------
     // Process Watcher — Taskmgr.exe ko'rinishi bilanoq o'ldirish

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../Shared/Security/EmergencyPassword.cs" Link="Security/EmergencyPassword.cs" />
     <Compile Include="../../Installers/ClientSetup/ClientSetupConfiguration.cs" Link="ClientSetupConfiguration.cs" />
     <Compile Include="../../NetCafeServer/Launcher/NodeProcessManager.cs" Link="NodeProcessManager.cs" />
   </ItemGroup>

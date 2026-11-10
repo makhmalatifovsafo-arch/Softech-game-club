@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using NetCafeClient;
@@ -9,7 +9,67 @@ class ClientProtocolAudit
   if(args.Length!=1)throw new Exception("Test websocket URL required");
   File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"config.json"),JsonSerializer.Serialize(new {serverUrl=args[0],pcNumber="PC-07",heartbeatIntervalSeconds=1}));
   var app=new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
-  app.Startup+=async (_,_)=>{
+  System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
+  // Exercise the real login form without showing a window or installing hooks.
+  var loginWindow=new LockWindow();
+  var loginInput=(System.Windows.Controls.TextBox)loginWindow.FindName("TxtPhone");
+  var passwordInput=(System.Windows.Controls.PasswordBox)loginWindow.FindName("TxtPassword");
+  string sentLogin=null,sentPassword=null;int sentMinutes=0;
+  loginWindow.OnLoginRequested+=(login,password,minutes)=>{sentLogin=login;sentPassword=password;sentMinutes=minutes;};
+  loginInput.Text=" gamer1 ";passwordInput.Password=" password with spaces ";
+  typeof(LockWindow).GetMethod("SubmitLogin",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(loginWindow,null);
+  if(sentLogin!="gamer1"||sentPassword!=" password with spaces "||sentMinutes<=0)throw new Exception("Kiosk username/password form failed");
+  if(LockWindow.NormalizeLogin(" +998 (90) 123-45-67 ")!="+998901234567")throw new Exception("Phone login normalization failed");
+  loginWindow.ResetFields();
+  if(loginInput.Text!=""||passwordInput.Password!="")throw new Exception("Previous user's credentials were retained");
+  var root=(FrameworkElement)loginWindow.Content;
+  root.Measure(new Size(1280,800));root.Arrange(new Rect(0,0,1280,800));root.UpdateLayout();
+  var image=new System.Windows.Media.Imaging.RenderTargetBitmap(1280,800,96,96,System.Windows.Media.PixelFormats.Pbgra32);image.Render(root);
+  var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));
+  Directory.CreateDirectory(".test-output");using(var output=File.Create(".test-output/client-lock-login.png"))encoder.Save(output);
+  Console.WriteLine("PASS native kiosk username/phone login form, unchanged password and cleared credentials");
+  // Authenticate entirely offline, without executing exit or changing Windows restrictions.
+  string configPath=Path.Combine(AppContext.BaseDirectory,"config.json");
+  string fixtureConfig=File.ReadAllText(configPath);
+  const string emergencyPassword="fixture-only emergency password";
+  File.WriteAllText(configPath,Softech.Security.EmergencyPassword.Configure(fixtureConfig,"",emergencyPassword,emergencyPassword));
+  var guard=new EmergencyAccessGuard();
+  if(guard.Authenticate(configPath,emergencyPassword)!=null)throw new Exception("Offline owner password rejected");
+  for(int i=0;i<5;i++)if(guard.Authenticate(configPath,"wrong")==null)throw new Exception("Wrong password granted access");
+  if(guard.Authenticate(configPath,emergencyPassword)==null)throw new Exception("Retry lockout bypassed");
+  if(new EmergencyAccessGuard().Authenticate(configPath+".missing",emergencyPassword)==null)throw new Exception("Missing configuration granted access");
+  var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
+  var submit=typeof(LockWindow).GetMethod("BtnAdminAuthSubmit_Click",flags)!;
+  var busy=typeof(LockWindow).GetField("_adminAuthInProgress",flags)!;
+  var granted=typeof(LockWindow).GetField("_adminAccessGranted",flags)!;
+  var emergencyInput=(System.Windows.Controls.PasswordBox)loginWindow.FindName("TxtAdminPassword");
+  void WaitForAuth(){
+   var frame=new System.Windows.Threading.DispatcherFrame();
+   var deadline=DateTime.UtcNow.AddSeconds(10);
+   var timer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(10)};
+   timer.Tick+=(_,_)=>{if(!(bool)busy.GetValue(loginWindow)!||DateTime.UtcNow>deadline)frame.Continue=false;};
+   timer.Start();System.Windows.Threading.Dispatcher.PushFrame(frame);timer.Stop();
+   if((bool)busy.GetValue(loginWindow)!)throw new Exception("Emergency authentication timed out");
+  }
+  loginWindow.OpenAdminMaintenanceModal();emergencyInput.Password="wrong";submit.Invoke(loginWindow,new object[]{null,new RoutedEventArgs()});WaitForAuth();
+  if((bool)granted.GetValue(loginWindow)!)throw new Exception("Wrong password opened maintenance UI");
+  emergencyInput.Password=emergencyPassword;submit.Invoke(loginWindow,new object[]{null,new RoutedEventArgs()});WaitForAuth();
+  if(!(bool)granted.GetValue(loginWindow)!||emergencyInput.Password!="")throw new Exception("Offline emergency UI did not authenticate/clear password");
+  loginWindow.ResetFields();
+  if((bool)granted.GetValue(loginWindow)!)throw new Exception("Reset retained owner authorization");
+  loginWindow.OpenAdminMaintenanceModal();emergencyInput.Password=emergencyPassword;submit.Invoke(loginWindow,new object[]{null,new RoutedEventArgs()});
+  loginWindow.ResetFields();loginWindow.OpenAdminMaintenanceModal();WaitForAuth();
+  if((bool)granted.GetValue(loginWindow)!)throw new Exception("Stale authentication granted access to reopened modal");
+  loginWindow.ResetFields();File.WriteAllText(configPath,fixtureConfig);
+  Console.WriteLine("PASS offline emergency UI, incorrect password, retry cooldown and stale-auth rejection");
+  var widget=new TimeWidgetWindow();int expirations=0;widget.OnSessionExpired+=()=>expirations++;
+  var tick=typeof(TimeWidgetWindow).GetMethod("Timer_Tick",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+  widget.UpdateTime(0);tick.Invoke(widget,new object[]{null,EventArgs.Empty});tick.Invoke(widget,new object[]{null,EventArgs.Empty});
+  if(expirations!=1)throw new Exception("Local prepaid expiry must fire once even without a server STOP");
+  widget.UpdateTime(-1);tick.Invoke(widget,new object[]{null,EventArgs.Empty});
+  if(expirations!=1)throw new Exception("Open-ended session was incorrectly expired");
+  Console.WriteLine("PASS local prepaid expiry and unlimited-session timer");
+  app.Dispatcher.InvokeAsync(async ()=>{
    var service=new WebSocketClientService();var done=new TaskCompletionSource();
    int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false;
    service.OnConnectionStatusChanged+=online=>{if(online)connections++;};
@@ -26,7 +86,7 @@ class ClientProtocolAudit
     Console.WriteLine("PASS native client WebSocket handshake, fragmented messages, zero-balance session, time/config/lock/stop/power dispatch, disconnect and reconnect");
    }catch(Exception error){Console.Error.WriteLine(error.Message);Environment.ExitCode=1;}
    finally{service.Stop();app.Shutdown();}
-  };
+  });
   app.Run();
  }
 }

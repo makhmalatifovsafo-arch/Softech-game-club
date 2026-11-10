@@ -2,7 +2,6 @@ using System;
 using System.Threading;
 using System.Windows;
 using NetCafeClient.Services;
-using NetCafeClient.Services.Security;
 using NetCafeClient.Views;
 using WpfApplication = System.Windows.Application;
 
@@ -24,7 +23,6 @@ public partial class App : WpfApplication
     // ---- Windows ----
     private LockWindow?               _lockWindow;
     private TimeWidgetWindow?         _timeWidget;
-    private ShellWindow?              _shellWindow;
     private MaintenanceToolbarWindow? _maintenanceToolbar;
 
     // ---- Services ----
@@ -83,11 +81,8 @@ public partial class App : WpfApplication
         {
             LockWindow.ShowWindowsTaskbar();
             TaskManagerBlocker.DisableRestrictions();
-            try { UsbGuardService.Instance.RestoreRegistryPolicies(); } catch { }
         };
 
-        // Boshlanishida taskbarni har doim ko'rsatish
-        LockWindow.ShowWindowsTaskbar();
 
         if (!IsDevMode && !Array.Exists(args, arg => arg == "--update-health"))
         {
@@ -97,7 +92,6 @@ public partial class App : WpfApplication
         // ---- 3. Oynalar yaratish ----
         _lockWindow = new LockWindow();
         _timeWidget = new TimeWidgetWindow();
-        _shellWindow = new ShellWindow();
         _maintenanceToolbar = new MaintenanceToolbarWindow();
 
         // MaintenanceToolbar hodisalariga ulanish
@@ -111,12 +105,8 @@ public partial class App : WpfApplication
         // ---- 5. DisplayLockManager ----
         _displayMgr = new DisplayLockManager(_lockWindow);
 
-        // ---- 5b. Hardware Lockdown: USB Guard & Process Guard ----
-        if (!IsDevMode)
-        {
-            UsbGuardService.Instance.Initialize(_lockWindow);
-            ProcessGuardService.Instance.Start();
-        }
+        // Lock-only mode leaves the club's shell, USB policy and launchers alone.
+        // Keyboard and Task Manager restrictions are applied only while locked.
 
         // ---- 6. Dastur ochilishi bilanoq ekranni qulflash ----
         LockScreen();
@@ -137,26 +127,18 @@ public partial class App : WpfApplication
             _ = _wsService.SendQrRefreshRequestAsync();
         };
 
-        // ---- 9. TimeWidget va ShellWindow logout hodisalari ----
+        // ---- 9. TimeWidget logout hodisalari ----
         _timeWidget.OnLogoutRequested += () =>
         {
             _ = _wsService.SendLogoutAsync();
         };
-
-        _shellWindow.OnLogoutRequested += () =>
+        _timeWidget.OnSessionExpired += () => Dispatcher.Invoke(() =>
         {
+            // The local monotonic timer also protects a PC disconnected from LAN.
+            _lockWindow?.ResetFields();
+            LockScreen();
             _ = _wsService.SendLogoutAsync();
-        };
-
-        _shellWindow.OnAdminCallRequested += pc =>
-        {
-            System.Diagnostics.Debug.WriteLine($"[AdminCall] {pc} adminni chaqirdi.");
-        };
-
-        _shellWindow.OnBarOrderSubmitted += (summary, total) =>
-        {
-            System.Diagnostics.Debug.WriteLine($"[BarOrder] {summary} — {total} UZS");
-        };
+        });
 
         // ---- 10. WebSocket hodisalariga ulanish ----
 
@@ -170,7 +152,6 @@ public partial class App : WpfApplication
             Dispatcher.Invoke(() =>
             {
                 _lockWindow?.SetZoneInfo(zoneName, pricePerHour, formattedRate);
-                _shellWindow?.SetZoneInfo(zoneName, pricePerHour, formattedRate);
                 if (!string.IsNullOrEmpty(qrToken))
                 {
                     _lockWindow?.SetQrToken(qrToken);
@@ -191,7 +172,6 @@ public partial class App : WpfApplication
                 _lockWindow?.ResetFields();
                 UnlockScreen();
                 _timeWidget?.StartMemberSession(username, balance, remainingSeconds, _wsService.PcNumber);
-                _shellWindow?.StartMemberSession(username, balance, remainingSeconds, _wsService.PcNumber);
             });
         };
 
@@ -205,7 +185,6 @@ public partial class App : WpfApplication
             Dispatcher.Invoke(() =>
             {
                 _timeWidget?.UpdateBalance(balance);
-                _shellWindow?.UpdateBalance(balance);
             });
         };
 
@@ -218,22 +197,7 @@ public partial class App : WpfApplication
                 _lockWindow?.ResetFields();
                 UnlockScreen();
 
-                // 2. Open Shell Window gracefully with fallback
-                if (_shellWindow == null || !_shellWindow.IsLoaded)
-                {
-                    _shellWindow = new ShellWindow();
-                    _shellWindow.OnLogoutRequested += () => _ = _wsService?.SendLogoutAsync();
-                    _shellWindow.OnAdminCallRequested += pc => System.Diagnostics.Debug.WriteLine($"[AdminCall] {pc} adminni chaqirdi.");
-                    _shellWindow.OnBarOrderSubmitted += (summary, total) => System.Diagnostics.Debug.WriteLine($"[BarOrder] {summary} — {total} UZS");
-                }
-
-                _shellWindow.UpdateSessionData(remainingSeconds, tariffName, _wsService.PcNumber, customerName, clientBalance);
-                _shellWindow.WindowState = WindowState.Maximized;
-                _shellWindow.Topmost = false; // So games can run above it
-                _shellWindow.Show();
-                _shellWindow.Activate();
-                _shellWindow.Focus();
-
+                // Reveal the existing Windows desktop or third-party shell.
                 // 3. Time Widget
                 if (clientBalance.HasValue)
                 {
@@ -249,7 +213,6 @@ public partial class App : WpfApplication
         _wsService.OnUpdateTime += remainingSeconds =>
         {
             _timeWidget?.UpdateTime(remainingSeconds);
-            _shellWindow?.UpdateTime(remainingSeconds);
         };
 
         _wsService.OnStopSession += reason =>
@@ -258,10 +221,8 @@ public partial class App : WpfApplication
             {
                 _isSessionActive = false;
                 _timeWidget?.StopSession();
-                _shellWindow?.StopSession();
                 _lockWindow?.ResetFields();
                 LockScreen();
-                ProcessCleaner.CleanGameProcesses();
                 AutoUpdateService.Instance.OnSessionEnded();
             });
         };
@@ -277,9 +238,7 @@ public partial class App : WpfApplication
             Dispatcher.Invoke(() =>
             {
                 _isSessionActive = false;
-                try { ProcessCleaner.CleanGameProcesses(); } catch { }
                 _timeWidget?.StopSession();
-                _shellWindow?.StopSession();
                 KeyboardHook.Start();
                 TaskManagerBlocker.EnableRestrictions();
                 LockWindow.HideWindowsTaskbar();
@@ -322,7 +281,6 @@ public partial class App : WpfApplication
             KeyboardHook.Stop();
             TaskManagerBlocker.DisableRestrictions();
             LockWindow.ShowWindowsTaskbar();
-            try { UsbGuardService.Instance.RestoreRegistryPolicies(); } catch { }
 
             _displayMgr?.Dispose();
             if (_lockWindow != null)
@@ -332,7 +290,6 @@ public partial class App : WpfApplication
             }
 
             _maintenanceToolbar?.Close();
-            _shellWindow?.Close();
             _timeWidget?.Close();
 
             _instanceMutex?.ReleaseMutex();
@@ -387,12 +344,10 @@ public partial class App : WpfApplication
         switch (action)
         {
             case "SHUTDOWN":
-                ProcessCleaner.CleanGameProcesses();
                 ExecuteShutdown("/s /t 2 /f /c \"Softech Admin buyrug'i bilan o'chirilmoqda\"");
                 break;
 
             case "REBOOT":
-                ProcessCleaner.CleanGameProcesses();
                 ExecuteShutdown("/r /t 2 /f /c \"Softech Admin buyrug'i bilan qayta ishga tushirilmoqda\"");
                 break;
 
@@ -433,9 +388,8 @@ public partial class App : WpfApplication
     {
         _isMaintenance = false;
         _isSessionActive = false;
-        // 1. Vidjet va ShellWindow yashirish
+        // 1. Vidjetni yashirish
         _timeWidget?.StopSession();
-        _shellWindow?.StopSession();
         _maintenanceToolbar?.Hide();
 
         if (IsDevMode)
@@ -507,11 +461,8 @@ public partial class App : WpfApplication
             LockWindow.ShowWindowsTaskbar();
             _displayMgr?.Dispose();
 
-            _shellWindow?.Close();
             _maintenanceToolbar?.Close();
 
-            UsbGuardService.Instance.Dispose();
-            ProcessGuardService.Instance.Dispose();
 
             _instanceMutex?.ReleaseMutex();
             _instanceMutex?.Dispose();

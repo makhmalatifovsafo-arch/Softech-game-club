@@ -287,7 +287,7 @@
                         <TextBlock x:Name="TxtAuthSubHeader" Text="Hisobingiz va balansingiz orqali erkin o'ynang" FontSize="11" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,3,0,16"/>
 
                         <!-- TABS SWITCHER (Telefon / QR-Kod) -->
-                        <Border Background="#090A0F" BorderBrush="#202230" BorderThickness="1" CornerRadius="12" Padding="4" Margin="0,0,0,18">
+                        <Border Visibility="Collapsed" Background="#090A0F" BorderBrush="#202230" BorderThickness="1" CornerRadius="12" Padding="4" Margin="0,0,0,18">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -329,7 +329,7 @@
                         <!-- TAB 1 CONTENT: TELEFON VA PAROL ORQALI KIRISH -->
                         <StackPanel x:Name="PanelPhoneLogin" Visibility="Visible">
                             <!-- Telefon Raqami -->
-                            <TextBlock x:Name="LblPhone" Text="Telefon raqami (+998)" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="LblPhone" Text="Login yoki telefon raqami" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,6"/>
                             <TextBox x:Name="TxtPhone"
                                      Height="42"
                                      Background="#08090D"
@@ -339,9 +339,8 @@
                                      FontSize="14"
                                      FontFamily="Consolas, Segoe UI"
                                      FontWeight="SemiBold"
-                                     Text="+998 "
+                                     Text="" MaxLength="100"
                                      Template="{StaticResource ModernTextBoxTemplate}"
-                                     PreviewTextInput="TxtPhone_PreviewTextInput"
                                      PreviewKeyDown="TxtPhone_PreviewKeyDown"
                                      Margin="0,0,0,14"/>
 
@@ -387,6 +386,7 @@
                                         Background="Transparent"
                                         BorderThickness="0"
                                         Content="👁️"
+                                        Foreground="#CBD5E1"
                                         FontSize="14"
                                         Cursor="Hand"
                                         Click="BtnTogglePassword_Click"
@@ -533,7 +533,7 @@
                                 <TextBlock Text="🛡️" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel>
-                                <TextBlock Text="ADMIN REJIMI VA SOZLAMALAR" FontSize="14" FontWeight="Black" Foreground="#F59E0B"/>
+                                <TextBlock Text="TEXNIK XIZMAT" FontSize="14" FontWeight="Black" Foreground="#F59E0B"/>
                                 <TextBlock Text="Kiosk boshqaruvi va favqulodda chiqish" FontSize="11" Foreground="#94A3B8"/>
                             </StackPanel>
                         </StackPanel>
@@ -546,9 +546,7 @@
 
                     <!-- STEP 1: AUTHENTICATION PANEL -->
                     <StackPanel x:Name="AdminAuthStepPanel">
-                        <TextBlock Text="Menejer logini:" FontSize="12" Foreground="#CBD5E1" Margin="0,0,0,8"/>
-                        <TextBox x:Name="TxtAdminUsername" Text="manager" Height="42" Foreground="White" Background="#0B0C12" BorderBrush="#334155" Template="{StaticResource ModernTextBoxTemplate}" Margin="0,0,0,12"/>
-                        <TextBlock Text="Admin / Menejer paroli:" FontSize="12" FontWeight="SemiBold" Foreground="#CBD5E1" Margin="0,0,0,8"/>
+                        <TextBlock Text="Favqulodda chiqish paroli:" FontSize="12" FontWeight="SemiBold" Foreground="#CBD5E1" Margin="0,0,0,8"/>
                         <PasswordBox x:Name="TxtAdminPassword"
                                      Height="46"
                                      FontSize="14"
@@ -559,7 +557,7 @@
                                      Template="{StaticResource ModernPasswordBoxTemplate}"
                                      KeyDown="TxtAdminPassword_KeyDown"
                                      Margin="0,0,0,6"/>
-                        <TextBlock x:Name="TxtAdminAuthError" Text="Noto'g'ri parol!" FontSize="11" Foreground="#F43F5E" Visibility="Collapsed" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="TxtAdminAuthError" TextWrapping="Wrap" Text="Noto'g'ri parol!" FontSize="11" Foreground="#F43F5E" Visibility="Collapsed" Margin="0,0,0,10"/>
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
                             <Button Content="Bekor qilish" Width="110" Height="38" Background="#1E293B" Foreground="#94A3B8" BorderThickness="0" Cursor="Hand" Margin="0,0,10,0" Click="BtnCloseAdminModal_Click">

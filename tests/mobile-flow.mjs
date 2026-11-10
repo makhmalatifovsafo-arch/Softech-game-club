@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import {makeRequest,open} from '../public/mobile/crypto.js';
-export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,reconnect}){
+export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,reconnect,ageSession}){
  async function cloud(route,body){const r=await fetch(cloudUrl+'/api/mobile/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};}
  let c;for(let i=0;i<100;i++){c=await cloud('connection?club='+clubId);if(c.status===200)break;await new Promise(r=>setTimeout(r,100));}assert.equal(c.status,200,JSON.stringify(c));
  async function mobile(path,method='GET',body,token){const p=await makeRequest(c.body.publicKey,clubId,{path,method,body,...(typeof token==='object'?{cloudGrant:token}:{token})});assert.equal((await cloud('request',p.job)).status,200);assert.equal((await cloud('request',p.job)).status,200,'same request retry must be accepted');assert.equal((await cloud('result',{id:p.job.id,receipt:'wrong'})).status,404);for(let i=0;i<250;i++){const r=await cloud('result',p.job);if(r.body.state==='DONE')return open(p.key,r.body.result,p.aad+':reply');await new Promise(r=>setTimeout(r,40));}throw Error('Mobile timeout '+path);}
@@ -75,7 +75,15 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const desktopRoom=await desktop('/api/zones/'+room.body.zone.id+'/tariffs');assert.equal(desktopRoom.body.tariffs[0].price_per_hour,10000,'Desktop manager must see the mobile price');
  const quote=await desktop('/api/tariffs/calculate','POST',{computerId:pc.id,durationHours:1});assert.equal(quote.body.price,10000,JSON.stringify(quote));assert.equal(quote.body.currentRate,10000);
  const hour=await desktop('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60,amount:23000,paymentType:'CASH'});assert.equal(hour.status,201,JSON.stringify(hour));assert.equal(hour.body.amount,10000,'Desktop one-hour session must charge the new mobile rate, even with a stale UI quote');
- assert.equal((await desktop('/api/sessions/'+hour.body.sessionId+'/stop-early','POST',{paymentType:'CASH'})).status,200);
+ await ageSession(hour.body.sessionId,24);
+ const closedHour=await mobile('/api/sessions/'+hour.body.sessionId+'/stop-early','POST',{paymentType:'CASH'},cashierToken);assert.equal(closedHour.status,200,JSON.stringify(closedHour));assert.equal(closedHour.body.refundAmount,6000);assert.equal(closedHour.body.usedAmount,4000);
+ const netReport=await desktop('/api/reports/financial');const retained=netReport.body.breakdown.rows.filter(r=>r.sessionId===hour.body.sessionId);assert.equal(retained.length,1);assert.equal(retained[0].amount,4000);assert.equal(netReport.body.sessions.find(s=>s.id===hour.body.sessionId).totalAmount,4000);
+ assert.equal(netReport.body.summary.gameCash,netReport.body.breakdown.receipts.GAME.CASH);
+ const header=await desktop('/api/stats');assert.equal(header.body.totalRevenue,netReport.body.breakdown.total,'Header must show retained receipts');
+ const analytics=await desktop('/api/reports/analytics');assert.equal(analytics.status,200,JSON.stringify(analytics));
+ assert.equal(analytics.body.dailyRevenue.find(day=>day.date===netReport.body.filter.from).revenue,netReport.body.breakdown.total,'Daily chart must exclude refunded money');
+ const syncedNet=await(await fetch(cloudUrl+'/api/mobile/dashboard/data?resource=reports',{headers:{Authorization:'Bearer '+cloudLogin.body.token}})).json();assert.deepEqual(syncedNet.data.breakdown,netReport.body.breakdown);
+ console.log('PASS 10000 prepaid - 6000 refund = 4000 in desktop rows, summaries and cloud mobile reports');
  console.log('PASS mobile tariff 10000 -> desktop manager rate 10000 -> desktop quote 10000 -> one-hour session charged 10000');
  assert.equal((await mobile('/api/auth/logout','POST',{},token)).status,200);assert.equal((await mobile('/api/computers','GET',undefined,token)).status,401);
  console.log('PASS real mobile relay: login, RBAC, session start/extend/refund, bar sale, duplicate retry, power safety, exact server report parity and logout');

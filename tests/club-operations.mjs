@@ -95,7 +95,8 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const breakdown=report.body.breakdown;
   assert.equal(breakdown.cash,gameAmount+20000);
   assert.equal(breakdown.card,30000);
-  assert.equal(breakdown.sessionsAndTopups,gameAmount+30000);
+  assert.equal(breakdown.gameReceipts,gameAmount);
+  assert.equal(breakdown.topupReceipts,30000);
   assert.equal(breakdown.receipts.BAR.CASH,10000);
   assert.equal(breakdown.receipts.BAR.CARD,10000);
   assert.equal(breakdown.gameBalance,balanceSession.body.amount);
