@@ -11,13 +11,22 @@
 
   let lastOverlayState = null;
 
-  async function checkLicenseStatus() {
+  async function checkLicenseStatus(refresh = false) {
     try {
-      const res = await fetch('/api/license/status');
+      const res = await fetch('/api/license/status' + (refresh ? '?refresh=1' : ''), { cache: 'no-store' });
       if (!res.ok) return;
       const status = await res.json();
       if (status.hwid) currentServerHwid = status.hwid;
       updateLicenseOverlay(status);
+      const statusText = document.getElementById('activationStatusText');
+      if (statusText && status.state !== 'ACTIVE') {
+        statusText.textContent = status.activationError
+          ? 'Aktivatsiyani tekshirishda xatolik: ' + status.activationError
+          : status.activationStatus === 'PENDING' ? 'So‘rov saqlangan. Super Admin tasdig‘i kutilmoqda.'
+          : status.activationStatus === 'APPROVED' ? 'Tasdiq olindi. ' + (status.lockMessage || 'Litsenziya tekshirilmoqda.')
+          : 'Bulutdagi litsenziya holati tekshirilmoqda...';
+        statusText.style.color = status.activationError ? '#f43f5e' : '#fbbf24';
+      }
     } catch (err) {
       console.warn('⚠️ Litsenziya holatini tekshirishda xatolik:', err);
     }
@@ -220,7 +229,7 @@
   }
 
   window.checkLicenseNow = function () {
-    checkLicenseStatus();
+    return checkLicenseStatus(true);
   };
 
   // ===================================================================

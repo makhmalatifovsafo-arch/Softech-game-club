@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, cpSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 mkdirSync('.test-output', { recursive: true });
 process.env.SOFTECH_CLOUD_DATA_DIR = mkdtempSync(path.resolve('.test-output/licensing-'));
@@ -126,6 +127,26 @@ test('Telegram delivery reports actual failure and callback uses cloud service',
     callback.callback_query.message.chat.id=123;
     assert.equal((await telegram.handleWebhookUpdate(callback,activation)).handled,true);
     assert.equal((await activation.getActivationStatus('HWID-BOT-12345')).status,'APPROVED');
+    const dir = mkdtempSync(path.resolve('.test-output/telegram-approved-'));
+    cpSync('NetCafeServer/src', path.join(dir, 'src'), { recursive: true });
+    const { LicenseManager: local } = await import(pathToFileURL(path.join(dir, 'src/services/licenseManager.js')));
+    const { HwidService } = await import(pathToFileURL(path.join(dir, 'src/services/hwidService.js')));
+    HwidService.getHardwareFingerprint = () => 'HWID-BOT-12345';
+    globalThis.fetch = async () => new Response(JSON.stringify(await activation.getActivationStatus('HWID-BOT-12345')));
+    await local.checkApprovalStatus();
+    assert.equal(local.isOperational(), true, 'Telegram approval must unlock the installed server');
+    assert.equal(local.getSignedLicense().payload.hardwareFingerprint, 'HWID-BOT-12345');
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Cloud unavailable' }), { status: 503 });
+    await local.checkApprovalStatus();
+    assert.equal(local.getStatusReport().activationError, 'Cloud unavailable');
+    let answer;
+    globalThis.fetch = async (url, options) => {
+      if (url.endsWith('/answerCallbackQuery')) answer = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ ok: true, result: {} }) };
+    };
+    await telegram.handleWebhookUpdate(callback, { approveActivation: async () => { throw Error('Approval failed'); } });
+    assert.equal(answer.show_alert, true);
+    assert.match(answer.text, /Approval failed/);
     assert.equal((await api('/api/telegram/webhook','POST',callback,false)).status,403);
   } finally { globalThis.fetch=original;telegram.botToken='MOCK_TEST'; }
 });

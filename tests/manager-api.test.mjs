@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 process.env.VERCEL='1';process.env.SUPERADMIN_JWT_SECRET='test-only-manager-api-secret-at-least-32-bytes';
 process.env.SUPABASE_URL='';process.env.SUPABASE_SERVICE_ROLE_KEY='';
@@ -25,11 +25,11 @@ for(const prefix of ['','SoftechCloudAdmin/'])test(prefix+'Vercel manager API: a
  const {signAccessToken}=await import('../'+prefix+'src/utils/jwt.js');
  const client=storage();cloud.client=client;
  async function api(method,body,role='superadmin',id=7,account='manager'){let result;await handler({url:'/api/clubs/'+id+'/'+account,method,body,headers:{host:'localhost',...(role?{authorization:'Bearer '+signAccessToken({id:1,sub:1,role,username:'test'})}:{})}},{setHeader(){},end(body){result={status:this.statusCode,body:JSON.parse(body)};}});return result;}
- const credentials={username:'club_owner',password:'new-long-password'};
+ const credentials={username:'club_owner',password:'1234'};
  assert.equal((await api('PUT',credentials,null)).status,401);
  assert.equal((await api('GET',{},'manager')).status,401);
  assert.equal((await api('GET')).body.manager.configured,false);
- assert.equal((await api('PUT',{...credentials,password:'short'})).status,400);
+ assert.equal((await api('PUT',{...credentials,password:'123'})).status,400);
  assert.equal((await api('PUT',credentials,'superadmin',8)).status,404);
  const saved=await api('PUT',credentials);assert.equal(saved.status,200,JSON.stringify(saved.body));assert.equal(saved.body.manager.applied,false);
  assert.equal(client.tables.remote_commands[0].command,'RESET_ADMIN_PASSWORD');
@@ -37,7 +37,7 @@ for(const prefix of ['','SoftechCloudAdmin/'])test(prefix+'Vercel manager API: a
  const service=new ManagerAccountService({client});const packet=await service.delivery(client.tables.clubs[0],0);assert.equal(packet.payload.username,'club_owner');assert.ok(packet.signature);
  await service.delivery(client.tables.clubs[0],packet.payload.revision);assert.equal((await api('GET')).body.manager.applied,true);
  const next=await api('PUT',{username:'changed_owner',password:'another-long-password'});assert.ok(next.body.manager.revision>packet.payload.revision);assert.equal((await api('GET')).body.manager.applied,false);
- const staffCredentials={username:'cashier_one',password:'cashier-private-password'};
+ const staffCredentials={username:'cashier_one',password:'5678'};
  assert.equal((await api('PUT',staffCredentials,null,7,'administrator')).status,401);
  assert.equal((await api('PUT',staffCredentials,'administrator',7,'administrator')).status,401);
  const staff=await api('PUT',staffCredentials,'superadmin',7,'administrator');assert.equal(staff.status,200,JSON.stringify(staff));

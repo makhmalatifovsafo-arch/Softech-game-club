@@ -11,18 +11,18 @@ test('super admin manager provisioning is bound, persistent, replay-safe and rev
  const service=new ManagerAccountService({db:cloud}),club={id:7,hardware_fingerprint:'test-hardware'},license={clubId:7,hardwareFingerprint:'test-hardware'};
  try{
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n,0);
-  await assert.rejects(()=>service.save(7,{username:'owner',password:'short'}));
-  await assert.rejects(()=>service.save(8,{username:'owner',password:'long-first-password'}));
-  const saved=await service.save(7,{username:'first_owner',password:'long-first-password'});
+  await assert.rejects(()=>service.save(7,{username:'owner',password:'123'}));
+  await assert.rejects(()=>service.save(8,{username:'owner',password:'1234'}));
+  const saved=await service.save(7,{username:'first_owner',password:'1234'});
   const stored=cloud.prepare('SELECT payload FROM remote_commands').get().payload;
-  assert.ok(!stored.includes('long-first-password'));assert.ok(!stored.includes('passwordHash'));
+  assert.ok(!stored.includes('1234'));assert.ok(!stored.includes('passwordHash'));
   const packet=await service.delivery(club,0);
   assert.throws(()=>applyManagerAccount(db,packet,{...license,clubId:8}));
   assert.throws(()=>applyManagerAccount(db,packet,{...license,hardwareFingerprint:'other'}));
   assert.throws(()=>applyManagerAccount(db,{...packet,payload:{...packet.payload,username:'attacker'}},license));
   assert.equal(applyManagerAccount(db,packet,license),true);
   let owner=db.prepare("SELECT * FROM users WHERE role='club_owner'").get();const ownerId=owner.id;
-  assert.ok(verifyPassword('long-first-password',owner.password_hash));
+  assert.ok(verifyPassword('1234',owner.password_hash));
   const auth=createSessionToken(owner);assert.ok(getSession(auth.token));
   assert.equal(applyManagerAccount(db,packet,license),false);assert.ok(getSession(auth.token),'Repeated delivery must not log owner out');
   assert.equal(getManagerRevision(db,7),saved.revision);
@@ -30,7 +30,7 @@ test('super admin manager provisioning is bound, persistent, replay-safe and rev
   const next=await service.save(7,{username:'renamed_owner',password:'long-second-password'});
   const update=await service.delivery(club,0);assert.equal(applyManagerAccount(db,update,license),true);
   owner=db.prepare('SELECT * FROM users WHERE id=?').get(ownerId);assert.equal(owner.username,'renamed_owner');
-  assert.ok(verifyPassword('long-second-password',owner.password_hash));assert.ok(!verifyPassword('long-first-password',owner.password_hash));
+  assert.ok(verifyPassword('long-second-password',owner.password_hash));assert.ok(!verifyPassword('1234',owner.password_hash));
   assert.equal(getSession(auth.token),null);assert.equal(applyManagerAccount(db,packet,license),false);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n,1);
   assert.equal(fs.existsSync(path.join(dir,'data/manager-credentials.txt')),false);
@@ -50,17 +50,17 @@ test('administrator can be provisioned first, without a manager, and rotates ind
  const manager=new ManagerAccountService({db:cloud}),administrator=new ManagerAccountService({db:cloud,role:'administrator'});
  const club={id:7,hardware_fingerprint:'test-hardware'},license={clubId:7,hardwareFingerprint:'test-hardware'};
  try{
-  await administrator.save(7,{username:'cashier_one',password:'cashier-only-password'});
+  await administrator.save(7,{username:'cashier_one',password:'5678'});
   const packet=await administrator.delivery(club,0);
   assert.throws(()=>applyManagerAccount(db,packet,license));
   assert.equal(applyAdministratorAccount(db,packet,license),true);
   let cashier=db.prepare('SELECT * FROM users').get();const cashierId=cashier.id;
   assert.equal(cashier.role,'administrator');assert.ok(!JSON.parse(cashier.permissions).includes('*'));
-  assert.ok(verifyPassword('cashier-only-password',cashier.password_hash));
+  assert.ok(verifyPassword('5678',cashier.password_hash));
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM users WHERE role='club_owner'").get().n,0);
   const cashierToken=createSessionToken(cashier).token;
   await assert.rejects(()=>manager.save(7,{username:'cashier_one',password:'manager-private-password'}),/loginlari/);
-  await assert.rejects(()=>manager.save(7,{username:'club_owner',password:'cashier-only-password'}),/parollari/);
+  await assert.rejects(()=>manager.save(7,{username:'club_owner',password:'5678'}),/parollari/);
   await manager.save(7,{username:'club_owner',password:'manager-private-password'});
   const ownerPacket=await manager.delivery(club,0);assert.throws(()=>applyAdministratorAccount(db,ownerPacket,license));
   assert.equal(applyManagerAccount(db,ownerPacket,license),true);

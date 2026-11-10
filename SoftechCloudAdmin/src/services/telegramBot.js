@@ -364,6 +364,7 @@ export class TelegramBotService {
       const cb = update.callback_query;
       const data = String(cb.data || '');
       const chatId = cb.message?.chat?.id || this.adminChatId;
+      let callbackError = null;
 
       if (data.startsWith('approve_')) {
         const reqId = parseInt(data.replace('approve_', ''), 10);
@@ -372,6 +373,7 @@ export class TelegramBotService {
           const res = await ActivationService.approveActivation(reqId);
           await this.sendMessage(`✅ <b>LITSENZIYA FAOLLASHTIRILDI!</b>\n🏢 Klub: <b>${res.club.name}</b> (${res.club.total_workstations} PC)\n👤 Keyingi qadam: super admin web panelida Klublar → shu klub → Administrator akkaunti va Menejer akkaunti orqali alohida login-parol belgilang. Administratorni menejerdan oldin tayyorlash mumkin.`, { chatId });
         } catch (err) {
+          callbackError = err.message;
           await this.sendMessage(`⚠️ Xatolik: ${err.message}`, { chatId });
         }
       } else if (data.startsWith('reject_')) {
@@ -381,6 +383,7 @@ export class TelegramBotService {
           await ActivationService.rejectActivation(reqId);
           await this.sendMessage(`❌ So'rov #${reqId} rad etildi.`, { chatId });
         } catch (err) {
+          callbackError = err.message;
           await this.sendMessage(`⚠️ Xatolik: ${err.message}`, { chatId });
         }
       }
@@ -389,7 +392,7 @@ export class TelegramBotService {
         await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callback_query_id: cb.id, text: 'Bajarildi!' })
+          body: JSON.stringify({ callback_query_id: cb.id, text: callbackError ? ('Xatolik: ' + callbackError).slice(0, 200) : 'Bajarildi!', show_alert: !!callbackError })
         });
       } catch {}
 

@@ -100,6 +100,7 @@ function handleRequest(req, res) {
 
   // 1. GET /api/license/status (Joriy litsenziya va HWID holati)
   if (url.pathname === '/api/license/status' && req.method === 'GET') {
+    const respond = () => {
     const report = LicenseManager.getStatusReport();
     if (CloudLicenseService.isBlocked()) {
       report.state = 'BLOCKED';
@@ -109,7 +110,12 @@ function handleRequest(req, res) {
     }
     report.cloudStatus = CloudLicenseService.getStatus();
     report.isCloudBlocked = CloudLicenseService.isBlocked();
+    res.setHeader('Cache-Control', 'no-store');
     sendJson(res, 200, report);
+    };
+    if (url.searchParams.get('refresh') === '1') {
+      LicenseManager.checkApprovalStatus().then(respond);
+    } else respond();
     return;
   }
 

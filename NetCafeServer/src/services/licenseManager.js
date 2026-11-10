@@ -185,14 +185,21 @@ export class LicenseManager {
     }
   }
 
-  static async checkApprovalStatus() {
-    if (this.approvalCheckInFlight) return;
+  static checkApprovalStatus() {
+    if (this.approvalCheckPromise) return this.approvalCheckPromise;
+    this.approvalCheckPromise = this.fetchApprovalStatus().finally(() => { this.approvalCheckPromise = null; });
+    return this.approvalCheckPromise;
+  }
+
+  static async fetchApprovalStatus() {
     this.approvalCheckInFlight = true;
     try {
       const hwid = HwidService.getHardwareFingerprint();
-      const res = await fetch(this.cloudUrl + '/api/telemetry/activation-status?hwid=' + encodeURIComponent(hwid), { signal: AbortSignal.timeout(10000) });
+      const res = await fetch(this.cloudUrl + '/api/telemetry/activation-status?hwid=' + encodeURIComponent(hwid), { signal: AbortSignal.timeout(10000), cache: 'no-store' });
       const data = await readCloudResponse(res);
       if (!res.ok) throw new Error(data.error || 'Bulut javobida xatolik.');
+      if (!['APPROVED', 'PENDING', 'NONE', 'REJECTED'].includes(data.status)) throw new Error('Bulut aktivatsiya holatini qaytarmadi.');
+      this.lastApprovalStatus = data.status;
       if (data.status === 'APPROVED') {
         this.saveSignedLicense(data.signedLicense);
         if (this.approvalPollTimer) { clearInterval(this.approvalPollTimer); this.approvalPollTimer = null; }
@@ -207,7 +214,9 @@ export class LicenseManager {
         if (this.state !== 'LOCKED_BY_ADMIN') this.enforceLockdown('REMOTE_BLOCKED', data.reason);
         else this.lockMessage = data.reason || 'So\'rov rad etildi.';
       }
+      this.lastApprovalError = null;
     } catch (error) {
+      this.lastApprovalError = error.message;
       console.warn('[License] Bulut tekshiruvi:', error.message);
     } finally { this.approvalCheckInFlight = false; }
   }
@@ -541,6 +550,8 @@ export class LicenseManager {
 
   static getStatusReport() {
     return {
+      activationStatus: this.lastApprovalStatus || null,
+      activationError: this.lastApprovalError || null,
       state: this.state,
       isOperational: this.isOperational(),
       hwid: HwidService.getHardwareFingerprint(),

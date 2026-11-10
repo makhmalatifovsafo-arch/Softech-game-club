@@ -232,6 +232,7 @@ export default async function handler(req, res) {
       return sendJson(res, 200, await CloudActivationService.activateByKey(await getParsedBody(req)));
     }
     if (pathname === '/api/telemetry/activation-status' && method === 'GET') {
+      res.setHeader('Cache-Control', 'no-store');
       return sendJson(res, 200, await CloudActivationService.getActivationStatus(url.searchParams.get('hwid')));
     }
     if (pathname === '/api/telemetry/activation-requests' && method === 'GET') {

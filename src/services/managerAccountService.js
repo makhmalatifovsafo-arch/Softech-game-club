@@ -10,7 +10,7 @@ function checked(row,clubId){if(!row)return null;const p=parse(row.payload);cons
 export function validateManagerInput(input) {
   const username=String(input.username || '').trim(), password=String(input.password || '');
   if(!/^[a-zA-Z0-9_.-]{3,40}$/.test(username))throw fail('Login 3–40 ta harf, raqam, nuqta yoki pastki chiziqdan iborat bo‘lsin.');
-  if(password.length<12 || password.length>128)throw fail('Parol 12–128 ta belgidan iborat bo‘lsin.');
+  if(password.length<4 || password.length>128)throw fail('Parol 4–128 ta belgidan iborat bo‘lsin.');
   return {username,password};
 }
 export class ManagerAccountService {
