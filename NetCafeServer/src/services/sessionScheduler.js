@@ -1,3 +1,4 @@
+import { clientSessionState } from './clientSessionState.js';
 import { settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { db } from '../db.js';
 import { ClientManager } from './clientManager.js';
@@ -40,6 +41,8 @@ export class SessionScheduler {
       `).all();
 
       for (const session of activeSessions) {
+        // Refresh financial information once per minute, independent of time-limit mode.
+        if (shouldSyncTime) ClientManager.send(session.computer_id,'SESSION_INFO',clientSessionState(session.id,now.getTime()));
         // Postpaid is open-ended: only cashier checkout may settle and close it.
         if (isPostpaidSession(session)) continue;
         // Agar mijoz balansidan jonli yechiladigan rejim bo'lsa (CLIENT_BALANCE_LIVE:userId)

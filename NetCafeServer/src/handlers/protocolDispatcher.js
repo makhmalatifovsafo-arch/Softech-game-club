@@ -1,3 +1,5 @@
+import { clientSessionState } from '../services/clientSessionState.js';
+import { canClientCloseSession } from '../services/sessionMode.js';
 import { startMemberSession, isMemberSession } from '../services/memberBilling.js';
 import { SessionScheduler } from '../services/sessionScheduler.js';
 import { createClientBarOrder } from '../services/clientBarOrders.js';
@@ -212,7 +214,7 @@ export class ProtocolDispatcher {
         clientBalance: isMemberSession(activeSession) ? db.prepare('SELECT balance FROM users WHERE id=?').get(activeSession.user_id)?.balance : null,
         zoneName,
         pricePerHour,
-        isPostpaid: Boolean(activeSession.notes?.includes('POSTPAID'))
+        ...clientSessionState(activeSession.id)
       });
     }
 
@@ -262,6 +264,10 @@ export class ProtocolDispatcher {
     const activeSession = db.prepare("SELECT * FROM sessions WHERE computer_id = ? AND status = 'ACTIVE'").get(pcId);
     if (activeSession) {
       if (payload?.sessionId && payload.sessionId !== activeSession.id) return;
+      if (!canClientCloseSession(activeSession)) {
+        ClientManager.send(pcId,'CLIENT_LOGOUT_REJECTED',{sessionId:activeSession.id,message:'Bu seansni faqat kassir yopishi mumkin.'});
+        return;
+      }
       SessionScheduler.finishSession(activeSession, { reason: 'LOGOUT' });
     }
   }

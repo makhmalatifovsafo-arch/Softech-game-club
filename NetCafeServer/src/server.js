@@ -1,3 +1,4 @@
+import { clientSessionState } from './services/clientSessionState.js';
 import { validateSchedule } from './services/tariffValidation.js';
 import { getFinancialBreakdown } from './services/financialBreakdown.js';
 import { autoWakeComputer } from './services/autoWake.js';
@@ -1976,7 +1977,7 @@ function handleRequest(req, res) {
           remainingSeconds: isPostpaid ? -1 : Math.round(finalDuration * 60),
           customerName: customerName || 'Mijoz',
           clientBalance: paymentType === 'BALANCE' ? db.prepare('SELECT balance FROM users WHERE id=? AND club_id=?').get(customerId,clubId)?.balance : null,
-          isPostpaid: !!isPostpaid
+          ...clientSessionState(sessionId)
         };
 
         ClientManager.send(resolvedCompId, 'START_SESSION', sessionPayload);
@@ -2441,7 +2442,7 @@ function handleRequest(req, res) {
           remainingSeconds: isPostpaid ? -1 : remainingSeconds,
           customerName: session.customer_name || 'Mijoz',
           clientBalance: isMemberSession(session) ? db.prepare('SELECT balance FROM users WHERE id=? AND club_id=?').get(session.user_id,session.club_id)?.balance : null,
-          isPostpaid
+          ...clientSessionState(session.id)
         });
 
         broadcastAdminUpdate();
@@ -2724,7 +2725,7 @@ function handleRequest(req, res) {
             endsAt: endsAt.getTime(),
             remainingSeconds: isPostpaid ? -1 : Math.round(perPcDurationMins * 60),
             customerName,
-            isPostpaid: !!isPostpaid
+            ...clientSessionState(sessionId)
           });
 
           });

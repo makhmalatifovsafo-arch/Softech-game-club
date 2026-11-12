@@ -789,6 +789,7 @@ function migrateFinancialSchema() {
 
     for (const [table,column,type] of [
       ['sessions','prepaid_rate_plan','TEXT'], ['sessions','prepaid_settled_at','TEXT'],
+      ['sessions','client_self_service','INTEGER NOT NULL DEFAULT 0'],
       ['sessions','billing_last_at','TEXT'], ['sessions','billing_remainder','REAL NOT NULL DEFAULT 0'],
       ['client_transactions','session_id','TEXT'], ['bar_orders','request_id','TEXT']
     ]) {

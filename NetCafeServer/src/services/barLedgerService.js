@@ -1,3 +1,4 @@
+import { postpaidGameBill } from './clientSessionState.js';
 import { isMemberSession, isPrepaidMember, prepaidRefund, settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
 import { db, getClubSettings } from '../db.js';
@@ -54,20 +55,8 @@ export class BarLedgerService {
 
     // 1. O'yin vaqti narxi hisob-kitobi
     let gameBill = 0;
-    const settings = getClubSettings(targetClubId);
-
-    if (isPostpaid) {
-      if (settings?.vip_pricing_mode === 'CUSTOM') {
-        const rate = settings.vip_custom_price || 15000;
-        gameBill = Math.round((playedMinutes / 60) * rate);
-      } else {
-        const intervalCalc = calculateIntervalPrice(session.started_at, new Date(now), true, targetClubId, resolveZoneIdForComputer(session.computer_id, targetClubId));
-        gameBill = Math.round(intervalCalc.totalAmount || 0);
-      }
-    } else {
-      // Prepaid seans: agar oldindan to'langan bo'lsa
-      gameBill = Number(session.paid_amount || session.total_amount || 0);
-    }
+    if (isPostpaid) gameBill = postpaidGameBill(session,now);
+    else gameBill = Number(session.paid_amount || session.total_amount || 0);
     if (refund) gameBill = refund.usedAmount;
 
     // 2. Ushbu seansga/stolda biriktirilgan tasdiqlangan va to'lanmagan bar buyurtmalari

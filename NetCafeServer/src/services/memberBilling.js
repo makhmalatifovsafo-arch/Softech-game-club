@@ -1,3 +1,4 @@
+import { clientSessionState } from './clientSessionState.js';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { verifyPassword } from '../auth.js';
@@ -49,10 +50,11 @@ export function startMemberSession(pcId, username, password, durationMinutes) {
       .run(id,pc.club_id,pc.id,rate.tariffId || db.prepare('SELECT id FROM tariffs WHERE club_id=? ORDER BY price_per_hour LIMIT 1').get(pc.club_id)?.id,user.id,user.username,now.toISOString(),endsAt,amount,amount,'CLIENT_BALANCE_PREPAID:'+user.id,JSON.stringify(rates));
     db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category,session_id) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME',?)").run(pc.club_id,user.id,amount,id);
     db.prepare("UPDATE computers SET status='OCCUPIED',current_session_id=? WHERE id=?").run(id,pc.id);
+    db.prepare('UPDATE sessions SET client_self_service=1 WHERE id=?').run(id);
     db.exec('COMMIT');
   } catch(e) { db.exec('ROLLBACK'); throw e; }
   return {sessionId:id,username:user.username,customerName:user.username,clientBalance:Number(user.balance)-amount,balance:Number(user.balance)-amount,amount,
-    remainingSeconds:durationMinutes*60,totalMinutes:durationMinutes,durationMinutes,endsAt,tariffName:rate.name,isPostpaid:false};
+    remainingSeconds:durationMinutes*60,totalMinutes:durationMinutes,durationMinutes,endsAt,tariffName:rate.name,...clientSessionState(id)};
 }
 
 export function prepaidRefund(session, now = new Date()) {
