@@ -25,6 +25,16 @@ for(const prefix of ['', 'SoftechCloudAdmin/']){
   assert.equal(inspector.club.ping_ms,null);
   assert.equal(inspector.kassa.refundsSum,null);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM club_workstations_cache').get().n,0);
+  for (const pcs of [[{pcNumber:1,status:'AVAILABLE'},{pcNumber:2,status:'OFFLINE'}],[{pcNumber:2,status:'OFFLINE'}],[]]) {
+    TelemetryService.updateClubHeartbeat(id,{workstations:pcs,totalWorkstations:999});
+    const row=TelemetryService.getAllClubsWithLiveMetrics().find(c=>c.id===id);
+    assert.equal(row.actual_workstations,pcs.length);
+    assert.equal(row.total_workstations,10,'Reported inventory must not modify the license limit');
+    assert.equal(TelemetryService.getGlobalMetricsSummary().workstations.totalNetwork,pcs.length);
+    assert.equal(TelemetryService.getClubDetailedInspector(id).workstations.length,pcs.length);
+    TelemetryService.updateClubHeartbeat(id,{});
+    assert.equal(TelemetryService.getClubDetailedInspector(id).workstations.length,pcs.length,'Missing snapshot must preserve the last inventory');
+  }
   db.close();
  });
 }

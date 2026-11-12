@@ -117,14 +117,18 @@ export class SupabaseCloudService {
 
       if (error) throw error;
 
-      return (data || []).map(club => {
+      return await Promise.all((data || []).map(async club => {
+        const { count, error: countError } = await client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', club.id);
+        if (countError) throw countError;
         const isOnline = this.isHeartbeatOnline(club.last_heartbeat_at || club.last_heartbeat);
         return {
           ...club,
+          actual_workstations: count ?? 0,
+          occupied_pcs_now: isOnline ? Number(club.occupied_pcs || 0) : 0,
           is_online_now: isOnline,
           status_display: isOnline ? (club.status === 'ACTIVE' ? 'ONLINE' : club.status) : 'OFFLINE'
         };
-      });
+      }));
     } catch (err) {
       console.warn('⚠️ [Supabase] Klublar ro\'yxatini olishda xatolik:', err.message);
       throw Object.assign(Error('Bulut bazasini o‘qib bo‘lmadi.'),{statusCode:503});
@@ -143,8 +147,11 @@ export class SupabaseCloudService {
         .maybeSingle();
 
       if(error)throw error;if(!data)return null;
+      const { count, error: countError } = await client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', clubId);
+      if (countError) throw countError;
       return {
         ...data,
+        actual_workstations: count ?? 0,
         is_online_now: this.isHeartbeatOnline(data.last_heartbeat_at || data.last_heartbeat)
       };
     } catch (err) {
@@ -291,6 +298,12 @@ export class SupabaseCloudService {
           }, { onConflict: 'club_id,pc_number' });
           if(cached.error)throw new Error('Kompyuterlar holati saqlanmadi.');
         }
+        // The heartbeat contains the complete inventory, including offline PCs.
+        // Remove rows absent from this snapshot; an empty inventory removes all.
+        let removal = client.from('club_workstations_cache').delete().eq('club_id', club.id);
+        if (payload.workstations.length) removal = removal.lt('updated_at', nowIso);
+        const removed = await removal;
+        if (removed.error) throw new Error('Eski kompyuterlar holati tozalanmadi.');
       }
 
       return {

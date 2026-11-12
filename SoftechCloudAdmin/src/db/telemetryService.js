@@ -103,18 +103,7 @@ export class TelemetryService {
 
     const createdId = Number(result.lastInsertRowid);
 
-    // Boshlang'ich kompyuterlar keshini yaratish (PC-01 dan PC-XX gacha)
-    for (let i = 1; i <= finalTotalWorkstations; i++) {
-      const pcNum = `PC-${String(i).padStart(2, '0')}`;
-      let zone = 'STANDARD';
-      if (i <= 4 && finalTotalWorkstations >= 12) zone = 'VIP';
-      else if (i <= 8 && finalTotalWorkstations >= 16) zone = 'PRO';
-
-      db.prepare(`
-        INSERT OR IGNORE INTO club_workstations_cache (club_id, pc_number, zone_name, status)
-        VALUES (?, ?, ?, 'OFFLINE')
-      `).run(createdId, pcNum, zone);
-    }
+    // Inventory is populated only by the club server, never from its license limit.
 
     // Boshlang'ich kunlik metrika yozuvi
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -137,7 +126,7 @@ export class TelemetryService {
     server_version,
     totalWorkstations,
     total_workstations,
-    workstations = [],
+    workstations,
     dailyMetrics = null
   } = {}) {
     const club = this.getClubById(clubId);
@@ -147,7 +136,7 @@ export class TelemetryService {
 
     const lanIp = serverLanIp || server_lan_ip || club.server_lan_ip;
     const version = serverVersion || server_version || club.server_version;
-    const totalPcs = parseInt(totalWorkstations || total_workstations || club.total_workstations, 10);
+    const totalPcs = club.total_workstations;
 
     // Klub holatini tekshirish (Litsenziya muddati o'tgan bo'lsa SUSPENDED_PAYMENT)
     const isLicenseExpired = new Date(club.license_expires_at).getTime() < Date.now();
@@ -166,7 +155,7 @@ export class TelemetryService {
     `).run(newStatus, lanIp, version, totalPcs, clubId);
 
     // 2. Agar ishchi o'rinlari (workstations) ro'yxati yuborilgan bo'lsa, keshni yangilaymiz
-    if (Array.isArray(workstations) && workstations.length > 0) {
+    if (Array.isArray(workstations)) {
       this.syncWorkstationsCache(clubId, workstations);
     }
 
@@ -249,7 +238,7 @@ export class TelemetryService {
         playHours: Number(revenueStats?.total_play_hours || 0)
       },
       workstations: {
-        totalNetwork: Number(clubStats?.total_network_pcs || 0),
+        totalNetwork: Number(pcStats?.cached_pcs_count || 0),
         occupiedNow: Number(pcStats?.occupied_pcs || 0),
         availableNow: Number(pcStats?.available_pcs || 0),
         offlineNow: Number(pcStats?.offline_pcs || 0)
@@ -335,6 +324,7 @@ export class TelemetryService {
 
     db.exec('BEGIN TRANSACTION;');
     try {
+      db.prepare('DELETE FROM club_workstations_cache WHERE club_id=?').run(clubId);
       for (const pc of workstations) {
         upsertStmt.run(
           clubId,
@@ -397,6 +387,7 @@ export class TelemetryService {
     const rows = db.prepare(`
       SELECT 
         c.*,
+        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id=c.id) as actual_workstations,
         COALESCE(m.total_daily_revenue, 0) as today_revenue,
         COALESCE(m.total_sessions_count, 0) as today_sessions,
         COALESCE(m.bar_revenue, 0) as today_bar_revenue,

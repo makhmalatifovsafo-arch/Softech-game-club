@@ -2287,6 +2287,84 @@ function handleBarClientSelect(userId) {
 /**
  * Savdoni yakunlash va backendga yuborish
  */
+async function openPcBarOrder(pcId) {
+  if (document.getElementById('pcBarOrderDialog')) return;
+  const pc = computersData.find(c => c.id === pcId);
+  const sessionId = pc?.activeSession?.sessionId;
+  if (!sessionId) { showToast('Avval kompyuterda seans oching.', 'warning'); return; }
+  const dialog = document.createElement('dialog');
+  dialog.id = 'pcBarOrderDialog';
+  dialog.className = 'rounded-2xl p-6 bg-zinc-900 text-white border border-zinc-700';
+  dialog.style.cssText = 'width:min(560px,95vw);max-height:85vh;overflow:auto';
+  dialog.innerHTML = `<h2 class="text-lg font-bold"></h2>
+    <p class="text-sm text-zinc-400 my-2">Mahsulotlar seans hisobiga yoziladi. To‘lov seans yakunida olinadi.</p>
+    <input type="search" placeholder="Mahsulot qidirish…" class="w-full p-2 rounded bg-zinc-800 my-2" aria-label="Mahsulot qidirish">
+    <form><div data-products>Yuklanmoqda…</div><p data-error role="alert" class="text-rose-400 my-2"></p>
+    <p data-total class="font-bold my-3">Jami: 0 UZS</p>
+    <div class="flex gap-3"><button type="button" data-close class="p-2 rounded bg-zinc-800">Bekor qilish</button>
+    <button type="submit" class="p-2 rounded bg-emerald-700" disabled>Kompyuter hisobiga qo‘shish</button></div></form>`;
+  dialog.querySelector('h2').textContent = pc.name + ' — Bar';
+  document.body.append(dialog);
+  let busy = false;
+  dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.querySelector('[data-close]').onclick = () => { if (!busy) dialog.close(); };
+  dialog.showModal();
+  const error = dialog.querySelector('[data-error]');
+  const submit = dialog.querySelector('[type=submit]');
+  const rows = [];
+  try {
+    const response = await fetch('/api/bar/items', { headers: { Authorization: `Bearer ${authToken}` } });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Mahsulotlarni yuklab bo‘lmadi.');
+    if (!dialog.isConnected) return;
+    const list = dialog.querySelector('[data-products]');
+    list.textContent = '';
+    for (const product of (data.items || []).filter(p => p.stockQuantity > 0 && p.isActive !== false)) {
+      const label = document.createElement('label');
+      label.className = 'flex items-center justify-between gap-3 py-2 border-b border-zinc-700';
+      const text = document.createElement('span');
+      text.textContent = `${product.name} — ${Number(product.sellPrice).toLocaleString()} UZS (qoldiq: ${product.stockQuantity})`;
+      const input = document.createElement('input');
+      input.type = 'number'; input.min = '0'; input.max = String(product.stockQuantity); input.step = '1'; input.value = '0';
+      input.className = 'w-20 p-2 rounded bg-zinc-800';
+      input.setAttribute('aria-label', product.name + ' miqdori');
+      label.append(text, input); list.append(label);
+      rows.push({ product, input, label });
+      input.oninput = () => {
+        const total = rows.reduce((sum, row) => sum + Number(row.input.value || 0) * row.product.sellPrice, 0);
+        dialog.querySelector('[data-total]').textContent = `Jami: ${total.toLocaleString()} UZS`;
+      };
+    }
+    if (!rows.length) list.textContent = 'Omborda mavjud mahsulot yo‘q.';
+    submit.disabled = !rows.length;
+    dialog.querySelector('[type=search]').oninput = e => {
+      const search = e.target.value.toLocaleLowerCase();
+      rows.forEach(row => { row.label.style.display = row.product.name.toLocaleLowerCase().includes(search) ? '' : 'none'; });
+    };
+  } catch (err) { error.textContent = err.message; }
+  dialog.querySelector('form').onsubmit = async e => {
+    e.preventDefault();
+    if (busy) return;
+    const items = rows.map(row => ({ barItemId: row.product.id, quantity: Number(row.input.value || 0) })).filter(row => row.quantity > 0);
+    if (!items.length) { error.textContent = 'Kamida bitta mahsulot tanlang.'; return; }
+    busy = true; submit.disabled = true; error.textContent = '';
+    try {
+      const response = await fetch('/api/bar/orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ items, computerId: pcId, sessionId, paymentMethod: 'ON_PC_SESSION', paymentStatus: 'PENDING_AT_CHECKOUT' })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Buyurtma saqlanmadi.');
+      dialog.close();
+      showToast(`${pc.name}: ${Number(data.order?.totalAmount || 0).toLocaleString()} UZS hisobga qo‘shildi.`, 'success');
+      await Promise.allSettled([fetchData(), loadBarProducts(), loadBarOrders()]);
+      if (typeof renderHistoryView === 'function') renderHistoryView();
+    } catch (err) { error.textContent = err.message; }
+    finally { busy = false; submit.disabled = false; }
+  };
+}
+
 async function submitBarOrder() {
   if (barCart.length === 0) {
     if (typeof showToast === 'function') showToast('Savat bo\'sh! Mahsulot tanlang.', 'warning');

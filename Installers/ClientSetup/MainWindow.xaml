@@ -118,8 +118,8 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Server WebSocket URL manzili:" FontSize="13" FontWeight="SemiBold" Foreground="#D1D5DB" Margin="0,0,0,6"/>
-                            <TextBox x:Name="TxtServerUrl" Text="" ToolTip="Klub serveri IP manzilini kiriting: ws://SERVER_IP:5000/ws" FontSize="13" Background="#1F2937" Foreground="#6EE7B7" BorderBrush="#374151" Padding="10,8" VerticalContentAlignment="Center"/>
+                            <TextBlock Text="Server IP manzili:" FontSize="13" FontWeight="SemiBold" Foreground="#D1D5DB" Margin="0,0,0,6"/>
+                            <TextBox x:Name="TxtServerUrl" Text="" ToolTip="Masalan: 192.168.199.10" FontSize="13" Background="#1F2937" Foreground="#6EE7B7" BorderBrush="#374151" Padding="10,8" VerticalContentAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="2">

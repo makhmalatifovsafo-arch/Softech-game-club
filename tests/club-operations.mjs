@@ -49,6 +49,16 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal(sale.status,201,JSON.stringify(sale.body));
   const pending=await api('/api/bar/orders','POST',{items:[{barItemId:id,quantity:1}],paymentMethod:'ON_PC_SESSION',computerId:pc.id,sessionId});
   assert.equal(pending.status,201,JSON.stringify(pending.body));
+  const preview = await api('/api/sessions/'+sessionId+'/checkout-preview');
+  assert.equal(preview.body.barBill,5000,'Context-menu session order must be included in checkout');
+  const orderDb = new DatabaseSync(databasePath);
+  try {
+    const saved = orderDb.prepare('SELECT computer_id, session_id, payment_status FROM bar_orders WHERE session_id=?').get(sessionId);
+    const actualPc = orderDb.prepare('SELECT pc_number FROM computers WHERE id=?').get(pc.id);
+    assert.equal(saved.computer_id, actualPc.pc_number,'Reports must store the canonical PC number, not digits extracted from its ID');
+    assert.equal(saved.payment_status,'PENDING_AT_CHECKOUT');
+  } finally { orderDb.close(); }
+  assert.ok((await api('/api/bar/orders','POST',{items:[{barItemId:id,quantity:1}],paymentMethod:'ON_PC_SESSION',computerId:pc.id,sessionId:'stale-session'})).status>=400,'An old dialog must not charge a replacement session');
   let report=await api('/api/reports/financial');
   assert.equal(report.status,200,JSON.stringify(report.body));
   assert.equal(report.body.summary.gameRevenue,gameAmount,'Bar cash must not count as game revenue');

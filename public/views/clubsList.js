@@ -87,7 +87,7 @@ export function getFilteredAndSortedClubs() {
 
     if (clubsListState.sortBy === 'PCS') {
       // Kompyuterlar soni bo'yicha kamayish tartibida
-      return (Number(b.total_workstations) || 0) - (Number(a.total_workstations) || 0);
+      return (Number(b.actual_workstations) || 0) - (Number(a.actual_workstations) || 0);
     }
 
     if (clubsListState.sortBy === 'OFFLINE') {
@@ -181,9 +181,9 @@ function getClubStatusBadge(club) {
  * Alohida Shisha Klub Kartochkasi
  */
 function renderClubCard(club) {
-  const totalPcs = Math.max(1, Number(club.total_workstations) || 0);
+  const totalPcs = Number(club.actual_workstations) || 0;
   const occupiedPcs = Math.min(totalPcs, Number(club.occupied_pcs_now) || 0);
-  const occupancyPercent = Math.round((occupiedPcs / totalPcs) * 100);
+  const occupancyPercent = totalPcs ? Math.round((occupiedPcs / totalPcs) * 100) : 0;
   const revenueFormatted = (Number(club.today_revenue) || 0).toLocaleString();
   const dutyCashier = club.duty_cashier || (club.owner_name ? (club.owner_name.split(' ')[0].toLowerCase() + '_admin') : 'Ali_admin');
   const pingDisplay = club.is_online_now ? `${club.ping_ms || 18}ms` : 'Uzilgan';
@@ -385,7 +385,7 @@ function renderClubDetailModal() {
   const club = clubsListState.selectedClub;
   if (!club) return '';
 
-  const totalPcs = Number(club.total_workstations) || 0;
+  const totalPcs = Number(club.actual_workstations) || 0;
   const occupiedPcs = Number(club.occupied_pcs_now) || 0;
   const availablePcs = Math.max(0, totalPcs - occupiedPcs);
   const revenueFormatted = (Number(club.today_revenue) || 0).toLocaleString();
@@ -516,7 +516,7 @@ export function renderClubsDirectoryView() {
   const onlineCount = clubsListState.allClubs.filter(c => c.is_online_now).length;
 
   container.innerHTML = `
-    <div class="space-y-4 pb-20 animate-fade-in">
+    <div data-live-clubs="directory" class="space-y-4 pb-20 animate-fade-in">
       <!-- Top Title & Live Counter -->
       <div class="club-directory-heading flex items-center justify-between pt-1">
         <div>

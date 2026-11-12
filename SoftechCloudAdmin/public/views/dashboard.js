@@ -4,7 +4,7 @@ const activationHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'
  * Optimized for One-Hand Mobile Use, Touch Gestures & PWA Standalone Mode
  */
 
-import { initClubsDirectory, renderClubsDirectoryView } from './clubsList.js';
+import { initClubsDirectory, renderClubsDirectoryView, fetchClubsDirectory } from './clubsList.js';
 import { fetchClubInspectorData, renderClubInspectorView } from './clubDetail.js';
 import { initBillingView } from './billing.js';
 import { initAnalyticsView } from './analytics.js';
@@ -374,7 +374,7 @@ function renderClubsList() {
       ${list.map(club => {
         const isOnline = Boolean(club.is_online_now);
         const revenueFormatted = (club.today_revenue || 0).toLocaleString();
-        const totalPcs = club.total_workstations || 0;
+        const totalPcs = club.actual_workstations || 0;
         const occupiedPcs = club.occupied_pcs_now || 0;
 
         let statusBadge = '';
@@ -456,7 +456,7 @@ export function renderDashboard() {
     </div>
 
     <!-- Main Container -->
-    <div class="space-y-4 pb-4">
+    <div data-live-clubs="dashboard" class="space-y-4 pb-4">
       ${renderActivationRequestsBanner()}
       ${renderMetricsCards()}
       ${renderFilters()}
@@ -717,3 +717,20 @@ export async function initExecutiveDashboard() {
 document.addEventListener('DOMContentLoaded', () => {
   initExecutiveDashboard();
 });
+
+// Refresh only the visible monitoring view, without interrupting input or navigation.
+let liveClubsRefreshing = false;
+setInterval(async () => {
+  const marker = document.querySelector('[data-live-clubs]');
+  if (!marker || document.hidden || liveClubsRefreshing || state.isRefreshing ||
+      !localStorage.getItem('softech_access_token') || document.activeElement?.matches('input,select,textarea')) return;
+  liveClubsRefreshing = true;
+  try {
+    if (marker.dataset.liveClubs === 'directory') await fetchClubsDirectory();
+    else await Promise.all([fetchSummaryData(), fetchClubsData()]);
+    if (!marker.isConnected || document.activeElement?.matches('input,select,textarea')) return;
+    if (marker.dataset.liveClubs === 'directory') renderClubsDirectoryView();
+    else renderDashboard();
+  } catch { /* Keep the last received inventory while offline. */ }
+  finally { liveClubsRefreshing = false; }
+}, 30000);

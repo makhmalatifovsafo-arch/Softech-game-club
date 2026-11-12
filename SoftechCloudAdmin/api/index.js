@@ -154,7 +154,7 @@ export default async function handler(req, res) {
       const totalClubs = clubs.length;
       const onlineClubs = clubs.filter(c => c.is_online_now).length;
       const occupiedNow = clubs.reduce((sum, c) => sum + (c.occupied_pcs || 0), 0);
-      const totalNetwork = clubs.reduce((sum, c) => sum + (c.total_workstations || 0), 0);
+      const totalNetwork = clubs.reduce((sum, c) => sum + Number(c.actual_workstations || 0), 0);
       const reportDate = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
       const metrics = await new CloudDashboardService(SupabaseCloudService.client).rows('club_metrics',q=>q.eq('record_date',reportDate));
       const todayTotal = metrics.reduce((sum,m)=>sum+Number(m.total_daily_revenue||0),0);

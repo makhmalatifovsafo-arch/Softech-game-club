@@ -3113,9 +3113,12 @@ function handleRequest(req, res) {
             const client=db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(userId||null,clubId);
             if(!client)throw new Error('Balansdan to‘lash uchun shu klub mijozini tanlang.');
           }
+          let targetPc = null;
           if(validPayMethod==='ON_PC_SESSION'){
-            const target=db.prepare("SELECT c.current_session_id FROM computers c JOIN sessions s ON s.id=c.current_session_id AND s.status='ACTIVE' WHERE c.club_id=? AND (c.id=? OR c.pc_number=?)").get(clubId,String(computerId||''),Number(String(computerId||'').replace(/\D/g,''))||-1);
-            if(!target||sessionId&&sessionId!==target.current_session_id)throw new Error('Bar qarzi uchun faol va mos kompyuter seansini tanlang.');
+            const reference = String(computerId || '');
+            const number = /^(?:PC-)?\d+$/i.test(reference) ? Number(reference.replace(/^PC-/i, '')) : -1;
+            targetPc=db.prepare("SELECT c.current_session_id, c.pc_number FROM computers c JOIN sessions s ON s.id=c.current_session_id AND s.status='ACTIVE' WHERE c.club_id=? AND (c.id=? OR c.pc_number=?) ORDER BY CASE WHEN c.id=? THEN 0 ELSE 1 END LIMIT 1").get(clubId,reference,number,reference);
+            if(!targetPc||sessionId&&sessionId!==targetPc.current_session_id)throw new Error('Bar qarzi uchun faol va mos kompyuter seansini tanlang.');
           }
           let calculatedTotal = 0;
           const processedItems = [];
@@ -3183,13 +3186,8 @@ function handleRequest(req, res) {
 
           if (validPayMethod === 'ON_PC_SESSION') {
             effectivePayStatus = 'PENDING_AT_CHECKOUT';
-            if (!targetSessionId && (computerId || targetCompNum)) {
-              const pcRow = db.prepare('SELECT current_session_id, pc_number FROM computers WHERE id = ? OR pc_number = ?').get(computerId, targetCompNum);
-              if (pcRow) {
-                targetSessionId = pcRow.current_session_id || null;
-                targetCompNum = pcRow.pc_number;
-              }
-            }
+            targetSessionId = targetPc.current_session_id;
+            targetCompNum = targetPc.pc_number;
           }
 
           const insertOrderStmt = db.prepare(`

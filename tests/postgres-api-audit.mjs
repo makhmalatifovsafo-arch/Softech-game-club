@@ -5,8 +5,8 @@ const db=await PGlite.create();
 const ident=v=>{if(!/^[a-z_][a-z0-9_]*$/.test(v))throw Error('Invalid SQL identifier');return '"'+v+'"';};
 const json=v=>JSON.parse(JSON.stringify(v));
 // Supabase-shaped test adapter executes real PostgreSQL SQL, including RPC and constraints.
-const client={from(table){let operation='SELECT',values,filters=[],sort=table==='mobile_agents'?'club_id':'id',ascending=true,start=0,end=999,one=false,conflict;
- const q={select(){return q;},eq(k,v){filters.push([k,'=',v]);return q;},is(k,v){filters.push([k,'IS',v]);return q;},gt(k,v){filters.push([k,'>',v]);return q;},neq(k,v){filters.push([k,'<>',v]);return q;},gte(k,v){filters.push([k,'>=',v]);return q;},in(k,v){filters.push([k,'IN',v]);return q;},contains(k,v){filters.push([k,'@>',JSON.stringify(v)]);return q;},order(k,o={}){sort=k;ascending=o.ascending!==false;return q;},range(a,b){start=a;end=b;return q;},limit(n){start=0;end=n-1;return q;},maybeSingle(){one=true;return q;},single(){one=true;return q;},insert(v){operation='INSERT';values=v;return q;},upsert(v,o){operation='INSERT';values=v;conflict=o.onConflict;return q;},update(v){operation='UPDATE';values=v;return q;},delete(){operation='DELETE';return q;},then(resolve,reject){return (async()=>{try{
+const client={from(table){let operation='SELECT',values,filters=[],sort=table==='mobile_agents'?'club_id':'id',ascending=true,start=0,end=999,one=false,conflict,wantCount=false;
+ const q={select(columns,options){wantCount=options?.count==='exact';return q;},eq(k,v){filters.push([k,'=',v]);return q;},is(k,v){filters.push([k,'IS',v]);return q;},gt(k,v){filters.push([k,'>',v]);return q;},lt(k,v){filters.push([k,'<',v]);return q;},neq(k,v){filters.push([k,'<>',v]);return q;},gte(k,v){filters.push([k,'>=',v]);return q;},in(k,v){filters.push([k,'IN',v]);return q;},contains(k,v){filters.push([k,'@>',JSON.stringify(v)]);return q;},order(k,o={}){sort=k;ascending=o.ascending!==false;return q;},range(a,b){start=a;end=b;return q;},limit(n){start=0;end=n-1;return q;},maybeSingle(){one=true;return q;},single(){one=true;return q;},insert(v){operation='INSERT';values=v;return q;},upsert(v,o){operation='INSERT';values=v;conflict=o.onConflict;return q;},update(v){operation='UPDATE';values=v;return q;},delete(){operation='DELETE';return q;},then(resolve,reject){return (async()=>{try{
   const args=[],param=v=>{args.push(typeof v==='object'&&v!==null?JSON.stringify(v):v);return '$'+args.length;};
   let statement;
   if(operation==='INSERT'){
@@ -17,7 +17,7 @@ const client={from(table){let operation='SELECT',values,filters=[],sort=table===
    if(filters.length)statement+=' WHERE '+filters.map(([k,op,v])=>ident(k)+(op==='IS'?' IS NULL':op==='IN'?' IN ('+v.map(param).join(',')+')':' '+op+' '+param(v))).join(' AND ');
   }
   statement+=operation==='SELECT'?' ORDER BY '+ident(sort)+(ascending?' ASC':' DESC')+' LIMIT '+(end-start+1)+' OFFSET '+start:' RETURNING *';
-  const result=await db.query(statement,args);return {data:json(one?(result.rows[0]??null):result.rows),error:null};
+  const result=await db.query(statement,args);return {data:json(one?(result.rows[0]??null):result.rows),count:wantCount?result.rows.length:null,error:null};
  }catch(error){return {data:null,error:{message:error.message,code:error.code}};}})().then(resolve,reject);}};return q;},
  async rpc(name,args){try{const keys=Object.keys(args);const r=await db.query('SELECT '+ident(name)+'('+keys.map((k,i)=>ident(k)+'=> $'+(i+1)).join(',')+') AS result',Object.values(args));return {data:json(r.rows[0].result),error:null};}catch(error){return {data:null,error:{message:error.message,code:error.code}};}}
 };
@@ -69,6 +69,18 @@ try{
  assert.equal((await db.query('SELECT total_workstations FROM clubs WHERE id=1')).rows[0].total_workstations,24);
  const detail=await api('/api/telemetry/clubs/1');assert.equal(detail.status,200,JSON.stringify(detail));assert.equal(detail.body.workstations.length,1);assert.equal(detail.body.kassa.barRevenue,30000);assert.equal(detail.body.club.ping_ms,null);
  const overview=await api('/api/telemetry/summary');assert.equal(overview.body.summary.revenue.sessionsCount,3);assert.equal(overview.body.summary.revenue.barTotal,30000);
+ assert.equal(overview.body.summary.workstations.totalNetwork,1,'Inventory count, not the licensed limit');
+ await db.exec("INSERT INTO clubs(id,name,slug,total_workstations) VALUES(2,'Other Club','other-club',8); INSERT INTO club_workstations_cache(club_id,pc_number,status) VALUES(2,'1','OFFLINE');");
+ for (const pcs of [[{pc:1,status:'OFFLINE'},{pc:2,status:'AVAILABLE'},{pc:3,status:'OFFLINE'}],[{pc:2,status:'OFFLINE'}],[]]) {
+  const pulse=await api('/api/telemetry/heartbeat','POST',{...report,onlinePcsCount:0,occupiedPcsCount:0,workstations:pcs},false);
+  assert.equal(pulse.status,200,JSON.stringify(pulse));
+  const clubs=await SupabaseCloudService.getAllClubs();
+  assert.equal(clubs[0].actual_workstations,pcs.length,'Additions, removals and zero must match the server inventory');
+  assert.equal(clubs[0].total_workstations,24,'Telemetry must not change license capacity or billing');
+  assert.equal((await api('/api/telemetry/clubs/1')).body.workstations.length,pcs.length,'Removed PCs must disappear from inspector');
+  assert.equal((await db.query('SELECT count(*)::int n FROM club_workstations_cache WHERE club_id=2')).rows[0].n,1,'One club cannot remove another club inventory');
+ }
+ console.log('PASS cloud inventory grows, shrinks and reaches zero while license capacity stays unchanged');
  const analytics=await api('/api/analytics/platform?days=365');assert.equal(analytics.status,200,JSON.stringify(analytics));assert.equal(analytics.body.summary.totalRevenue,150000);
  assert.equal((await api('/api/telemetry/commands/1','POST',{action:'LOCK_CLUB_LICENSE',payload:{reason:'Test lock'}})).status,200);
  assert.equal((await db.query('SELECT status FROM clubs WHERE id=1')).rows[0].status,'BLOCKED');

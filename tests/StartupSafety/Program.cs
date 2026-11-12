@@ -17,6 +17,16 @@ static void Reject(Action action, string label)
 }
 
 var fresh = JsonNode.Parse(ClientSetupConfiguration.Merge(null, "ws://192.168.1.10:5000/ws", "VIP-01"))!;
+var simple = JsonNode.Parse(ClientSetupConfiguration.Merge(null, " 192.168.199.10 ", "PC-01"))!;
+Check(simple["serverUrl"]!.GetValue<string>() == "ws://192.168.199.10:5000/ws", "Bare server IP must become a complete WebSocket URL");
+Check(Softech.Networking.ServerAddress.Display(simple["serverUrl"]!.GetValue<string>()) == "192.168.199.10", "Settings must show just the default server IP");
+foreach (var custom in new[] { "ws://192.168.199.10:6000/ws", "wss://server.example/ws" })
+{
+    Check(Softech.Networking.ServerAddress.Normalize(custom) == custom, "Custom transport and port must survive");
+    Check(Softech.Networking.ServerAddress.Display(custom) == custom, "Custom addresses must not lose transport or port");
+}
+foreach (var invalid in new[] { "192.168.199.999", "192.168.199", "192.168.199.10/other", "192.168.199.10:5000", "hello world" })
+    Reject(() => ClientSetupConfiguration.Merge(null, invalid, "PC-01"), "Invalid IP accepted: " + invalid);
 Check(fresh["pcNumber"]!.GetValue<string>() == "VIP-01", "Workstation ID must retain its full name");
 Check(fresh["updateIdleSeconds"]!.GetValue<int>() == 10, "New installs must use 10-second update idle");
 var old = """{"serverUrl":"ws://old:5000/ws","pcNumber":"OLD","workstationName":"OLD","heartbeatIntervalSeconds":8,"updateIdleSeconds":10,"updateUrl":"https://example.test/version.json","custom":{"enabled":true}}""";

@@ -188,7 +188,7 @@ export async function handleHeartbeatIngestion(req, res) {
     }
 
     // 4. Ishchi o'rinlari (Workstations) matritsasi keshini yangilash
-    if (Array.isArray(payload.workstations) && payload.workstations.length > 0) {
+    if (Array.isArray(payload.workstations)) {
       const upsertPcStmt = db.prepare(`
         INSERT INTO club_workstations_cache (
           club_id, pc_number, zone_name, status, current_session_started_at, updated_at
@@ -202,6 +202,7 @@ export async function handleHeartbeatIngestion(req, res) {
 
       db.exec('BEGIN TRANSACTION;');
       try {
+        db.prepare('DELETE FROM club_workstations_cache WHERE club_id=?').run(clubId);
         for (const item of payload.workstations) {
           const pcNum = String(item.pc || item.pc_number || item.name || 'PC').toUpperCase();
           const zoneName = String(item.zone || item.zone_name || 'STANDARD').toUpperCase();

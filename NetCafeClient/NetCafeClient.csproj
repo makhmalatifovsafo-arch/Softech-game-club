@@ -26,6 +26,7 @@
 
   <!-- config.json va SoftechUpdater.exe fayllarini har doim exe yoniga ko'chirish -->
   <ItemGroup>
+    <Compile Include="../Shared/Networking/ServerAddress.cs" Link="Networking/ServerAddress.cs" />
     <None Update="config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

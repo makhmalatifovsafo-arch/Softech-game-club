@@ -1,3 +1,27 @@
+2026-11-12: cloud club inventory synchronization
+- Super admin club cards, inspector and network total use the reported PC inventory.
+- Offline PCs count toward inventory; removed PCs and an empty inventory reconcile correctly.
+- License capacity and billing remain separate from the reported inventory count.
+- Visible dashboard/directory refresh every 30 seconds without interrupting input.
+- Existing club servers already send full inventories; deploy cloud sources to activate.
+- Verified with 99 tests, SQLite snapshot tests and real PostgreSQL API tests for
+  additions, removals, zero PCs and isolation between clubs. No schema migration required.
+
+2026-11-12: 1.0.27 simplified client server address
+- Enter only the server IPv4 address in client setup or client administrator settings.
+- Automatically stores ws://SERVER_IP:5000/ws and shows the IP in the settings UI.
+- Existing full ws/wss URLs and custom ports remain supported without modification.
+- Invalid addresses are rejected before changing the saved connection settings.
+
+2026-11-12: 1.0.26 bar orders from the computer context menu
+- Right-click an active computer and choose bar products without leaving Computers.
+- Search products, choose quantities, see the total and charge the captured session.
+- Uses the same bar-order API and checkout ledger as Bar & Sales -> PC.
+- Pending orders appear on the session bill; collected sales and profit appear in reports.
+- Resolve the canonical PC number within the club for reliable report attribution.
+- Stale sessions are rejected; failed requests preserve the selection for correction.
+- Verified: 99 tests including real HTTP checkout, inventory and financial reporting.
+
 2026-11-12: 1.0.25 client automatic lock at Windows sign-in
 - Client setup requests administrator approval once and registers an interactive,
   highest-privilege logon task for the installing administrator account.

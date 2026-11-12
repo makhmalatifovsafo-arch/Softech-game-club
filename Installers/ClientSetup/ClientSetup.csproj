@@ -17,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../Shared/Networking/ServerAddress.cs" Link="Networking/ServerAddress.cs" />
     <Compile Include="../../Shared/Security/EmergencyPassword.cs" Link="Security/EmergencyPassword.cs" />
     <EmbeddedResource Include="payload.zip">
       <LogicalName>payload.zip</LogicalName>

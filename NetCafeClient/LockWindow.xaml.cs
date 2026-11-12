@@ -883,7 +883,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
             AdminAuthStepPanel.Visibility = Visibility.Collapsed;
             AdminDashboardStepPanel.Visibility = Visibility.Visible;
             TxtConfigPcNumber.Text = _currentPcNumber.ToString();
-            TxtConfigServerUrl.Text = App.Instance?.WsService?.ServerUrl ?? "ws://localhost:5000/ws";
+            TxtConfigServerUrl.Text = Softech.Networking.ServerAddress.Display(App.Instance?.WsService?.ServerUrl ?? "");
             TxtConfigSaveMsg.Visibility = Visibility.Collapsed;
         }
         catch (Exception error)
@@ -923,8 +923,15 @@ public partial class LockWindow : Window, INotifyPropertyChanged
             string url = TxtConfigServerUrl.Text.Trim();
             if (!string.IsNullOrEmpty(url))
             {
-                App.Instance?.SaveConfiguration(pcNum, url);
-                TxtConfigSaveMsg.Visibility = Visibility.Visible;
+                try
+                {
+                    App.Instance?.SaveConfiguration(pcNum, url);
+                    TxtConfigSaveMsg.Visibility = Visibility.Visible;
+                }
+                catch (ArgumentException ex)
+                {
+                    System.Windows.MessageBox.Show(ex.Message, "Server manzilini tekshiring", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             }
         }
     }

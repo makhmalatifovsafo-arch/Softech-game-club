@@ -114,6 +114,7 @@ public class WebSocketClientService
 
     public void UpdateConfig(string pcNumber, string serverUrl)
     {
+        serverUrl = Softech.Networking.ServerAddress.Normalize(serverUrl);
         _config.RawPcNumber = pcNumber;
         _config.ServerUrl = serverUrl;
         SaveConfigFile(_config);
@@ -122,6 +123,7 @@ public class WebSocketClientService
 
     public void UpdateConfig(int pcNumber, string serverUrl, string? workstationName = null)
     {
+        serverUrl = Softech.Networking.ServerAddress.Normalize(serverUrl);
         _config.RawPcNumber = workstationName ?? $"PC-{pcNumber:D2}";
         _config.ServerUrl = serverUrl;
         SaveConfigFile(_config);
