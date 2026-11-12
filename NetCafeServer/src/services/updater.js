@@ -4,8 +4,7 @@ import crypto from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
+import { fetchUpdateManifest, downloadUpdateFile } from './updateTransport.js';
 import { db } from '../db.js';
 import { canApplyUpdate, validateRelease } from './updatePolicy.js';
 
@@ -29,7 +28,8 @@ export class ServerUpdater {
   static nextApplyAttempt = 0;
   static onShutdown = () => process.exit(0);
   static state = { isChecking: false, isDownloading: false, isStaged: false, stagedVersion: null,
-    source: null, latestManifest: null, lastChecked: null, error: null };
+    source: null, latestManifest: null, lastChecked: null, lastSuccessfulCheck: null,
+    downloadedBytes: 0, totalBytes: null, error: null };
 
   static init() {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
@@ -58,6 +58,8 @@ export class ServerUpdater {
       if (!manifest) return this.getStatus();
       const release = validateRelease(manifest, 'server');
       this.state.latestManifest = manifest;
+      this.state.lastSuccessfulCheck = new Date().toISOString();
+      this.state.error = null;
       if (this.compareSemver(release.version, this.currentVersion) <= 0 || this.isFailedVersion(release.version))
         return this.getStatus();
       if (this.state.stagedVersion !== release.version) await this.downloadAndStage(manifest);
@@ -74,10 +76,13 @@ export class ServerUpdater {
   static async downloadAndStage(manifest) {
     const release = validateRelease(manifest, 'server');
     this.state.isDownloading = true;
+    this.state.downloadedBytes = 0;
+    this.state.totalBytes = null;
     const candidate = path.join(this.stagingDir, 'v' + release.version + '-' + crypto.randomUUID());
     fs.mkdirSync(candidate, { recursive: true });
     const zip = path.join(candidate, 'download.zip');
     const extracted = path.join(candidate, 'package');
+    let staged = false;
     try {
       await this.downloadFile(release.url, zip);
       if (await this.calculateSha256(zip) !== release.sha256) throw new Error('Release SHA256 mismatch');
@@ -90,8 +95,14 @@ export class ServerUpdater {
       this.state.source = extracted;
       this.state.stagedVersion = release.version;
       this.state.isStaged = true;
+      staged = true;
       this.state.error = null;
-    } finally { this.state.isDownloading = false; }
+    } finally {
+      this.state.isDownloading = false;
+      if (!staged) {
+        try { fs.rmSync(candidate, { recursive: true, force: true }); } catch {}
+      }
+    }
   }
 
   static getActiveSessionsCount() {
@@ -104,7 +115,7 @@ export class ServerUpdater {
   }
   static getStatus() {
     return { ...this.state, source: undefined, currentVersion: this.currentVersion,
-      latestVersion: this.state.latestManifest?.version || this.currentVersion,
+      latestVersion: this.state.latestManifest?.version || null,
       activeSessions: this.getActiveSessionsCount(), isApplying: this.applying, silent: true,
       idleSeconds: this.idleSeconds, canApply: canApplyUpdate(this.policy()) };
   }
@@ -192,15 +203,12 @@ export class ServerUpdater {
     return 0;
   }
   static async fetchJson(url) {
-    const response = await fetch(url, { headers: { 'User-Agent': 'Softech-Updater/2.0', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30000) });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error('Manifest HTTP ' + response.status);
-    return response.json();
+    return fetchUpdateManifest(url);
   }
   static async downloadFile(url, destination) {
-    const response = await fetch(url, { headers: { 'User-Agent': 'Softech-Updater/2.0' }, signal: AbortSignal.timeout(900000) });
-    if (!response.ok || !response.body) throw new Error('Download HTTP ' + response.status);
-    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(destination));
+    return downloadUpdateFile(url, destination, { onProgress: (bytes, total) => {
+      this.state.downloadedBytes = bytes; this.state.totalBytes = total;
+    } });
   }
   static async calculateSha256(file) {
     const hash = crypto.createHash('sha256');

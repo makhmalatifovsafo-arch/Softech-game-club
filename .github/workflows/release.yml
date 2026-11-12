@@ -68,6 +68,8 @@ jobs:
         run: ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION -Repository $env:GITHUB_REPOSITORY
       - name: Verify packaged applications
         run: node tests/release-artifacts.mjs $env:RELEASE_VERSION
+      - name: Verify unlicensed server automatic update staging with Windows DNS failure
+        run: node tests/updater-network-staging.mjs $env:RELEASE_VERSION
       - uses: actions/upload-artifact@v4
         with:
           name: softech-${{ env.RELEASE_VERSION }}

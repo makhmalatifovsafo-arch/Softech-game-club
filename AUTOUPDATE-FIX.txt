@@ -1,0 +1,35 @@
+SERVER AVTOMATIK YANGILANISHI — v1.0.23
+
+v1.0.21/v1.0.22 dagi GitHub updater Node fetch ishlatgan va Windows DNS xatosidan
+tiklana olmagan. Litsenziya uchun qo‘shilgan tiklanish katta ZIP yuklashiga tegishli emas edi.
+
+v1.0.23 manifest va ZIP uchun alohida oqimli HTTP(S) transport ishlatadi:
+- IPv4 / hints=0 DNS chaqiruvi; tizim DNS sozlamalari o‘zgartirilmaydi;
+- HTTPS sertifikati tekshiriladi, IP manzili qotirib yozilmaydi;
+- GitHub yo‘naltirishlari kuzatiladi, HTTPSdan HTTPga pasayish rad etiladi;
+- ZIP xotiraga to‘liq yig‘ilmaydi, diskka yoziladi va SHA256 tekshiriladi;
+- Uzilishda chala fayl va tugallanmagan staging papkasi tozalanadi;
+- Keyingi davriy tekshiruv yana urinadi;
+- Holatda downloadedBytes/totalBytes, lastSuccessfulCheck va aniq xato ko‘rinadi;
+- Manifest olinmagan bo‘lsa latestVersion null bo‘ladi, joriy versiya bilan almashtirilmaydi.
+
+BIR MARTALIK O‘TISH
+GitHub bilan ulana olmayotgan eski updater o‘z tuzatishini ham yuklay olmaydi.
+Server ishlarini tugatib, dastur oynasini yoping; Releases/v1.0.23/SoftechServerSetup.exe
+ni mavjud server papkasiga o‘rnating. Dastur ochilganda v1.0.23 ko‘rinishi kerak.
+O‘rnatish fayli hozir lokal tayyorlanadi; GitHubga chiqarish alohida ish.
+
+KEYINGI RELIZLAR
+Yuqoriroq versiya raqami bilan release Latest sifatida chiqarilishi kerak.
+Release ichida version.json va undagi SHA256ga mos SoftechServer.zip bo‘lishi shart.
+Faqat setup EXE yuklash avtomatik yangilanish uchun yetmaydi.
+Dastur ishlayotganida 5 soniyadan keyin, so‘ng har 60 soniyada tekshiradi.
+Litsenziya olinmagan holatda ham yuklaydi. O‘rnatish uchun faol seanslar/yozuvlar
+bo‘lmasligi va klaviatura/sichqoncha kamida 10 soniya ishlatilmasligi kerak.
+Litsenziya fayllari, baza va konfiguratsiya avtomatik yangilanishda saqlanadi.
+
+TEKSHIRUV
+Server ochiq turganida http://127.0.0.1:5000/api/updates/status ni oching.
+lastSuccessfulCheck to‘lsa manifest o‘qilgan; isDownloading=true yuklanayotganini,
+isStaged=true paket tayyorligini bildiradi. error muammo tafsilotini beradi.
+Yangilanishdan keyin logs/updater.log va updates-last-success.json tekshiriladi.
