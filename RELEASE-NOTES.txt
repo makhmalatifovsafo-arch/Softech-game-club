@@ -1,3 +1,8 @@
+2026-11-12: 1.1.1
+- Server, Client, cloud panels and Windows installers use version 1.1.1.
+- Includes the shared Super Admin controls with the Xabar tab and automatic
+  computer/bar refresh after license reactivation, alongside the 1.1.0 changes.
+
 2026-11-12: 1.1.0 unified tariffs, verified accounting and Windows updates
 - Super Admin club controls use one shared dialog: the dashboard no longer
   replaces the message/license tabs with an obsolete command menu. Force update
