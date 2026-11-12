@@ -46,5 +46,20 @@ try {
   await page.waitForFunction(()=>document.getElementById('startModalPrice').textContent.includes('17:00'));
   assert.equal(await page.locator('#btnSubmitStart').isDisabled(),true);
   assert.equal(await page.locator('#startModalPerPcPrice').innerText(),'—');
+  await page.evaluate(()=>{const option=document.createElement('div');option.id='balancePaymentOption';document.body.append(option);});
+  const memberQuote=html.slice(html.indexOf('    function calcClientHours('),html.indexOf('    // 5. Seansni Boshlash'));
+  await page.addScriptTag({content:`let selectedCustomer={balance:30000};${memberQuote}`});
+  await page.evaluate(()=>{
+    targetSelectedPcIds=['pc1','pc2'];
+    fetch=async(url,options)=>({ok:true,json:async()=>({price:JSON.parse(options.body).computerId==='pc1'?14000:28000})});
+    calcClientHours(2);
+  });
+  await page.waitForFunction(()=>!document.getElementById('btnSubmitStart').disabled);
+  assert.match(await page.locator('#startModalPrice').innerText(),/42[ ,\u00a0]?000/);
+  assert.equal(await page.locator('#balancePaymentOption').evaluate(el=>el.classList.contains('hidden')),true);
+  await page.evaluate(()=>{fetch=async()=>({ok:false,json:async()=>({error:'17:00 uchun tarif belgilanmagan'})});calcClientHours(2);});
+  await page.waitForFunction(()=>document.getElementById('startModalPrice').textContent.includes('17:00'));
+  assert.equal(await page.locator('#btnSubmitStart').isDisabled(),true);
+  console.log('PASS member single/group quote uses each room interval price and blocks uncovered times');
   console.log('PASS tariff editing, preserved priority/VIP, cancel/delete, safe names and missing-time message blocking start');
 } finally {await browser.close();}

@@ -641,11 +641,10 @@
         <!-- ================================================================= -->
         <!-- VIEW 1: WORKSTATIONS (KOMPYUTERLAR VA XARITA)                     -->
         <!-- ================================================================= -->
-        <section id="view-workstations" class="spa-view block space-y-6">
+        <section id="view-workstations" aria-labelledby="headerPageTitle" class="spa-view block space-y-6">
 
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
       <div>
-        <h2 class="text-lg font-bold text-white tracking-tight">Kompyuterlar Boshqaruvi</h2>
         <p class="text-xs text-[var(--text-muted)] mt-0.5">Klubdagi barcha faol va bo'sh stantsiyalar holati (Ctrl+Click, Shift+Click, Sichqoncha bilan belgilash)</p>
       </div>
 
@@ -878,7 +877,7 @@
   <!-- ===================================================================== -->
   <!-- VIEW 2: BOOKINGS (BAND QILINGANLAR VA REZERVATSIYA MATRITSASI)          -->
   <!-- ===================================================================== -->
-  <section id="view-bookings" class="spa-view hidden space-y-5">
+  <section id="view-bookings" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-5">
     <!-- Header with Date Navigator & Controls -->
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
       <div>
@@ -888,7 +887,6 @@
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="text-base font-bold text-white tracking-tight">Band Qilingan Stollar va Bron Matritsasi</h2>
               <span id="bookingScheduleDateLabel" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30">
                 Bugun
               </span>
@@ -1043,14 +1041,10 @@
   <!-- ===================================================================== -->
   <!-- VIEW 3: REPORTS (OTCHYOTLAR VA MOLIYAVIY HISOBOTLAR)                    -->
   <!-- ===================================================================== -->
-  <section id="view-reports" class="spa-view hidden space-y-6">
+  <section id="view-reports" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-6">
     <!-- Header & Action Buttons -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
-        <h2 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-          <span>📊</span>
-          <span>Moliyaviy hisobotlar</span>
-        </h2>
         <p class="text-xs text-[var(--text-muted)] mt-0.5">Klub kassa tushumlari, o'yin seanslari, bar va to'lov turlari bo'yicha batafsil hisobotlar</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
@@ -1371,14 +1365,10 @@
   <!-- ===================================================================== -->
   <!-- VIEW 4: STATS (KLUB STATISTIKASI VA CHART.JS ANALITIKA)                 -->
   <!-- ===================================================================== -->
-  <section id="view-stats" class="spa-view hidden space-y-6">
+  <section id="view-stats" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-6">
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
-        <h2 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-          <span>📈</span>
-          <span>Klub Statistikasi va Vizual Analitika</span>
-        </h2>
         <p class="text-xs text-[var(--text-muted)] mt-0.5">30 kunlik dinamika, eng daromadli kompyuterlar reytingi va 24 soatlik bandlik tahlili</p>
       </div>
       <div class="flex items-center gap-2">
@@ -1500,7 +1490,7 @@
   <!-- ===================================================================== -->
   <!-- VIEW 5: BAR (BAR VA POS SAVDO TIZIMI)                                 -->
   <!-- ===================================================================== -->
-  <section id="view-bar" class="spa-view hidden space-y-6">
+  <section id="view-bar" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-6">
     <!-- Header: Sarlavha, Qidiruv, Filterlar va Yangi Mahsulot tugmasi -->
     <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 rounded-2xl bg-[#141418] border border-[#27272a]">
       <div class="flex items-center gap-3">
@@ -1508,10 +1498,6 @@
           🛒
         </div>
         <div>
-          <h2 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
-            <span>Bar & Mini-Market POS</span>
-            <span class="text-[10px] px-2 py-0.5 rounded-full font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Jonli Savdo</span>
-          </h2>
           <p class="text-xs text-zinc-400 mt-0.5">Tovar katalogi, ombor qoldig'i va stollarga tezkor savdo</p>
         </div>
       </div>
@@ -1727,7 +1713,7 @@
   <!-- ===================================================================== -->
   <!-- 2f. JONLI SMENA AMALLARI VA AUDIT LENTASI (#view-history)              -->
   <!-- ===================================================================== -->
-  <section id="view-history" class="spa-view hidden space-y-5">
+  <section id="view-history" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-5">
     <!-- Yuqori Boshqaruv va Qidiruv Paneli -->
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
       <div>
@@ -1737,7 +1723,6 @@
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="text-base font-bold text-white tracking-tight">Jonli Smena Amallari va Audit Tarixi</h2>
               <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Real-Time Jonli Oqim</span>
@@ -4390,7 +4375,7 @@
           currentUser = data.user;
           hideLoginModal();
           applyUserRbacUi();
-          fetchData();
+          await fetchData();
         } else {
           showLoginModal();
         }
@@ -4433,6 +4418,7 @@
           authToken = data.token;
           currentUser = data.user;
           localStorage.setItem('softech_token', authToken);
+          window.SoftechMessages?.refresh();
           hideLoginModal();
           applyUserRbacUi();
           fetchData();
@@ -4455,6 +4441,7 @@
     function handleLogout() {
       localStorage.removeItem('softech_token');
       authToken = null;
+      window.SoftechMessages?.refresh();
       currentUser = null;
       showLoginModal();
     }
@@ -8330,6 +8317,7 @@
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
+        window.SoftechMessages?.refresh();
         document.getElementById('wsStatusDot').className = 'w-1.5 h-1.5 rounded-full bg-emerald-500';
         document.getElementById('wsStatusText').textContent = 'Tarmoq faol';
       };
@@ -8377,7 +8365,7 @@
               renderUpdateBadge(status);
             }
           }
-          if(eventType==='CLOUD_ANNOUNCEMENT'){const p=msg.payload||msg;showToast(String(p.title||'Xabar')+': '+String(p.message||''),'warning');}
+          if(eventType==='CLOUD_ANNOUNCEMENT')window.SoftechMessages?.refresh();
           if (eventType === 'ADMIN_DATA_UPDATED') {
             fetchData();
             if (typeof currentAppView !== 'undefined' && currentAppView === 'history' && typeof loadAuditHistory === 'function') {
@@ -8396,17 +8384,34 @@
       };
     }
 
+    window.addEventListener('softech-license-restored', async () => {
+      await checkAuth();
+      if (!authToken) return;
+      await Promise.allSettled([
+        typeof loadBarProducts === 'function' ? loadBarProducts() : Promise.resolve(),
+        typeof loadBarOrders === 'function' ? loadBarOrders() : Promise.resolve()
+      ]);
+    });
+
     async function fetchData() {
       if (!authToken) return;
 
       try {
+        const requestToken = authToken;
+        const read = async url => {
+          const response = await fetch(url, { headers: { 'Authorization': `Bearer ${requestToken}` }, cache: 'no-store' });
+          if (!response.ok) throw new Error(`Ma'lumotlar yuklanmadi (HTTP ${response.status}).`);
+          return response.json();
+        };
         const [compRes, statsRes, tariffsRes, layoutRes, settingsRes] = await Promise.all([
-          fetch('/api/computers', { headers: { 'Authorization': `Bearer ${authToken}` } }).then(r => r.json()),
-          fetch('/api/stats', { headers: { 'Authorization': `Bearer ${authToken}` } }).then(r => r.json()),
-          fetch('/api/tariffs', { headers: { 'Authorization': `Bearer ${authToken}` } }).then(r => r.json()),
-          fetch('/api/layout', { headers: { 'Authorization': `Bearer ${authToken}` } }).then(r => r.json()).catch(() => null),
-          fetch('/api/settings', { headers: { 'Authorization': `Bearer ${authToken}` } }).then(r => r.json()).catch(() => null)
+          read('/api/computers'), read('/api/stats'), read('/api/tariffs'),
+          read('/api/layout'), read('/api/settings')
         ]);
+        // License/network errors must never replace a valid catalog or map with an error object.
+        if (authToken !== requestToken) return;
+        if (!Array.isArray(compRes) || !Array.isArray(tariffsRes) || !Array.isArray(layoutRes?.zones) || !statsRes || typeof statsRes !== 'object') {
+          throw new Error("Server ma'lumotlari noto'g'ri formatda.");
+        }
 
         if (settingsRes && settingsRes.settings) {
           clubSettingsData = settingsRes.settings;
@@ -9236,7 +9241,7 @@
                 </div>
                 <div class="text-right">
                   <div class="font-mono text-emerald-400 font-bold text-xs">${c.balance.toLocaleString()} UZS</div>
-                  <div class="text-[10px] text-[#71717a]">Chegirma: ${c.discount_percent || 0}%</div>
+                  <div class="text-[10px] text-[#71717a]">Mijoz hisobi</div>
                 </div>
               `;
               resContainer.appendChild(item);
@@ -9263,30 +9268,25 @@
     }
 
     function calcClientHours(val) {
-      priceCalculationRevision++;
+      const revision = ++priceCalculationRevision;
       clearTimeout(calcDebounceTimer);
-      setStartQuotePending(false);
+      setStartQuotePending(true);
+      document.getElementById('balancePaymentOption').classList.add('hidden');
       const h = parseFloat(val) || 1;
-      const mins = Math.round(h * 60);
-      let perPc = Math.round(h * currentHourlyRate);
-
-      if (selectedCustomer && selectedCustomer.discount_percent > 0) {
-        perPc = Math.round(perPc * (1 - selectedCustomer.discount_percent / 100));
-      }
       const count = Math.max(1, targetSelectedPcIds.length);
-      const total = perPc * count;
-
-      document.getElementById('startModalDurationSummary').textContent = `${h} soat (${mins} daqiqa)`;
-      document.getElementById('startModalPerPcPrice').textContent = `${perPc.toLocaleString()} UZS`;
-      document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
-      document.getElementById('startModalTotalLabel').textContent = count > 1 ? `JAMI TO'LOV (${count} PC):` : `JAMI TO'LOV:`;
-
-      const balanceOpt = document.getElementById('balancePaymentOption');
-      if (selectedCustomer && selectedCustomer.balance >= total) {
-        balanceOpt.classList.remove('hidden');
-      } else {
-        balanceOpt.classList.add('hidden');
-      }
+      document.getElementById('startModalDurationSummary').textContent = h + ' soat (' + Math.round(h*60) + ' daqiqa)';
+      document.getElementById('startModalTotalLabel').textContent = count > 1 ? 'JAMI TO‘LOV ('+count+' PC):' : 'JAMI TO‘LOV:';
+      calcDebounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetchStartQuote({method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken},body:JSON.stringify({durationHours:h,computerId:targetSelectedPcIds[0],isVip:false})});
+          const data = await res.json();
+          if (revision !== priceCalculationRevision) return;
+          document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
+          document.getElementById('startModalPrice').textContent = data.totalPrice.toLocaleString() + ' UZS';
+          document.getElementById('balancePaymentOption').classList.toggle('hidden',!selectedCustomer || selectedCustomer.balance < data.totalPrice);
+          setStartQuotePending(false);
+        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true,e.message); }
+      },150);
     }
 
     // 5. Seansni Boshlash (Single va Multi-PC Batch qo'llab-quvvatlaydi)
@@ -9327,9 +9327,7 @@
         const h = parseFloat(document.getElementById('clientHoursInput').value) || 1;
         durationMinutes = Math.round(h * 60);
         amount = Math.round(h * currentHourlyRate);
-        if (selectedCustomer.discount_percent > 0) {
-          amount = Math.round(amount * (1 - selectedCustomer.discount_percent / 100));
-        }
+
         customerName = selectedCustomer.name;
         customerId = selectedCustomer.id;
       }
@@ -10010,6 +10008,7 @@
   <!-- SPA View Routing and Module Controller -->
   <script src="app.js"></script>
   <script src="session-end-notices.js"></script>
+  <script src="cloud-announcements.js"></script>
   <script>
     // Ensure SPA router initializes once app.js is parsed
     if (typeof initSpaRouter === 'function') {

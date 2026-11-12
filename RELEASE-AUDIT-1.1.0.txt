@@ -1,0 +1,71 @@
+Softech 1.1.0 — release verification, 2026-11-12
+
+Shared behavior
+- Desktop manager and administrator load the same application and pricing API.
+  Permissions determine visibility/actions; there is no second administrator tariff engine.
+- Manager mobile settings write through the authenticated club server. Dynamic rule
+  edits, full-day intervals, per-room prices and permission revocation were exercised.
+- Desktop and mobile reports use the local financial ledger. Super Admin overview,
+  inspector and analytics now consume the same synchronized daily reports.
+- Cash receipts (cash/card, including balance deposits) are separate from game/bar
+  sales (including money spent from balances). Pending bar debt is not paid revenue.
+
+Corrected during this audit
+- Missing mobile dynamic-tariff edit permission and UI action; obsolete mobile packages.
+- Cashier customer search using an obsolete table instead of actual kiosk accounts.
+- Single/group member starts trusting stale browser prices instead of interval quotes.
+- Cashier balance-session refunds using an average instead of agreed minute prices.
+- Super Admin counting deposits as games, estimating refunds and subtracting twice.
+- Paid bar report rows resolving a PC by database ID instead of its club/PC number.
+- Shared cloud analytics and daily snapshot handling, including historical refunds.
+- Duplicate desktop page headings from the preceding change are included.
+
+Completed checks
+- Follow-up license recovery: two regression tests reproduce the old UI failure and
+  pass after the fix. Edge checks recovery without restarting the app and retained
+  catalog state while blocked. No database reset or data migration is involved.
+- Both cloud variants pass block/offline-restart/unlock catalog comparisons and
+  restored API checks for PCs and bar stock. A test-only SQLite write race was
+  resolved by using the same busy timeout as the other database fixtures.
+- Local 1.1.0 installers were rebuilt with the fix; exact packaged UI sources,
+  archive SHA256 values and ZIP contents embedded in both setups were verified.
+- npm test: 126 passed, 0 failed, 0 skipped, including persistent Softech messages.
+- Selected-club announcements: signed delivery, durable unread queue, retry/restart
+  safety, blocked-license access, authenticated dismissal, HTML-safe display,
+  fixed heading, no timer/Escape/backdrop dismissal, and failed-dismissal retry.
+- License block survives offline restart; Super Admin unlock restores operation.
+- Actual HTTP/WebSocket/mobile relay: login, role permissions, tariff edit, stale quote,
+  single/group member starts, balance debits, refunds, bar orders and report parity.
+- Native Client: member-only logout, cashier-session display, reconnect, expiry and
+  eight-second bar notice. No real game-club computer was shut down by these tests.
+- Native updater: cancellation, concurrent installation prevention, corrupt payload,
+  successful replacement and rollback. Installer reinstalls preserve data/config.
+- Retention: ten release versions leave one rollback copy and preserve active staging.
+- PostgreSQL: schema, repeatable migrations, constraints, RLS, snapshot ordering and
+  actual cloud API financial parity. Browser checks cover mobile roles and desktop UI.
+- Final Server/Client archives: manifest SHA-256, native validation, bundled runtime,
+  activation outage/recovery and Windows DNS ENOENT recovery. Both setup executables
+  embed the exact final archives.
+- Actual packaged 1.0.37 -> 1.1.0 update: unlicensed background download/staging,
+  redirects and simulated Windows DNS failure; authenticated installation while busy;
+  healthy restart with session time/amount, login, bar stock and unpaid order preserved.
+- Release workflow now runs the busy-install/data-preservation check before publication.
+
+Operational limits
+- Cloud reports reflect their last successful synchronization (normally about 30 s),
+  not live offline activity. Old records are refreshed in the background.
+- Cloud source deployment and Server/Client release are both required for the complete
+  change. Publishing only the Windows archives cannot update the hosted web panels.
+- Tests cover isolated Windows processes and databases. They do not prove every
+  customer's firewall, router, disk or Windows logon configuration works.
+- Backups remain local, as requested; a failed physical disk requires a separate copy.
+
+Final local deliverables: Releases/v1.1.0/
+SoftechServerSetup.exe, SoftechClientSetup.exe, SoftechServer.zip,
+SoftechClient.zip, version.json.
+
+Publication status
+- User explicitly chose to keep the prepared files locally.
+- No commit, push, GitHub release or cloud deployment was performed.
+- Before that decision, automatic approval review rejected the attempted commit;
+  the command did not execute. GitHub latest and cloud were both 1.0.37 when checked.

@@ -4,6 +4,7 @@ import { appVersion } from '../src/services/appVersion.js';
 import { requireRemoteMaintenance } from '../src/services/maintenanceVersion.js';
 import { handleStaffSyncRoute } from '../src/services/staffAccountSync.js';
 import { CloudDashboardService } from '../src/services/cloudDashboardService.js';
+import {announcementPayload} from '../src/services/announcementPayload.js';
 import { ManagerAccountService } from '../src/services/managerAccountService.js';
 /**
  * Softech Super Admin — Central Vercel Serverless Function API Entrypoint
@@ -157,7 +158,7 @@ export default async function handler(req, res) {
       const occupiedNow = clubs.reduce((sum, c) => sum + (c.occupied_pcs || 0), 0);
       const totalNetwork = clubs.reduce((sum, c) => sum + Number(c.actual_workstations || 0), 0);
       const reportDate = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
-      const metrics = await new CloudDashboardService(SupabaseCloudService.client).rows('club_metrics',q=>q.eq('record_date',reportDate));
+      const metrics = await new CloudDashboardService(SupabaseCloudService.client).dailyMetrics(reportDate);
       const todayTotal = metrics.reduce((sum,m)=>sum+Number(m.total_daily_revenue||0),0);
       const sessionsCount = metrics.reduce((sum,m)=>sum+Number(m.total_sessions_count||0),0);
       const barTotal = metrics.reduce((sum,m)=>sum+Number(m.bar_revenue||0),0);
@@ -290,7 +291,7 @@ export default async function handler(req, res) {
       const body = await getParsedBody(req);
       const clubId = commandMatch ? (commandMatch[1].toUpperCase()==='ALL'?'ALL':Number(commandMatch[1])) : killSwitchMatch ? Number(killSwitchMatch[1]) : body.clubId;
       const action = body.action || body.commandType;
-      const options = body.options || body.payload || body;
+      let options = body.options || body.payload || body;
 
       if (!clubId || !action) {
         return sendJson(res, 400, { success: false, error: 'clubId va action ko\'rsatilishi shart.' });
@@ -310,7 +311,9 @@ export default async function handler(req, res) {
 
       if(action==='RESET_ADMIN_PASSWORD')return sendJson(res,400,{success:false,error:'Menejer akkaunti oynasidan login va parolni belgilang.'});
       if(!['RESTART_SERVER','FORCE_UPDATE','BROADCAST_ANNOUNCEMENT'].includes(action))return sendJson(res,400,{success:false,error:'Buyruq turi qo‘llab-quvvatlanmaydi.'});
-      if(action==='BROADCAST_ANNOUNCEMENT'&&!String(options.message||'').trim())return sendJson(res,400,{success:false,error:'Xabar matnini kiriting.'});
+      if(action==='BROADCAST_ANNOUNCEMENT') {
+        try {options=announcementPayload(options);}catch(error){return sendJson(res,400,{success:false,error:error.message});}
+      }
       if(clubId==='ALL'){
         if(action!=='BROADCAST_ANNOUNCEMENT')return sendJson(res,400,{error:'Bu buyruq faqat bitta klub uchun.'});
         const clubs=await SupabaseCloudService.getAllClubs();for(const c of clubs)await SupabaseCloudService.queueRemoteCommand(c.id,action,options);

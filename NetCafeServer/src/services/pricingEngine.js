@@ -136,10 +136,10 @@ function* rateSlices(startEpoch, endEpoch, isVip, clubId, zoneId) {
   }
 }
 
-export function calculateMinuteCost(momentDate, isVip = false, clubId = 1, zoneId = null) {
+export function calculateMinuteCost(momentDate, isVip = false, clubId = 1, zoneId = null, durationMinutes = 1) {
   const start = new Date(momentDate).getTime();
   let amount = 0;
-  for (const {rate,minutes} of rateSlices(start,start+60000,isVip,clubId,zoneId)) amount += rate.pricePerHour * minutes / 60;
+  for (const {rate,minutes} of rateSlices(start,start+durationMinutes*60000,isVip,clubId,zoneId)) amount += rate.pricePerHour * minutes / 60;
   return amount;
 }
 

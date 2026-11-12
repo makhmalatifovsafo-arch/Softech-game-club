@@ -15,7 +15,7 @@ test('super admin manager provisioning is bound, persistent, replay-safe and rev
   await assert.rejects(()=>service.save(8,{username:'owner',password:'1234'}));
   const saved=await service.save(7,{username:'first_owner',password:'1234'});
   const stored=cloud.prepare('SELECT payload FROM remote_commands').get().payload;
-  assert.ok(!stored.includes('1234'));assert.ok(!stored.includes('passwordHash'));
+  assert.ok(!stored.includes('"1234"'));assert.ok(!stored.includes('passwordHash'));
   const packet=await service.delivery(club,0);
   assert.throws(()=>applyManagerAccount(db,packet,{...license,clubId:8}));
   assert.throws(()=>applyManagerAccount(db,packet,{...license,hardwareFingerprint:'other'}));

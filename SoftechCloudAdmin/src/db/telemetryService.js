@@ -1,3 +1,4 @@
+import {mergeFinancialReports,localFinancialReports} from '../services/financialTelemetry.js';
 import { formatClubInspector } from '../services/clubInspector.js';
 import crypto from 'node:crypto';
 import { db, initDatabase, hashPassword, verifyPassword } from './connection.js';
@@ -106,7 +107,7 @@ export class TelemetryService {
     // Inventory is populated only by the club server, never from its license limit.
 
     // Boshlang'ich kunlik metrika yozuvi
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
     db.prepare(`
       INSERT OR IGNORE INTO club_metrics (
         club_id, record_date, total_daily_revenue, total_sessions_count, total_play_hours, bar_revenue, peak_concurrent_pcs
@@ -161,7 +162,7 @@ export class TelemetryService {
 
     // 3. Agar kunlik kassa ma'lumotlari kelgan bo'lsa, yozib boramiz
     if (dailyMetrics) {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
       this.recordDailyMetrics(clubId, {
         recordDate: todayStr,
         ...dailyMetrics
@@ -181,7 +182,7 @@ export class TelemetryService {
    * 3. Butun SaaS tarmog'i bo'yicha global umumiy metrikalarni hisoblash (Cockpit KPI)
    */
   static getGlobalMetricsSummary() {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
 
     // Klublar soni va holati
     const clubStats = db.prepare(`
@@ -195,15 +196,8 @@ export class TelemetryService {
     `).get();
 
     // Bugungi jami kassa va seanslar
-    const revenueStats = db.prepare(`
-      SELECT 
-        COALESCE(SUM(total_daily_revenue), 0) as total_today_revenue,
-        COALESCE(SUM(bar_revenue), 0) as total_bar_revenue,
-        COALESCE(SUM(total_sessions_count), 0) as total_sessions_count,
-        COALESCE(SUM(total_play_hours), 0) as total_play_hours
-      FROM club_metrics
-      WHERE record_date = ?
-    `).get(todayStr);
+    const dayMetrics=mergeFinancialReports(db.prepare('SELECT * FROM club_metrics WHERE record_date=?').all(todayStr),localFinancialReports(db,todayStr,todayStr));
+    const revenueStats=dayMetrics.reduce((r,m)=>({total_today_revenue:r.total_today_revenue+Number(m.total_daily_revenue||0),total_bar_revenue:r.total_bar_revenue+Number(m.bar_revenue||0),total_sessions_count:r.total_sessions_count+Number(m.total_sessions_count||0),total_play_hours:r.total_play_hours+Number(m.total_play_hours||0)}),{total_today_revenue:0,total_bar_revenue:0,total_sessions_count:0,total_play_hours:0});
 
     // Real-time kompyuterlar holati keshdan
     const pcStats = db.prepare(`
@@ -382,7 +376,7 @@ export class TelemetryService {
    * 9. Barcha klublar ro'yxatini bugungi metrikalari bilan olish
    */
   static getAllClubsWithLiveMetrics() {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
 
     const rows = db.prepare(`
       SELECT 
@@ -402,6 +396,7 @@ export class TelemetryService {
       ORDER BY is_online_now DESC, today_revenue DESC
     `).all(todayStr);
 
+    const reports=mergeFinancialReports([],localFinancialReports(db,todayStr,todayStr));
     return rows.map(r => {
       let offlineMinutes = 0;
       if (r.last_heartbeat_at) {
@@ -413,13 +408,15 @@ export class TelemetryService {
         offlineMinutes = 999;
       }
 
-      const cashierName = r.owner_name ? (r.owner_name.split(' ')[0].toLowerCase() + '_admin') : 'navbatchi_kassir';
-      const pingMs = r.is_online_now ? (15 + (r.id * 3) % 14) : null;
+      const report=reports.find(m=>Number(m.club_id)===Number(r.id));
+
 
       return {
         ...r,
-        duty_cashier: r.duty_cashier || cashierName,
-        ping_ms: pingMs,
+        today_revenue:report?.total_daily_revenue??r.today_revenue,
+        today_bar_revenue:report?.bar_revenue??r.today_bar_revenue,
+        duty_cashier: r.duty_cashier || null,
+        ping_ms: null,
         offline_minutes: offlineMinutes
       };
     });
@@ -473,6 +470,6 @@ export class TelemetryService {
     const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
     const metrics=db.prepare('SELECT * FROM club_metrics WHERE club_id=? AND record_date=?').get(clubId,date)||{};
     const pcs=db.prepare('SELECT * FROM club_workstations_cache WHERE club_id=? ORDER BY id').all(clubId);
-    return formatClubInspector(club,metrics,pcs);
+    return formatClubInspector(club,mergeFinancialReports([{...metrics,club_id:clubId,record_date:date}],localFinancialReports(db,date,date,clubId))[0],pcs);
   }
 }

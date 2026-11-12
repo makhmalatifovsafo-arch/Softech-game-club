@@ -6,7 +6,7 @@ test('member prepaid debits once, retains price through restart, refunds once an
  const moduleUrl=pathToFileURL(path.join(dir,'src/services/memberBilling.js')).href;
  const {db,initDatabase}=await import(dbUrl);initDatabase();
  try{
-  const {startMemberSession,settleMemberUsage,extendPrepaidMember}=await import(moduleUrl);
+  const {startMemberSession,settleMemberUsage,extendPrepaidMember,freezePrepaidRates,prepaidRefund}=await import(moduleUrl);
   db.prepare("INSERT INTO computers (id,club_id,name,pc_number,status) VALUES ('prepay-pc',1,'Test PC',1,'ONLINE')").run();
   db.prepare('UPDATE tariff_schedules SET price_per_hour=12000').run();db.prepare('UPDATE tariffs SET price_per_hour=12000').run();
   const user=db.prepare("SELECT * FROM users WHERE username='gamer1'").get();
@@ -37,5 +37,17 @@ test('member prepaid debits once, retains price through restart, refunds once an
   assert.equal(Date.parse(extension.endsAt)-Date.parse(full.endsAt),600000);
   const expired=settleMemberUsage(full.sessionId,new Date(Date.parse(extension.endsAt)+1000),true);
   assert.equal(expired.refundAmount,0);assert.equal(expired.currentBalance,50000-full.amount-extension.amount);
+  db.exec('DELETE FROM tariff_schedules');
+  const addRate=db.prepare("INSERT INTO tariff_schedules(club_id,name,start_time,end_time,price_per_hour,days_of_week,priority) VALUES(1,'Fixture',?,?,?,'[1,2,3,4,5,6,7]',1)");
+  addRate.run('10:00','17:00',7000);addRate.run('17:00','23:00',14000);
+  const start=new Date(2026,10,12,16),end=new Date(2026,10,12,18);
+  const frozen=freezePrepaidRates('prepay-pc',start,end);
+  assert.equal(Math.round(frozen.reduce((a,b)=>a+b,0)),21000);
+  db.prepare('UPDATE tariff_schedules SET price_per_hour=90000').run();
+  const agreed={paid_amount:21000,started_at:start.toISOString(),ends_at:end.toISOString(),prepaid_rate_plan:JSON.stringify(frozen)};
+  assert.deepEqual(prepaidRefund(agreed,new Date(2026,10,12,17)),{amount:14000,usedAmount:7000},'Refund uses 7000 first hour, not the 10500 average or edited 90000 rate');
+  db.exec('DELETE FROM tariff_schedules');addRate.run('10:00','17:00',7000);
+  const partial=freezePrepaidRates('prepay-pc',new Date(2026,10,12,16,59,30),new Date(2026,10,12,17));
+  assert.equal(partial.length,1);assert.equal(Math.round(partial[0]*0.5),58,'Partial last minute does not bill uncovered time after 17:00');
  }finally{db.close();}
 });

@@ -106,7 +106,7 @@ try {
   assert.equal(recovered.activationStatus, 'PENDING');
   assert.match(logs, /\[DNS fixture\] getaddrinfo ENOENT/);
   assert.match(logs, /\[DNS fixture\] IPv4 recovery/);
-  for (const file of ['diagnose-connection.mjs', 'diagnose-connection.cmd', 'src/services/cloudConnection.js', 'src/services/cloudIpv4.js', 'public/licenseGuard.js']) {
+  for (const file of ['diagnose-connection.mjs', 'diagnose-connection.cmd', 'src/services/cloudConnection.js', 'src/services/cloudIpv4.js', 'src/services/cloudCommands.js', 'src/services/cloudAnnouncements.js', 'public/cloud-announcements.js', 'public/licenseGuard.js']) {
     assert.equal(fs.readFileSync(path.join(serverDir, file), 'utf8'), fs.readFileSync(path.join('NetCafeServer', file), 'utf8'));
   }
   console.log('PASS packaged license flow reports cloud outage, recovers, and serves current uncached UI');

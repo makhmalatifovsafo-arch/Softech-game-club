@@ -345,7 +345,7 @@ export class CloudLicenseService {
       const pcs=db.prepare("SELECT c.*,s.ends_at FROM computers c LEFT JOIN sessions s ON s.id=c.current_session_id WHERE c.club_id=1").all();
       const payload={commandResults:commandResults(db,{currentVersion:ServerUpdater.currentVersion}),administratorRevision:getAdministratorRevision(db,LicenseManager.licenseData.clubId),managerRevision:getManagerRevision(db,LicenseManager.licenseData.clubId),clubId:LicenseManager.licenseData.clubId,signedLicense:LicenseManager.getSignedLicense(),
         appVersion:JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../package.json'),'utf8')).version,
-        reportDate:report.from,todayRevenue:report.summary.cashReceipts,barRevenue:report.breakdown.receipts.BAR.CASH+report.breakdown.receipts.BAR.CARD,
+        reportDate:report.from,todayRevenue:report.summary.salesRevenue,barRevenue:report.summary.barRevenue,
         totalSessionsCount:db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE club_id=1 AND date(started_at,'localtime')=?").get(report.from).n,
         onlinePcsCount:pcs.filter(p=>ClientManager.isConnected(p.id)).length,
         occupiedPcsCount:pcs.filter(p=>p.current_session_id).length,

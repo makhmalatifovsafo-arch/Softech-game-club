@@ -74,7 +74,7 @@ $manifest = @{
     version=$Version; releaseDate=(Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
     client=@{ downloadUrl="$assetBase/SoftechClient.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechClient.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
     server=@{ downloadUrl="$assetBase/SoftechServer.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechServer.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
-    changelog='Silent background staging; idle-only installation; protected games; transactional rollback.'
+    changelog='License unlock restores computer and bar screens automatically; persistent Softech messages; unified tariffs and reports; protected database and automatic updates.'
 }
 [IO.File]::WriteAllText((Join-Path $releaseDir 'version.json'), ($manifest | ConvertTo-Json -Depth 10), $utf8)
 # Build bootstrap installers from the exact same versioned payloads.

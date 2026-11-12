@@ -27,7 +27,7 @@ export function getFinancialBreakdown(db, from, to, clubId = null) {
     SELECT i.*, o.payment_method, COALESCE(o.paid_at,o.created_at) AS paid_date,
       o.order_number, u.username, c.name AS computer_name
     FROM bar_order_items i JOIN bar_orders o ON o.id=i.order_id
-    LEFT JOIN users u ON u.id=o.user_id LEFT JOIN computers c ON c.id=o.computer_id
+    LEFT JOIN users u ON u.id=o.user_id LEFT JOIN computers c ON c.club_id=o.club_id AND c.pc_number=o.computer_id
     WHERE o.payment_status='PAID' AND o.approval_status='CONFIRMED'
       AND date(COALESCE(o.paid_at,o.created_at),'localtime') BETWEEN ? AND ?${scoped('o')}
     ORDER BY paid_date DESC, i.id DESC

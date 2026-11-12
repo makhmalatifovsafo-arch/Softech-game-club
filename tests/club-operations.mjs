@@ -2,6 +2,15 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
+export function readClubCatalog(databasePath) {
+  const db=new DatabaseSync(databasePath,{readOnly:true});
+  try {
+    return {
+      computers:db.prepare('SELECT id,club_id,pc_number,name,ip_address,mac_address,zone,zone_id FROM computers ORDER BY id').all(),
+      ...Object.fromEntries(['bar_items','grid_layout','zones','tariffs','tariff_schedules'].map(table=>[table,db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+    };
+  } finally {db.close();}
+}
 export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cloudToken, cloudClubId, socket }) {
   async function request(url,method='GET',body,token) {
     const r=await fetch(url,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(12000)});
@@ -12,6 +21,11 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const token=login.body.token || login.body.accessToken;
   assert.ok(token);
   const api=(route,method='GET',body)=>request(localUrl+route,method,body,token);
+  const announcementIds=[];
+  for(const message of ['Softech test <img src=x>\nYangi xabar','Restartdan keyin ham saqlansin']){
+    const queued=await request(cloudUrl+'/api/telemetry/commands/'+cloudClubId,'POST',{action:'BROADCAST_ANNOUNCEMENT',payload:{message,requireDismiss:true}},cloudToken);
+    assert.equal(queued.status,200,JSON.stringify(queued.body));announcementIds.push(queued.body.commandId);
+  }
   const existingShift = await api('/api/shifts/current');
   if (!existingShift.body.shift) assert.equal((await api('/api/shifts/current','POST',{action:'OPEN',startCash:50000})).status,201);
   const computers=await api('/api/computers');
@@ -213,6 +227,21 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.ok((await api('/api/sessions/batch-start','POST',{computerIds:[pc.id,'pc_9999'],mode:'HOURS'})).status>=400);
   assert.equal(fixture.prepare('SELECT COUNT(*) AS n FROM sessions').get().n,count,'Invalid batch must not create partial sessions');
   fixture.close();
+  const searched=await api('/api/customers?q=gamer1');
+  assert.equal(searched.status,200,JSON.stringify(searched.body));
+  assert.equal(searched.body.find(c=>c.id===member.id)?.name,'gamer1','Cashier search must use the same account as kiosk login');
+  const authoritative=(await api('/api/tariffs/calculate','POST',{computerId:pc.id,durationHours:2})).body.price;
+  assert.equal((await api('/api/clients/topup','POST',{userId:member.id,amount:200000,paymentMethod:'CARD'})).status,200);
+  for(const batch of [false,true])for(const paymentType of ['CASH','BALANCE']){
+    const memberStart=await api(batch?'/api/sessions/batch-start':'/api/sessions/start','POST',{
+      ...(batch?{computerIds:[pc.id]}:{computerId:pc.id}),mode:'client',customerId:member.id,durationMinutes:120,amount:1,paymentType});
+    assert.equal(memberStart.status,201,JSON.stringify(memberStart.body));
+    const auditDb=new DatabaseSync(databasePath,{readOnly:true});
+    const row=auditDb.prepare("SELECT * FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id);auditDb.close();
+    assert.equal(row.total_amount,authoritative,'Single and batch member starts must ignore stale/browser supplied prices');
+    if(paymentType==='BALANCE')assert.equal(JSON.parse(row.prepaid_rate_plan).length,120,'Cashier-opened member session freezes its agreed rates for refunds');
+    assert.equal((await api('/api/sessions/stop','POST',{computerId:pc.id})).status,200);
+  }
   const second=await api('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60});
   assert.equal(second.status,201,JSON.stringify(second.body));
   const received = new Promise((resolve,reject)=>{
@@ -331,15 +360,27 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const telemetry=await request(cloudUrl+'/api/telemetry/heartbeat','POST',{clubId:cloudClubId,signedLicense:proof,todayRevenue:12345,barRevenue:2345,onlinePcsCount:1,occupiedPcsCount:1});
   assert.equal(telemetry.status,200,JSON.stringify(telemetry.body));
   const messages=[];const listener=raw=>messages.push(JSON.parse(raw));socket.on('message',listener);
+  const catalogBeforeBan=readClubCatalog(databasePath);
+  assert.ok(catalogBeforeBan.computers.length>0 && catalogBeforeBan.bar_items.length>0);
   const ban=await request(cloudUrl+'/api/telemetry/kill-switch/'+cloudClubId,'POST',{action:'LOCK',reason:'Isolated test ban'},cloudToken);
   assert.equal(ban.status,200,JSON.stringify(ban.body));
   let status;
   for(let i=0;i<90;i++){status=await request(localUrl+'/api/license/status');if(!status.body.isOperational)break;await new Promise(r=>setTimeout(r,100));}
   assert.equal(status.body.isOperational,false,'Ban must reach server');
   assert.ok(messages.some(m=>m.type==='EMERGENCY_LOCKDOWN'),'Ban must reach connected client');
+  let unread;
+  for(let i=0;i<350;i++){unread=await api('/api/cloud-announcements');if(unread.body.notices?.length===2)break;await new Promise(r=>setTimeout(r,100));}
+  assert.equal(unread.status,200,JSON.stringify(unread.body));assert.deepEqual(unread.body.notices.map(n=>n.id),announcementIds);
+  assert.equal(unread.body.notices[0].message,'Softech test <img src=x>\nYangi xabar');
+  assert.equal((await request(localUrl+'/api/cloud-announcements')).status,401);
+  assert.equal((await request(localUrl+'/api/cloud-announcements/'+announcementIds[0]+'/dismiss','POST')).status,401);
+  assert.equal((await api('/api/cloud-announcements/'+announcementIds[0]+'/dismiss','POST')).status,200);
+  assert.deepEqual((await api('/api/cloud-announcements')).body.notices.map(n=>n.id),[announcementIds[1]]);
+  console.log('PASS selected-club signed announcement delivery and authenticated dismissal, including blocked license');
   for(const [route,method,body] of [['/api/sessions/start','POST',{computerId:pc.id}],['/api/bar/orders','POST',{items:[{barItemId:id,quantity:1}]}],['/api/reports/financial','GET']]){
     assert.equal((await api(route,method,body)).status,403,'Banned API '+route);
   }
   socket.off('message',listener);
-  return { token, gameAmount, sessionId:second.body.sessionId };
+  assert.deepEqual(readClubCatalog(databasePath),catalogBeforeBan,'Blocking must preserve PCs, inventory, layouts and tariffs');
+  return { token, gameAmount, sessionId:second.body.sessionId, catalogBeforeBan };
 }

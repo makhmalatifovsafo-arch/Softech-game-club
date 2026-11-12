@@ -63,12 +63,17 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const badRates=await mobile('/api/admin/tariffs','PUT',{tariffs:[{id:tariff.id,name:'Should not save',price_per_hour:777},{id:'unknown',name:'Invalid',price_per_hour:100}]},cloudLogin.body.grant);assert.equal(badRates.status,400);
  const afterBad=await mobile('/api/tariffs','GET',undefined,token);assert.equal(afterBad.body.find(t=>t.id===tariff.id).price_per_hour,12345,'Invalid batch must not partially update tariffs');
  const schedule=await mobile('/api/admin/tariff-schedules','POST',{name:'Mobile schedule',start_time:'10:00',end_time:'12:00',price_per_hour:15000,days_of_week:[1,2],priority:2},cloudLogin.body.grant);assert.equal(schedule.status,201,JSON.stringify(schedule));
+ const changedSchedule={name:'Edited mobile schedule',start_time:'00:00',end_time:'00:00',price_per_hour:17000,days_of_week:[1,2,3,4,5,6,7],priority:3};
+ assert.equal((await mobile('/api/admin/tariff-schedules/'+schedule.body.id,'PUT',changedSchedule,cashierToken)).status,403);
+ assert.equal((await mobile('/api/admin/tariff-schedules/'+schedule.body.id,'PUT',changedSchedule,cloudLogin.body.grant)).status,200);
+ const desktopSchedules=await(await fetch(localUrl+'/api/tariff-schedules',{headers:{Authorization:'Bearer '+ownerToken}})).json();
+ assert.equal(desktopSchedules.find(s=>s.id===schedule.body.id).price_per_hour,17000);
  assert.equal((await mobile('/api/admin/tariff-schedules/'+schedule.body.id,'DELETE',undefined,cloudLogin.body.grant)).status,200);
  assert.equal((await mobile('/api/admin/settings','PUT',{vip_enabled:true,vip_pricing_mode:'CUSTOM',vip_custom_price:19000},cloudLogin.body.grant)).status,200);
  assert.equal((await mobile('/api/settings','GET',undefined,token)).body.settings.vip_custom_price,19000);
  // User scenario: change the PC room's rate from mobile, then start on desktop.
  async function desktop(path,method='GET',body){const response=await fetch(localUrl+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+ownerToken},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,body:await response.json()};}
- const room=await desktop('/api/zones','POST',{name:'Mobile tariff parity',tariffs:[{name:'Room hourly',price_per_hour:23000,start_time:'00:00',end_time:'23:59',days_of_week:[1,2,3,4,5,6,7]}]});assert.equal(room.status,201,JSON.stringify(room));
+ const room=await desktop('/api/zones','POST',{name:'Mobile tariff parity',tariffs:[{name:'Room hourly',price_per_hour:23000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7]}]});assert.equal(room.status,201,JSON.stringify(room));
  assert.equal((await desktop('/api/admin/computers/'+pc.id,'PUT',{zoneId:room.body.zone.id,zone:'STANDARD'})).status,200);
  const roomRate=room.body.tariffs[0];
  assert.equal((await mobile('/api/admin/tariffs','PUT',{tariffs:[{id:roomRate.id,name:roomRate.name,price_per_hour:10000}]},cloudLogin.body.grant)).status,200);

@@ -20,14 +20,26 @@ export function getMemberSessionSummary(sessionId, barDebt = 0) {
 }
 
 // Freeze the agreed minute prices so a later tariff edit cannot change a refund.
+export function freezePrepaidRates(pcId, start, end) {
+  const minutes=(new Date(end)-new Date(start))/60000;
+  if(!Number.isFinite(minutes)||minutes<=0||minutes>4320)throw new Error('Seans davomiyligi noto‘g‘ri.');
+  const pc=db.prepare('SELECT * FROM computers WHERE id=?').get(pcId);
+  if(!pc)throw new Error('Kompyuter topilmadi.');
+  const zone=resolveZoneIdForComputer(pc.id,pc.club_id);
+  return Array.from({length:Math.ceil(minutes)},(_,i)=>{
+    const fraction=Math.min(1,minutes-i);
+    // A fractional last minute must not require a tariff after the selected end.
+    return calculateMinuteCost(new Date(new Date(start).getTime()+i*60000),false,pc.club_id,zone,fraction)/fraction;
+  });
+}
+
 export function quoteMemberMinutes(pcId, minutes, now = new Date()) {
   if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440)
     throw new Error('1 dan 1440 gacha o‘ynash daqiqasini tanlang. Client dasturini yangilang.');
   const pc = db.prepare('SELECT * FROM computers WHERE id=?').get(pcId);
   if (!pc) throw new Error('Kompyuter topilmadi.');
   const zone = resolveZoneIdForComputer(pc.id, pc.club_id);
-  const rates = Array.from({length:minutes}, (_, i) => calculateMinuteCost(
-    new Date(now.getTime() + i * 60000), false, pc.club_id, zone));
+  const rates = freezePrepaidRates(pcId,now,new Date(now.getTime()+minutes*60000));
   if (rates.some(rate => !Number.isFinite(rate) || rate < 0)) throw new Error('Tarif noto‘g‘ri.');
   return { pc, rates, amount:Math.round(rates.reduce((a,b)=>a+b,0)),
     rate:requireRateForMoment(now,false,pc.club_id,zone) };

@@ -80,7 +80,10 @@
 
     // Agar ACTIVE bo'lsa, qulfni yashiramiz
     if (status.state === 'ACTIVE') {
+      const recovered = lastOverlayState !== null && lastOverlayState !== 'ACTIVE';
+      lastOverlayState = 'ACTIVE';
       overlay.style.display = 'none';
+      if (recovered) window.dispatchEvent(new Event('softech-license-restored'));
       return;
     }
 

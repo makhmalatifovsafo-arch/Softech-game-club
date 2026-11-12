@@ -1,3 +1,4 @@
+import {CloudDashboardService} from './cloudDashboardService.js';
 import { deliverCommands } from './commandDelivery.js';
 import { ManagerAccountService } from './managerAccountService.js';
 import { verifyTelemetryLicense } from './telemetryAuth.js';
@@ -117,12 +118,15 @@ export class SupabaseCloudService {
 
       if (error) throw error;
 
+      const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
+      const metrics=await new CloudDashboardService(client).dailyMetrics(date);
       return await Promise.all((data || []).map(async club => {
         const { count, error: countError } = await client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', club.id);
         if (countError) throw countError;
         const isOnline = this.isHeartbeatOnline(club.last_heartbeat_at || club.last_heartbeat);
         return {
           ...club,
+          today_revenue:metrics.find(m=>Number(m.club_id)===Number(club.id))?.total_daily_revenue??0,
           actual_workstations: count ?? 0,
           occupied_pcs_now: isOnline ? Number(club.occupied_pcs || 0) : 0,
           is_online_now: isOnline,

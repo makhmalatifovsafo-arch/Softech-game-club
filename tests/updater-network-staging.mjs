@@ -12,15 +12,20 @@ import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 const version=process.argv[2];
 const applyBusy=process.argv.includes('--apply-busy');
+const fromIndex=process.argv.indexOf('--from');
+const fromVersion=fromIndex<0?null:process.argv[fromIndex+1];
+if(fromIndex>=0)assert.match(fromVersion||'',/^\d+\.\d+\.\d+$/);
 const release=path.resolve('Releases/v'+version);
 const manifest=JSON.parse(fs.readFileSync(path.join(release,'version.json')));
 const zip=path.join(release,'SoftechServer.zip');
 const root=fs.mkdtempSync(path.resolve('.test-output/ota-network-'));
 const dir=path.join(root,'server');fs.mkdirSync(dir);
-const unpack=spawnSync('tar.exe',['-xf',zip,'-C',dir],{windowsHide:true,encoding:'utf8'});
+const sourceZip=fromVersion?path.resolve('Releases/v'+fromVersion+'/SoftechServer.zip'):zip;
+const unpack=spawnSync('tar.exe',['-xf',sourceZip,'-C',dir],{windowsHide:true,encoding:'utf8'});
 assert.equal(unpack.status,0,unpack.stderr);
 const pkg=JSON.parse(fs.readFileSync(path.join(dir,'package.json')));
-pkg.version='0.0.1';fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg));
+if(fromVersion)assert.equal(pkg.version,fromVersion);
+else {pkg.version='0.0.1';fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg));}
 fs.writeFileSync(path.join(dir,'config.json'),JSON.stringify({updateIdleSeconds:3600}));
 const stub=http.createServer((req,res)=>{
   if(req.url==='/latest'){res.writeHead(302,{Location:'/manifest'});res.end();}
@@ -64,7 +69,7 @@ try{
     await new Promise(r=>setTimeout(r,250));
   }
   assert.equal(status?.isStaged,true,logs);
-  assert.equal(status.currentVersion,'0.0.1');assert.equal(status.latestVersion,version);
+  assert.equal(status.currentVersion,fromVersion||'0.0.1');assert.equal(status.latestVersion,version);
   assert.equal(status.stagedVersion,version);assert.equal(status.downloadedBytes,fs.statSync(zip).size);
   assert.equal(status.isApplying,false);assert.equal(status.error,null);
   const license=await(await fetch(`http://127.0.0.1:${port}/api/license/status`)).json();

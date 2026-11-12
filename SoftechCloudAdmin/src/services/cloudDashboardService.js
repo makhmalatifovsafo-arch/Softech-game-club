@@ -1,3 +1,4 @@
+import {mergeFinancialReports,cloudFinancialReports,platformAnalytics} from './financialTelemetry.js';
 import { formatClubInspector } from './clubInspector.js';
 ﻿const failure=(message,statusCode=503)=>Object.assign(new Error(message),{statusCode});
 export function monthlyFee(club){
@@ -47,14 +48,16 @@ export class CloudDashboardService {
   const clubs=await this.rows('clubs',q=>q.eq('id',id));if(!clubs[0])throw failure('Klub topilmadi.',404);
   const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
   const [metrics,pcs]=await Promise.all([this.rows('club_metrics',q=>q.eq('club_id',id).eq('record_date',date)),this.rows('club_workstations_cache',q=>q.eq('club_id',id))]);
-  return {success:true,...formatClubInspector(clubs[0],metrics[0]||{},pcs)};
+  const reports=await cloudFinancialReports(this.client,date,date,id);
+  return {success:true,...formatClubInspector(clubs[0],mergeFinancialReports(metrics,reports)[0]||{},pcs)};
+ }
+ async dailyMetrics(date){
+  const [metrics,reports]=await Promise.all([this.rows('club_metrics',q=>q.eq('record_date',date)),cloudFinancialReports(this.client,date,date)]);
+  return mergeFinancialReports(metrics,reports);
  }
  async analytics(days=30){
   days=Math.max(1,Math.min(365,Number.parseInt(days,10)||30));const start=new Date(Date.now()-days*86400000).toISOString().slice(0,10);
   const [clubs,metrics]=await Promise.all([this.rows('clubs'),this.rows('club_metrics',q=>q.gte('record_date',start))]);
-  const dates=new Map();for(const m of metrics){const row=dates.get(m.record_date)||{date:m.record_date,totalRevenue:0,barRevenue:0,sessionsCount:0,playHours:0};row.totalRevenue+=Number(m.total_daily_revenue||0);row.barRevenue+=Number(m.bar_revenue||0);row.sessionsCount+=Number(m.total_sessions_count||0);row.playHours+=Number(m.total_play_hours||0);dates.set(m.record_date,row);}
-  let cumulative=0;const dynamicRevenue=[...dates.values()].sort((a,b)=>a.date.localeCompare(b.date)).map(r=>({...r,formattedDate:r.date,dayOfWeek:new Date(r.date).toLocaleDateString('uz-UZ',{weekday:'short'}),sessionsRevenue:Math.max(0,r.totalRevenue-r.barRevenue),cumulativeRevenue:cumulative+=r.totalRevenue}));
-  const topClubs=clubs.map(c=>{const rows=metrics.filter(m=>Number(m.club_id)===Number(c.id));return {id:c.id,name:c.name,city:c.city,workstations:Number(c.total_workstations),status:c.status,totalRevenue:rows.reduce((n,m)=>n+Number(m.total_daily_revenue||0),0),barRevenue:rows.reduce((n,m)=>n+Number(m.bar_revenue||0),0),occupancyRate:rows.length&&c.total_workstations?Math.min(100,Math.round(rows.reduce((n,m)=>n+Number(m.peak_concurrent_pcs||0),0)/rows.length/Number(c.total_workstations)*100)):0};}).sort((a,b)=>b.totalRevenue-a.totalRevenue).slice(0,5);
-  return {success:true,timeframeDays:days,summary:{totalRevenue:cumulative,avgDailyRevenue:dynamicRevenue.length?Math.round(cumulative/dynamicRevenue.length):0,totalSessions:dynamicRevenue.reduce((n,r)=>n+r.sessionsCount,0),totalPlayHours:dynamicRevenue.reduce((n,r)=>n+r.playHours,0),topClub:topClubs[0]?.name??'Ma’lumot yo‘q',topCity:null,peakHour:'Ma’lumot yo‘q'},dynamicRevenue,topClubs,hourlyPeakOccupancy:[]};
+  return platformAnalytics(clubs,mergeFinancialReports(metrics,await cloudFinancialReports(this.client,start)),days);
  }
 }

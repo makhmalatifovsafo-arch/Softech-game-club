@@ -198,14 +198,14 @@ function renderRestartDialog() {
  * 4. Xabarnoma Yuborish Dialogi (Broadcast Announcement)
  */
 function renderBroadcastDialog() {
-  const currentClubName = remoteControlState.activeClubName || "Ushbu Filial";
+  const currentClubName = String(remoteControlState.activeClubName || 'Ushbu Filial').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 
   return `
     <form onsubmit="handleBroadcastSubmit(event)" class="space-y-3.5 animate-fade-in">
       <div class="p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300 flex items-start gap-2">
         <span class="text-base leading-none">📢</span>
         <p class="leading-relaxed">
-          Kassir va ma'murlar ekraniga to'g'ridan-to'g'ri bildirishnoma chiqarish. Shoshilinch ogohlantirishlar yoki texnik xabarlar uchun.
+          Server dasturida katta xabar ochiladi. × bosilmaguncha yopilmaydi. Klub oflayn bo‘lsa, internetga ulanganda yetkaziladi.
         </p>
       </div>
 
@@ -233,7 +233,7 @@ function renderBroadcastDialog() {
         <input 
           id="inputBroadcastTitle" 
           type="text" 
-          value="Diqqat! Markaziy Xabarnoma" 
+          value="Sizga Softech'dan yangi xabar!" maxlength="160"
           required
           class="w-full px-3.5 py-2 rounded-xl glass-card text-xs text-white"
         />
@@ -246,11 +246,11 @@ function renderBroadcastDialog() {
         </label>
         <textarea 
           id="inputBroadcastMessage" 
-          rows="3" 
+          rows="5" maxlength="4000"
           required
           placeholder="Masalan: Ertaga soat 04:00 da serverda texnik profilaktika o'tkaziladi..." 
           class="w-full px-3.5 py-2 rounded-xl glass-card text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition"
-        >Ertaga soat 04:00 da profilaktika bo'ladi.</textarea>
+        ></textarea>
       </div>
 
       <!-- Muhimlik Darajasi va Davomiylik -->
@@ -266,16 +266,8 @@ function renderBroadcastDialog() {
           </select>
         </div>
 
-        <div>
-          <label class="block text-[11px] font-semibold text-zinc-300 mb-1">
-            Ko'rsatish vaqti:
-          </label>
-          <select id="selectBroadcastDuration" class="w-full px-3 py-2 rounded-xl glass-card text-xs text-zinc-200 font-mono">
-            <option value="30">30 soniya</option>
-            <option value="60">1 daqiqa</option>
-            <option value="120">2 daqiqa</option>
-          </select>
-        </div>
+        <div class="text-xs text-sky-300 flex items-center">Sizga Softech'dan yangi xabar!<br>Faqat × bosilganda yopiladi.</div>
+
       </div>
 
       <div class="pt-2">
@@ -284,7 +276,7 @@ function renderBroadcastDialog() {
           class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition"
         >
           <span>📡</span>
-          <span>Xabarnomani Ekranlarga Tarqatish</span>
+          <span>Xabarni Yuborish</span>
         </button>
       </div>
     </form>
@@ -299,7 +291,7 @@ export function renderRemoteControlModalContent() {
   if (!modal) return;
 
   const currentTab = remoteControlState.activeTab;
-  const clubName = remoteControlState.activeClubName || "Filial";
+  const clubName = String(remoteControlState.activeClubName || 'Filial').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 
   modal.innerHTML = `
     <div class="glass-card w-full max-w-md rounded-3xl p-5 space-y-4 border border-sky-500/30 glow-cyan max-h-[90vh] overflow-y-auto ios-scroll shadow-2xl">
@@ -499,8 +491,7 @@ window.handleLicenseSubmit = async function(e) {
 
     const data = await res.json();
     if (data.success) {
-      showRemoteToast(`✓ ${data.message}`);
-      window.trackRemoteCommand?.(clubId,data.commandId || data.queuedCommand?.id);
+      showRemoteToast(`✓ ${data.message || (isLocking ? 'Litsenziya bloklandi.' : 'Litsenziya faollashtirildi.')}`);
       closeRemoteCommandModal();
       if (typeof window.refreshDashboardData === 'function') window.refreshDashboardData();
       if (typeof window.refreshClubsDirectory === 'function') window.refreshClubsDirectory();
@@ -559,7 +550,9 @@ window.handleBroadcastSubmit = async function(e) {
   const title = document.getElementById('inputBroadcastTitle').value.trim();
   const message = document.getElementById('inputBroadcastMessage').value.trim();
   const priority = document.getElementById('selectBroadcastPriority').value;
-  const durationSeconds = parseInt(document.getElementById('selectBroadcastDuration').value, 10);
+  if(remoteControlState.isSubmitting)return;
+  remoteControlState.isSubmitting=true;
+  const submit=e.target.querySelector('[type=submit]');if(submit)submit.disabled=true;
 
   showRemoteToast("📢 Xabarnoma tarqatilmoqda...");
 
@@ -573,20 +566,20 @@ window.handleBroadcastSubmit = async function(e) {
       },
       body: JSON.stringify({
         action: 'BROADCAST_ANNOUNCEMENT',
-        payload: { title, message, priority, durationSeconds }
+        payload: { title, message, priority, requireDismiss: true }
       })
     });
 
     const data = await res.json();
     if (data.success) {
-      showRemoteToast(`✓ ${data.messageSummary || 'Xabarnoma tarqatildi'}`);
+      showRemoteToast(`✓ ${data.messageSummary || 'Xabar server uchun navbatga qo‘yildi.'}`);
       closeRemoteCommandModal();
     } else {
       showRemoteToast(`Xatolik: ${data.error}`);
     }
   } catch (err) {
     showRemoteToast("Tarmoq xatosi");
-  }
+  } finally { remoteControlState.isSubmitting=false;if(submit)submit.disabled=false; }
 };
 
 // ============================================================================

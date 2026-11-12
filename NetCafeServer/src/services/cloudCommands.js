@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {initAnnouncements} from './cloudAnnouncements.js';
 export const commandBootId = crypto.randomUUID();
 function init(db) {
   db.exec('CREATE TABLE IF NOT EXISTS cloud_command_receipts(id INTEGER PRIMARY KEY,club_id INTEGER NOT NULL,status TEXT NOT NULL)');
@@ -31,14 +32,30 @@ export async function applyCloudCommands(db,envelopes,license,{broadcast,maintai
     const previous=db.prepare('SELECT status FROM cloud_command_receipts WHERE id=? AND club_id=?').get(p.id,p.clubId);
     if(previous && previous.status!=='WAITING')continue;
     const options=p.options||{};
+    if(p.action==='BROADCAST_ANNOUNCEMENT') {
+      initAnnouncements(db);
+      const title=String(options.title||'').trim().slice(0,160),message=String(options.message||'').trim().slice(0,4000);
+      // Persist both delivery receipt and unread message atomically, even if no
+      // cashier window is open. A network retry must never reopen a dismissed item.
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        if(message)db.prepare('INSERT OR IGNORE INTO cloud_announcements(club_id,id,title,message) VALUES(?,?,?,?)').run(p.clubId,p.id,title,message);
+        db.prepare('INSERT INTO cloud_command_receipts(id,club_id,status,message) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,message=excluded.message')
+          .run(p.id,p.clubId,message?'EXECUTED':'FAILED',message?'Xabar serverga saqlandi. × bosilguncha ko‘rsatiladi.':'Xabar matni bo‘sh.');
+        db.exec('COMMIT');
+      } catch(error) {db.exec('ROLLBACK');throw error;}
+      // Only an invalidation signal goes to workstation sockets; the text is
+      // fetched through the authenticated staff API on the server screen.
+      if(message)try{broadcast({id:p.id});}catch{}
+      continue;
+    }
     db.prepare("INSERT OR IGNORE INTO cloud_command_receipts(id,club_id,status) VALUES (?,?,'WAITING')").run(p.id,p.clubId);
     const progress=message=>db.prepare('UPDATE cloud_command_receipts SET message=? WHERE id=?').run(String(message).slice(0,500),p.id);
     if(p.action==='RESTART_SERVER'&&options.force!==true&&hasActiveSessions()) { progress('Faol seanslar tugashi kutilmoqda.'); continue; }
     db.prepare("UPDATE cloud_command_receipts SET status='RUNNING',boot_id=?,started_at=? WHERE id=?").run(bootId,Date.now(),p.id);
     try {
       let result;
-      if(p.action==='BROADCAST_ANNOUNCEMENT') { broadcast({title:String(options.title||'Markaziy xabar').slice(0,160),message:String(options.message||'').slice(0,4000)}); result={complete:true,message:'Xabar yuborildi.'}; }
-      else result=await maintain(p.action,options,{progress,markRestart:version=>{
+      result=await maintain(p.action,options,{progress,markRestart:version=>{
         db.prepare("UPDATE cloud_command_receipts SET status='AWAITING_RESTART',expected_version=?,started_at=?,message=? WHERE id=?")
           .run(version,Date.now(),`v${version} qayta ochilishi va ulanishi kutilmoqda.`,p.id);
       }});

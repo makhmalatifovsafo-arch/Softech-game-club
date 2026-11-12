@@ -1,6 +1,6 @@
 import { checkMobileFlow } from './mobile-flow.mjs';
 import { DatabaseSync } from 'node:sqlite';
-import { checkClubOperations } from './club-operations.mjs';
+import { checkClubOperations, readClubCatalog } from './club-operations.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -133,7 +133,8 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     await new Promise(r=>setTimeout(r,100));assert.equal(socket.readyState,WebSocket.OPEN);
     assert.equal((await fetch(localUrl+'/api/health')).status,200);
 
-    try { await checkClubOperations({ databasePath: path.join(club, "netcafe.db"), localUrl, cloudUrl: env.SOFTECH_CLOUD_URL, cloudToken: accessToken, cloudClubId: approved.club.id, socket }); }
+    let operations;
+    try { operations = await checkClubOperations({ databasePath: path.join(club, "netcafe.db"), localUrl, cloudUrl: env.SOFTECH_CLOUD_URL, cloudToken: accessToken, cloudClubId: approved.club.id, socket }); }
     catch (error) { throw new Error(error.message + '\nSERVER LOG:\n' + s.logs() + '\nCLOUD LOG:\n' + c.logs(), { cause:error }); }
     const inspection = new DatabaseSync(path.join(club, 'netcafe.db'));
     assert.equal(inspection.prepare("SELECT count(*) AS n FROM sessions WHERE status='ACTIVE'").get().n, 0, 'Ban must end every active session');
@@ -157,6 +158,15 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(restored, true, 'Unban must restore verified license');
+    assert.deepEqual(readClubCatalog(path.join(club,'netcafe.db')),operations.catalogBeforeBan,'Block, offline restart and unlock must preserve the complete catalog');
+    const restoredLogin=await fetch(localUrl+'/api/auth/login',{method:'POST',headers:jsonHeaders,body:JSON.stringify({username:'manager',password:'Softech006'})});
+    assert.equal(restoredLogin.status,200);
+    const restoredHeaders={Authorization:'Bearer '+(await restoredLogin.json()).token};
+    const restoredPcs=await (await fetch(localUrl+'/api/computers',{headers:restoredHeaders})).json();
+    const restoredBar=await (await fetch(localUrl+'/api/bar/items?all=1',{headers:restoredHeaders})).json();
+    for(const pc of operations.catalogBeforeBan.computers.filter(row=>row.club_id===1 && row.pc_number>0))assert.ok(restoredPcs.some(row=>row.id===pc.id && row.name===pc.name),pc.id);
+    for(const item of operations.catalogBeforeBan.bar_items.filter(row=>row.club_id===1))assert.ok(restoredBar.items.some(row=>row.id===item.id && row.stockQuantity===item.stock_quantity),item.name);
+    console.log('PASS license block/restart/unlock preserves PCs, bar stock, map and tariffs, accessible after recovery');
     const managerUrl=env.SOFTECH_CLOUD_URL+'/api/clubs/'+approved.club.id+'/manager';
     const deniedManager=await fetch(managerUrl,{method:'PUT',headers:jsonHeaders,body:JSON.stringify({username:'manager',password:'central-owner-password'})});
     assert.equal(deniedManager.status,401);
@@ -215,6 +225,7 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01',ipAddress:'127.0.0.1'}}));
     await checkMobileFlow({cloudUrl:env.SOFTECH_CLOUD_URL,localUrl,clubId:approved.club.id,ownerToken:ownerLogin.token,ageSession:async(id,minutes)=>{
       const billingFixture=new DatabaseSync(path.join(club,'netcafe.db'));
+      billingFixture.exec('PRAGMA busy_timeout=5000');
       try{billingFixture.prepare('UPDATE sessions SET started_at=?,ends_at=? WHERE id=?').run(new Date(Date.now()-minutes*60000).toISOString(),new Date(Date.now()+(60-minutes)*60000).toISOString(),id);}finally{billingFixture.close();}
     },reconnect:async()=>{
       socket.terminate();socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');let restored;socket.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='START_SESSION')restored=m.payload||m;});await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01'}}));for(let i=0;i<60&&!restored;i++)await new Promise(r=>setTimeout(r,50));assert.ok(restored);return restored;
@@ -241,6 +252,15 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
       await new Promise(resolve=>setTimeout(resolve,500));
     }
     assert.deepEqual(snapshot.data?.breakdown,reportBeforeStop.breakdown,s.logs());
+    const inspectorResponse=await fetch(env.SOFTECH_CLOUD_URL+'/api/telemetry/clubs/'+approved.club.id,{headers:adminHeaders});
+    assert.equal(inspectorResponse.status,200,await inspectorResponse.clone().text());
+    const inspector=await inspectorResponse.json();
+    assert.equal(inspector.kassa.totalDailyRevenue,reportBeforeStop.summary.salesRevenue);
+    assert.equal(inspector.kassa.sessionsRevenue,reportBeforeStop.summary.gameRevenue);
+    assert.equal(inspector.kassa.barRevenue,reportBeforeStop.summary.barRevenue);
+    assert.equal(inspector.kassa.cashReceipts,reportBeforeStop.summary.cashReceipts);
+    assert.equal(inspector.kassa.topupRevenue,reportBeforeStop.summary.topupRevenue);
+    console.log('PASS Super Admin, desktop and Manager share recorded sales, balance spending and receipts');
     socket.terminate();const offlineExit=once(s.child,'exit');s.child.kill();await offlineExit;
     // A fresh login and report fetch must succeed while the real club process is stopped.
     mobile=await dashboardLogin();

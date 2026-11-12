@@ -1,3 +1,4 @@
+import {announcementPayload} from './announcementPayload.js';
 import { requireRemoteMaintenance } from './maintenanceVersion.js';
 /**
  * Softech Super Admin — Remote Action Dispatcher Service
@@ -155,24 +156,10 @@ export class RemoteControlService {
     return {success:true,commandId:command.id,clubId,action:'FORCE_UPDATE',message:'Yangilash buyrug‘i navbatga qo‘yildi.'};
   }
 
-  static broadcastAnnouncement(clubId, { title, message, priority = 'HIGH', durationSeconds = 30 } = {}) {
-    if (!message || String(message).trim().length === 0) {
-      throw new Error("Xabarnoma matni kiritilishi shart.");
-    }
-
-    const cleanTitle = title ? String(title).trim() : "Diqqat! Markaziy Xabarnoma";
-    const cleanMessage = String(message).trim();
-    const duration = Math.max(5, Math.min(300, parseInt(durationSeconds || 30, 10)));
-
-    const payload = {
-      action: 'BROADCAST_ANNOUNCEMENT',
-      title: cleanTitle,
-      message: cleanMessage,
-      priority: ['INFO', 'WARNING', 'CRITICAL', 'HIGH'].includes(priority) ? priority : 'HIGH',
-      durationSeconds: duration,
-      broadcastAt: new Date().toISOString(),
-      timestamp: Date.now()
-    };
+  static broadcastAnnouncement(clubId, options = {}) {
+    const clean=announcementPayload(options);
+    const cleanTitle=clean.title,cleanMessage=clean.message;
+    const payload={...clean,action:'BROADCAST_ANNOUNCEMENT',broadcastAt:new Date().toISOString()};
 
     // Ommaviy xabarnoma (Barcha klublarga)
     if (clubId === 'ALL' || clubId === 0 || clubId === 'all') {
@@ -211,8 +198,8 @@ export class RemoteControlService {
       commandId: cmd.id,
       title: cleanTitle,
       message: cleanMessage,
-      durationSeconds: duration,
-      messageSummary: `Xabarnoma ${club.name} kassa ekraniga yuborildi.`
+      requireDismiss: true,
+      messageSummary: `Xabarnoma ${club.name} serveri uchun navbatga qo‘yildi.`
     };
   }
 

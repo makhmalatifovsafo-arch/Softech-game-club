@@ -15,7 +15,7 @@ test('cashier operations are allowlisted but financial reports and staff managem
  for(const [path,method] of [['/api/bookings/1/status','PUT'],['/api/bar/orders/1/pay','POST'],['/api/bar/orders/confirm','POST'],['/api/clients/topup','POST'],['/api/sessions/transfer','POST']]){
   assert.equal(allowedMobileRequest({path,method}),true,path);assert.equal(mobileRoleAllows('administrator',path,method),true);
  }
- for(const [path,method] of [['/api/admin/users','POST'],['/api/admin/users/1/permissions','PUT'],['/api/admin/users/1','DELETE'],['/api/admin/tariffs','PUT'],['/api/admin/settings','PUT'],['/api/admin/tariff-schedules','POST'],['/api/admin/tariff-schedules/1','DELETE']]){
+ for(const [path,method] of [['/api/admin/users','POST'],['/api/admin/users/1/permissions','PUT'],['/api/admin/users/1','DELETE'],['/api/admin/tariffs','PUT'],['/api/admin/settings','PUT'],['/api/admin/tariff-schedules','POST'],['/api/admin/tariff-schedules/1','PUT'],['/api/admin/tariff-schedules/1','DELETE']]){
   assert.equal(allowedMobileRequest({path,method}),true);
   assert.equal(managerSettingRequest(path,method),true);
   assert.equal(mobileRoleAllows('club_owner',path,method),true);

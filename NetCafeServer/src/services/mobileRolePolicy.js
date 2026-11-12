@@ -3,7 +3,7 @@
 export function mobileManagerSetting(path, method) {
   const pathname = new URL(path, 'http://localhost').pathname;
   if (method === 'GET') return ['/api/tariffs','/api/tariff-schedules','/api/admin/users','/api/settings'].includes(pathname);
-  if (method === 'PUT') return ['/api/admin/tariffs','/api/admin/settings'].includes(pathname) || /^\/api\/admin\/users\/\d+\/permissions$/.test(pathname);
+  if (method === 'PUT') return ['/api/admin/tariffs','/api/admin/settings'].includes(pathname) || /^\/api\/admin\/users\/\d+\/permissions$/.test(pathname) || /^\/api\/admin\/tariff-schedules\/\d+$/.test(pathname);
   if (method === 'POST') return ['/api/admin/users','/api/admin/tariff-schedules'].includes(pathname);
   return method === 'DELETE' && /^\/api\/admin\/(users|tariff-schedules)\/\d+$/.test(pathname);
 }

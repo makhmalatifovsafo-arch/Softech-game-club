@@ -8,7 +8,7 @@ import { MobileSnapshotSync } from './services/mobileSnapshotSync.js';
 import { mobileCloudUser } from './services/mobileCloudSession.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
 import { createBooking, updateBookingStatus } from './services/bookingService.js';
-import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage } from './services/memberBilling.js';
+import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage, freezePrepaidRates } from './services/memberBilling.js';
 import { confirmClientBarOrder, payPendingBarOrder } from './services/clientBarOrders.js';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -45,6 +45,7 @@ import { ServerUpdater } from './services/updater.js';
 import { LicenseManager } from './services/licenseManager.js';
 import { HwidService } from './services/hwidService.js';
 import { CloudLicenseService } from './services/cloudLicenseService.js';
+import {pendingAnnouncements,dismissAnnouncement} from './services/cloudAnnouncements.js';
 
 export { logAuditEvent, getAuditTrail, formatAuditEntry, LicenseManager, HwidService, CloudLicenseService };
 
@@ -146,6 +147,19 @@ function handleRequest(req, res) {
       sendJson(res, result.success ? 200 : 400, result);
     });
     return;
+  }
+
+  // Staff can read a Softech message even while the license is blocked.
+  const dismissAnnouncementMatch=url.pathname.match(/^\/api\/cloud-announcements\/(\d+)\/dismiss$/);
+  if ((url.pathname==='/api/cloud-announcements' && req.method==='GET') || (dismissAnnouncementMatch && req.method==='POST')) {
+    if(!authenticate(req,res,{roles:['superadmin','club_owner','administrator'],allowExpiredClub:true}))return;
+    if(req.user.clubId!==1 && req.user.role!=='superadmin'){sendJson(res,403,{error:'Boshqa klub xabari.'});return;}
+    const cloudClubId=Number(LicenseManager.licenseData?.clubId);
+    res.setHeader('Cache-Control','no-store');
+    if(req.method==='GET'){sendJson(res,200,{notices:Number.isSafeInteger(cloudClubId)?pendingAnnouncements(db,cloudClubId):[]});return;}
+    const id=Number(dismissAnnouncementMatch[1]);
+    const found=Number.isSafeInteger(cloudClubId)&&Number.isSafeInteger(id)&&dismissAnnouncement(db,cloudClubId,id);
+    sendJson(res,found?200:404,found?{success:true}:{error:'Xabar topilmadi.'});return;
   }
 
   // A banned/unactivated installation cannot operate through any business API.
@@ -1795,33 +1809,10 @@ function handleRequest(req, res) {
   if (url.pathname === '/api/customers' && req.method === 'GET') {
     if (!authenticate(req, res, { allowExpiredClub: true })) return;
     const clubId = getTenantClubId(req);
-    const query = url.searchParams.get('q') || '';
-    let customers;
-
-    if (query.trim()) {
-      customers = clubId === null ? db.prepare(`
-        SELECT id, name, phone, balance, discount_percent 
-        FROM customers 
-        WHERE name LIKE ? OR phone LIKE ? 
-        LIMIT 10
-      `).all(`%${query}%`, `%${query}%`) : db.prepare(`
-        SELECT id, name, phone, balance, discount_percent 
-        FROM customers 
-        WHERE (name LIKE ? OR phone LIKE ?) AND (club_id = ? OR club_id IS NULL)
-        LIMIT 10
-      `).all(`%${query}%`, `%${query}%`, clubId);
-    } else {
-      customers = clubId === null ? db.prepare(`
-        SELECT id, name, phone, balance, discount_percent 
-        FROM customers 
-        ORDER BY id DESC LIMIT 10
-      `).all() : db.prepare(`
-        SELECT id, name, phone, balance, discount_percent 
-        FROM customers 
-        WHERE (club_id = ? OR club_id IS NULL)
-        ORDER BY id DESC LIMIT 10
-      `).all(clubId);
-    }
+    const query = '%' + (url.searchParams.get('q') || '').trim() + '%';
+    const customers = db.prepare(`SELECT id, username AS name, phone_number AS phone, balance
+      FROM users WHERE role='client' AND (? IS NULL OR club_id=?)
+      AND (username LIKE ? OR COALESCE(phone_number,'') LIKE ?) ORDER BY id DESC LIMIT 10`).all(clubId,clubId,query,query);
     sendJson(res, 200, customers);
     return;
   }
@@ -1865,6 +1856,7 @@ function handleRequest(req, res) {
         const resolvedCompId = targetPcRow.id;
         const pcZoneId = targetPcRow?.zone_id || resolveZoneIdForComputer(resolvedCompId, clubId);
 
+        if ((mode === 'client' || paymentType === 'BALANCE') && !db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(customerId,clubId)) throw new Error('Mijoz hisobi topilmadi.');
         let finalDuration = durationMinutes;
         let finalAmount = amount;
         let finalEndsAt;
@@ -1873,6 +1865,7 @@ function handleRequest(req, res) {
         const activeRate = requireRateForMoment(startedAt, false, clubId, pcZoneId);
 
         const isPostpaidReq = Boolean(mode === 'postpaid' || mode === 'VIP' || mode === 'vip' || isPostpaid || paymentType === 'POSTPAID');
+        if(isPostpaidReq && paymentType==='BALANCE')throw new Error('Postpaid seansni balansdan oldindan to‘lab bo‘lmaydi.');
         if (isPostpaidReq) {
           const settings = getClubSettings(clubId);
           if (!settings.vip_enabled) {
@@ -1897,17 +1890,20 @@ function handleRequest(req, res) {
             const calc = calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
             finalAmount = calc.totalAmount;
             finalEndsAt = new Date(calc.endTime);
-          } else if (mode === 'price' && amount) {
+          } else if ((mode === 'price' || mode === 'amount') && amount) {
             const calc = calculateTimeFromAmount(startedAt, amount, false, clubId, pcZoneId);
             finalDuration = calc.totalMinutes;
             finalAmount = calc.totalAmount;
             finalEndsAt = new Date(calc.endTime);
           } else {
-            finalEndsAt = new Date(startedAt.getTime() + finalDuration * 60 * 1000);
+            const calc = calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
+            finalAmount = calc.totalAmount;
+            finalEndsAt = new Date(calc.endTime);
           }
         }
 
         if (!isPostpaidReq) calculateIntervalPrice(startedAt, finalEndsAt, false, clubId, pcZoneId);
+        const prepaidRates=paymentType==='BALANCE'?freezePrepaidRates(resolvedCompId,startedAt,finalEndsAt):null;
 
         // Standart soatlik tarif
         const defaultTariff = db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
@@ -1941,6 +1937,8 @@ function handleRequest(req, res) {
           isPostpaidReq ? 0 : finalAmount,
           notes
         );
+
+        if(prepaidRates)db.prepare('UPDATE sessions SET prepaid_rate_plan=? WHERE id=?').run(JSON.stringify(prepaidRates),sessionId);
 
         // 2. Tranzaksiya yozish (agar postpaid bo'lmasa va pul to'langan bo'lsa)
         if (!isPostpaidReq && finalAmount > 0 && paymentType !== 'BALANCE') {
@@ -2646,16 +2644,12 @@ function handleRequest(req, res) {
             calc = calculateTimeFromAmount(startedAt,amount,false,clubId,zoneId);
           } else {
             calc = calculateFromDurationHours(startedAt,data.durationMinutes != null ? Number(data.durationMinutes)/60 : Number(value ?? 1),false,clubId,zoneId);
-            // Preserve the existing member-discount flow; ordinary hourly quotes are server-calculated.
-            if (normalizedMode === 'CLIENT' && data.amount !== undefined) {
-              const memberAmount = Number(data.amount);
-              if (!Number.isFinite(memberAmount) || memberAmount < 0) throw new Error('Mijoz summasi noto‘g‘ri.');
-              calc.totalAmount = memberAmount;
-            }
+
           }
-          return {pcId:pc.id,rate,perPcAmount:calc.totalAmount,perPcDurationMins:calc.totalMinutes,endsAt:new Date(calc.endTime)};
+          return {pcId:pc.id,rate,perPcAmount:calc.totalAmount,perPcDurationMins:calc.totalMinutes,endsAt:new Date(calc.endTime),prepaidRates:paymentType==='BALANCE'?freezePrepaidRates(pc.id,startedAt,calc.endTime):null};
         });
         if (new Set(plans.map(p=>p.pcId)).size !== plans.length) throw new Error('Kompyuter takroran tanlangan.');
+        if ((normalizedMode === 'CLIENT' || paymentType === 'BALANCE') && !db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(customerId,clubId)) throw new Error('Mijoz hisobi topilmadi.');
         const totalAmountAllPcs = plans.reduce((sum,p)=>sum+p.perPcAmount,0);
         const results = [], notifications = [];
         db.exec('BEGIN IMMEDIATE');
@@ -2671,7 +2665,7 @@ function handleRequest(req, res) {
         const defaultTariff = db.prepare('SELECT id, name FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
           || db.prepare('SELECT id, name FROM tariffs ORDER BY price_per_hour ASC LIMIT 1').get();
 
-        for (const {pcId, rate, perPcAmount, perPcDurationMins, endsAt} of plans) {
+        for (const {pcId, rate, perPcAmount, perPcDurationMins, endsAt, prepaidRates} of plans) {
           const sessionId = `ses_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
           const notes = paymentType === 'BALANCE' ? 'CLIENT_BALANCE_PREPAID:'+customerId : isPostpaid ? 'POSTPAID' : `BATCH_${normalizedMode}`;
 
@@ -2693,6 +2687,7 @@ function handleRequest(req, res) {
             notes
           );
 
+          if(prepaidRates)db.prepare('UPDATE sessions SET prepaid_rate_plan=? WHERE id=?').run(JSON.stringify(prepaidRates),sessionId);
           if (paymentType === 'BALANCE') db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category,session_id) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME',?)").run(clubId,customerId,perPcAmount,sessionId);
 
           // 2. Tranzaksiya (club_id bilan)

@@ -1,3 +1,32 @@
+2026-11-12: 1.1.0 unified tariffs, verified accounting and Windows updates
+- Fix license-unlock screens appearing empty: reload computers and bar automatically
+  after activation; never treat blocked/failed API responses as an empty catalog.
+  License block/restart/unlock tests preserve PCs, stock, layouts and tariffs.
+- Super Admin can send a selected club a persistent Softech message. The Server
+  shows a large message until staff press X; unread messages survive reconnects
+  and restarts, remain available while blocked, and queue without duplicates.
+- Desktop manager and administrator share the same UI and server-side tariff engine;
+  role permissions still determine which actions each account can perform.
+- Customer search uses the actual kiosk login accounts. Single and group member
+  sessions recalculate their full interval price on the server instead of trusting
+  stale browser prices. Unconfigured tariff intervals reject session creation.
+- Cashier-opened balance sessions freeze their agreed minute prices just like kiosk
+  login sessions, so early refunds follow the actual tariff intervals, not an average.
+- Mobile Manager can edit dynamic schedules, including full-day rules. Obsolete
+  standard packages are hidden there as well as on the desktop.
+- Super Admin analytics, inspector and overview use the same daily ledger snapshots
+  as Manager reports. Game/bar sales include spent balance; balance deposits remain
+  separate cash receipts. Historical refunds replace the affected day's totals.
+- Removed fabricated refund estimates and double subtraction from Super Admin UI.
+  Paid bar report lines resolve the correct computer in the same club.
+- Includes member-only self logout, live cashier-session information, prepaid bar
+  reminders, strict tariff coverage, green available PCs and single page headings.
+- Automatic updates stage in the background even before activation. Idle installation
+  and explicit busy installation preserve sessions, accounts, bar stock and database.
+  SHA-256 validation, one rollback copy and protected data directories remain enabled.
+- Deploy the cloud sources as well as the Server/Client release to update Super Admin
+  and mobile pages. Cloud reports show the last synchronized data, not offline live data.
+
 2026-11-12: 1.0.31 pricing and session-expiry bar reminders
 - Uncovered time spans retain the latest applicable daily rate; fixed/night packages
   are not accidentally used as zero hourly rates. Explicit later hourly rates still apply.

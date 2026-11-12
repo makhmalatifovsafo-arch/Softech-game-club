@@ -62,11 +62,13 @@ test('receipt classification, balance isolation, historical payment date and ten
     INSERT INTO bar_order_items VALUES(1,1,'Cola',1,5000,5000),(2,2,'Cola',1,5000,5000),(3,3,'Cola',1,5000,5000);
   `);
   try {
+    db.exec("INSERT INTO computers VALUES('pc_7','Correct PC',1,7),('7','Other club PC',2,7); UPDATE bar_orders SET computer_id=7 WHERE id=2");
     const b=getFinancialBreakdown(db,'2026-10-10','2026-10-10',1);
     assert.equal(b.cash,9000);assert.equal(b.card,25000);assert.equal(b.total,34000);
     assert.equal(b.gameReceipts,10000);assert.equal(b.topupReceipts,20000);
     assert.equal(b.gameBalance,2000);assert.equal(b.barBalance,5000);
     assert.equal(b.rows.filter(r=>r.category==='BAR').length,2);
+    assert.equal(b.rows.find(r=>r.id==='bar:2').computerName,'Correct PC','Paid bar rows use the PC number in the same club');
     assert.equal(b.rows.filter(r=>r.category==='BAR'&&r.paymentMethod!=='BALANCE').reduce((s,r)=>s+r.amount,0),5000);
     assert.equal(getFinancialBreakdown(db,'2026-10-09','2026-10-09',1).rows.length,0);
   } finally {db.close();}

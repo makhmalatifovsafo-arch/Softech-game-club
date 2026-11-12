@@ -253,30 +253,31 @@ function renderOverviewHeader(club) {
  */
 function renderKassaBreakdown(kassa) {
   const totalRevenue = Number(kassa.totalDailyRevenue) || 0;
-  const sessionsRevenue = Number(kassa.sessionsRevenue) || Math.max(0, totalRevenue - (Number(kassa.barRevenue) || 0));
+  const sessionsRevenue = Number(kassa.sessionsRevenue ?? (totalRevenue - Number(kassa.barRevenue || 0)));
   const barRevenue = Number(kassa.barRevenue) || 0;
-  const refundsSum = Number(kassa.refundsSum) || (sessionsRevenue > 0 ? Math.round(sessionsRevenue * 0.015) : 0);
-  const netRevenue = Math.max(0, totalRevenue - refundsSum);
+  const topups = kassa.topupRevenue == null ? '—' : Number(kassa.topupRevenue).toLocaleString();
+  const cashReceipts = kassa.cashReceipts == null ? '—' : Number(kassa.cashReceipts).toLocaleString();
 
   const totalCalculated = Math.max(1, sessionsRevenue + barRevenue);
   const sessionsPercent = Math.round((sessionsRevenue / totalCalculated) * 100);
-  const barPercent = 100 - sessionsPercent;
+  const barPercent = Math.round((barRevenue / totalCalculated) * 100);
 
   return `
     <div class="glass-card rounded-3xl p-5 border border-zinc-800/80 shadow-xl space-y-4">
       <div class="flex items-center justify-between">
         <div>
           <h3 class="text-sm font-extrabold text-white tracking-tight flex items-center gap-2">
-            <span>💵 Kunlik Kassa Taqsimoti</span>
+            <span>💵 Kunlik savdo va kassa</span>
           </h3>
-          <p class="text-[11px] text-zinc-400 mt-0.5">Bugungi tushumlar, bar savdosi va qaytimlar balansi</p>
+          <p class="text-[11px] text-zinc-400 mt-0.5">O‘yin va bar savdosi; balans to‘ldirish alohida. Qaytimlar hisobga olingan.</p>
         </div>
         <div class="text-right">
-          <span class="text-[9px] uppercase font-bold text-zinc-500 tracking-wider block">Jami Tushum</span>
+          <span class="text-[9px] uppercase font-bold text-zinc-500 tracking-wider block">O‘yin + bar savdosi</span>
           <span class="text-sm font-black font-mono text-emerald-400">${totalRevenue.toLocaleString()} UZS</span>
         </div>
       </div>
 
+      <p class="text-[11px] text-zinc-400">${kassa.capturedAt ? 'Sinxronlangan: '+new Date(kassa.capturedAt).toLocaleString() : 'Batafsil hisobot hali sinxronlanmagan. Serverni yangilang va internetga ulang.'}</p>
       <!-- Financial Split Cards Grid -->
       <div class="grid grid-cols-3 gap-2.5">
         <!-- 1. Seanslar Tushumi -->
@@ -312,13 +313,13 @@ function renderKassaBreakdown(kassa) {
           <div>
             <div class="flex items-center gap-1 text-[10px] text-rose-400 font-semibold">
               <span>🔄</span>
-              <span>Qaytimlar</span>
+              <span>Balans to‘ldirish</span>
             </div>
             <div class="text-xs sm:text-sm font-extrabold font-mono text-rose-300 mt-1.5 leading-none">
-              ${refundsSum.toLocaleString()}
+              ${topups}
             </div>
           </div>
-          <div class="text-[9px] text-zinc-400 mt-2 font-mono">Bekor qilingan</div>
+          <div class="text-[9px] text-zinc-400 mt-2 font-mono">Savdoga qo‘shilmaydi</div>
         </div>
       </div>
 
@@ -342,8 +343,8 @@ function renderKassaBreakdown(kassa) {
 
       <!-- Net Revenue Summary Footer -->
       <div class="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
-        <span class="text-zinc-400 font-medium">Sof Kassa Daromadi:</span>
-        <span class="font-mono font-bold text-white text-sm">${netRevenue.toLocaleString()} <span class="text-[10px] text-zinc-400 font-normal">UZS</span></span>
+        <span class="text-zinc-400 font-medium">Kassa tushumi (naqd + karta):</span>
+        <span class="font-mono font-bold text-white text-sm">${cashReceipts} <span class="text-[10px] text-zinc-400 font-normal">UZS</span></span>
       </div>
     </div>
   `;

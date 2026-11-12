@@ -6,7 +6,7 @@ const ident=v=>{if(!/^[a-z_][a-z0-9_]*$/.test(v))throw Error('Invalid SQL identi
 const json=v=>JSON.parse(JSON.stringify(v));
 // Supabase-shaped test adapter executes real PostgreSQL SQL, including RPC and constraints.
 const client={from(table){let operation='SELECT',values,filters=[],sort=table==='mobile_agents'?'club_id':'id',ascending=true,start=0,end=999,one=false,conflict,wantCount=false;
- const q={select(columns,options){wantCount=options?.count==='exact';return q;},eq(k,v){filters.push([k,'=',v]);return q;},is(k,v){filters.push([k,'IS',v]);return q;},gt(k,v){filters.push([k,'>',v]);return q;},lt(k,v){filters.push([k,'<',v]);return q;},neq(k,v){filters.push([k,'<>',v]);return q;},gte(k,v){filters.push([k,'>=',v]);return q;},in(k,v){filters.push([k,'IN',v]);return q;},contains(k,v){filters.push([k,'@>',JSON.stringify(v)]);return q;},order(k,o={}){sort=k;ascending=o.ascending!==false;return q;},range(a,b){start=a;end=b;return q;},limit(n){start=0;end=n-1;return q;},maybeSingle(){one=true;return q;},single(){one=true;return q;},insert(v){operation='INSERT';values=v;return q;},upsert(v,o){operation='INSERT';values=v;conflict=o.onConflict;return q;},update(v){operation='UPDATE';values=v;return q;},delete(){operation='DELETE';return q;},then(resolve,reject){return (async()=>{try{
+ const q={select(columns,options){wantCount=options?.count==='exact';return q;},eq(k,v){filters.push([k,'=',v]);return q;},is(k,v){filters.push([k,'IS',v]);return q;},gt(k,v){filters.push([k,'>',v]);return q;},lt(k,v){filters.push([k,'<',v]);return q;},neq(k,v){filters.push([k,'<>',v]);return q;},gte(k,v){filters.push([k,'>=',v]);return q;},lte(k,v){filters.push([k,'<=',v]);return q;},in(k,v){filters.push([k,'IN',v]);return q;},contains(k,v){filters.push([k,'@>',JSON.stringify(v)]);return q;},order(k,o={}){sort=k;ascending=o.ascending!==false;return q;},range(a,b){start=a;end=b;return q;},limit(n){start=0;end=n-1;return q;},maybeSingle(){one=true;return q;},single(){one=true;return q;},insert(v){operation='INSERT';values=v;return q;},upsert(v,o){operation='INSERT';values=v;conflict=o.onConflict;return q;},update(v){operation='UPDATE';values=v;return q;},delete(){operation='DELETE';return q;},then(resolve,reject){return (async()=>{try{
   const args=[],param=v=>{args.push(typeof v==='object'&&v!==null?JSON.stringify(v):v);return '$'+args.length;};
   let statement;
   if(operation==='INSERT'){
@@ -25,6 +25,7 @@ try{
  await db.exec('CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role BYPASSRLS;CREATE PUBLICATION supabase_realtime;');
  await db.exec(fs.readFileSync('supabase_schema.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261031_cloud_audit.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261031_mobile_relay.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261031_mobile_relay.sql','utf8'));
  await db.exec("INSERT INTO clubs(id,name,slug,hardware_fingerprint,api_secret_token,total_workstations,tariff_type,tariff_fixed_price) VALUES(1,'API Club','api-club','HWID-API-TEST-123','private-test-token',24,'FIXED_MONTHLY',500000);");
+ await db.exec(fs.readFileSync('migrations/20261110_mobile_dashboard.sql','utf8'));
  const {default:handler}=await import('../api/index.js');const {SupabaseCloudService}=await import('../src/services/supabaseClient.js');SupabaseCloudService.client=client;
  const {signAccessToken}=await import('../src/utils/jwt.js');const {signClubLicense}=await import('../src/services/cloudActivationService.js');
  const token=signAccessToken({id:1,sub:1,username:'admin',role:'superadmin'});
@@ -39,6 +40,8 @@ try{
  assert.equal((await api('/api/billing/summary')).body.summary.currentMonthCollected,600000);
  assert.equal((await api('/api/admin/clear-demo-data','POST')).status,409);assert.equal((await db.query('SELECT count(*)::int n FROM clubs')).rows[0].n,1);
  const command=await api('/api/telemetry/commands/1','POST',{action:'BROADCAST_ANNOUNCEMENT',payload:{title:'Test',message:'Hello'}});assert.equal(command.status,200,JSON.stringify(command));
+ assert.equal((await db.query('SELECT payload FROM remote_commands WHERE id=$1',[command.body.commandId])).rows[0].payload.requireDismiss,true);
+ assert.equal((await api('/api/telemetry/commands/1','POST',{action:'BROADCAST_ANNOUNCEMENT',payload:{message:'x'.repeat(4001)}})).status,400);
  assert.equal((await api('/api/clubs/1/manager','PUT',{username:'owner',password:'private-owner-pass'})).status,200);
  const club=(await db.query('SELECT * FROM clubs WHERE id=1')).rows[0];const license=signClubLicense(json(club),club.hardware_fingerprint);
  const cashierSaved=await api('/api/clubs/1/administrator','PUT',{username:'cashier_sync',password:'cashier-sync-password'});
@@ -82,6 +85,18 @@ try{
  }
  console.log('PASS cloud inventory grows, shrinks and reaches zero while license capacity stays unchanged');
  const analytics=await api('/api/analytics/platform?days=365');assert.equal(analytics.status,200,JSON.stringify(analytics));assert.equal(analytics.body.summary.totalRevenue,150000);
+ const reportDay=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
+ const canonical={accountingVersion:2,summary:{salesRevenue:12000,gameRevenue:7000,barRevenue:5000,cashReceipts:29000,topupRevenue:20000}};
+ await db.query('INSERT INTO mobile_dashboard_data(club_id,data_key,payload,captured_at) VALUES(1,$1,$2,now())',['report:'+reportDay,JSON.stringify(canonical)]);
+ const canonicalDetail=await api('/api/telemetry/clubs/1');assert.equal(canonicalDetail.status,200,JSON.stringify(canonicalDetail));
+ assert.equal(canonicalDetail.body.kassa.totalDailyRevenue,12000);assert.equal(canonicalDetail.body.kassa.cashReceipts,29000);assert.equal(canonicalDetail.body.kassa.topupRevenue,20000);
+ assert.equal((await api('/api/telemetry/summary')).body.summary.revenue.todayTotal,12000);
+ assert.equal((await SupabaseCloudService.getAllClubs()).find(c=>c.id===1).today_revenue,12000);
+ const corrected=await api('/api/analytics/platform?days=365');assert.equal(corrected.status,200,JSON.stringify(corrected));
+ assert.equal(corrected.body.dynamicRevenue.find(d=>d.date===reportDay).totalRevenue,12000);
+ assert.equal(corrected.body.dynamicRevenue.find(d=>d.date===reportDay).sessionsRevenue,7000);
+ console.log('PASS PostgreSQL Super Admin reads the same canonical daily report as Manager, without counting deposits as games');
+
  assert.equal((await api('/api/telemetry/commands/1','POST',{action:'LOCK_CLUB_LICENSE',payload:{reason:'Test lock'}})).status,200);
  assert.equal((await db.query('SELECT status FROM clubs WHERE id=1')).rows[0].status,'BLOCKED');
  assert.equal((await api('/api/telemetry/commands/1','POST',{action:'UNLOCK_CLUB_LICENSE',payload:{extensionDays:7}})).status,200);
