@@ -166,8 +166,8 @@ export class ProtocolDispatcher {
     }
 
     const currentRate = getActiveRateForMoment(new Date(), false, clubId || 1, zoneId);
-    const pricePerHour = Number(currentRate?.pricePerHour || 10000);
-    const rateFormatted = `${pricePerHour.toLocaleString('uz-UZ').replace(/,/g, ' ')} UZS / soat`;
+    const pricePerHour = Number(currentRate?.pricePerHour || 0);
+    const rateFormatted = currentRate.configured ? `${pricePerHour.toLocaleString('uz-UZ').replace(/,/g, ' ')} UZS / soat` : 'Tarif belgilanmagan';
 
     // Push CONFIG_UPDATE down to the client immediately
     const configUpdateMsg = {

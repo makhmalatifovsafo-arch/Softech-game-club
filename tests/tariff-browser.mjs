@@ -1,0 +1,50 @@
+import { chromium } from '../.tools/browser-test/node_modules/playwright/index.mjs';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const html = fs.readFileSync('NetCafeServer/public/index.html','utf8');
+for (const [,script] of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) new Function(script);
+assert.ok(!html.includes('Standart Paketlar'));
+const markup=html.slice(html.indexOf('<div id="tabContent-tariffs"'),html.indexOf('<!-- TAB 3: CLIENTS'));
+assert.ok(markup.length>1000);
+const source=html.slice(html.indexOf('    // --- TAB 2 CONTINUED:'),html.indexOf('    // --- TAB 3: CLIENTS'));
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try {
+  const page=await browser.newPage();
+  await page.setContent(markup);
+  await page.locator('#tabContent-tariffs').evaluate(el=>el.classList.remove('hidden'));
+  await page.addScriptTag({content:`let authToken='test',dynamicSchedulesData=[];const requests=[];
+    const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+    let rules=[{id:1,name:'Day <img src=x>',start_time:'10:00',end_time:'17:00',price_per_hour:7000,days_of_week:[1,2,3,4,5],is_vip:1,priority:4}];
+    window.confirm=()=>true;window.alert=msg=>{throw Error(msg)};
+    window.fetch=async(url,options={})=>{
+      requests.push({url,...options});
+      if(options.method==='PUT'){const body=JSON.parse(options.body);rules=[{id:1,...body}];}
+      if(options.method==='DELETE') rules=[];
+      return {ok:true,json:async()=>rules};
+    };
+    ${source}`});
+  await page.evaluate(()=>loadDynamicSchedules());
+  assert.equal(await page.locator('#dynamicSchedulesList img').count(),0);
+  await page.getByRole('button',{name:'Tahrirlash',exact:true}).click();
+  assert.equal(await page.locator('#schedRate').inputValue(),'7000');
+  await page.locator('#schedRate').fill('9000');
+  await page.locator('#schedSave').click();
+  await page.waitForFunction(()=>requests.some(r=>r.method==='PUT'));
+  const saved=await page.evaluate(()=>JSON.parse(requests.find(r=>r.method==='PUT').body));
+  assert.equal(saved.price_per_hour,9000);assert.equal(saved.is_vip,1);assert.equal(saved.priority,4);
+  await page.getByRole('button',{name:'Tahrirlash',exact:true}).click();
+  await page.locator('#schedCancel').click();
+  assert.equal(await page.locator('#schedSave').innerText(),'+ Qoidani Saqlash');
+  await page.locator('button[title="O\'chirish"]').click();
+  await page.waitForFunction(()=>document.getElementById('dynamicSchedulesList').textContent.includes('Tarif kiritilmagan'));
+  const quote=html.slice(html.indexOf('    async function fetchStartQuote('),html.indexOf('    function setHoursPreset('));
+  await page.setContent(['btnSubmitStart','startModalPrice','startModalPerPcPrice','hoursCalculatedMins','startModalDurationSummary','startModalTotalLabel'].map(id=>`<${id==='btnSubmitStart'?'button':'div'} id="${id}"></${id==='btnSubmitStart'?'button':'div'}>`).join(''));
+  await page.addScriptTag({content:`let targetSelectedPcIds=['pc'],priceCalculationRevision=0,currentHourlyRate=7000,calcDebounceTimer;
+    fetch=async()=>({ok:false,json:async()=>({error:'2026-11-12 17:00 uchun tarif belgilanmagan. Sozlamalarda tarif kiriting.'})});
+    ${quote}`});
+  await page.evaluate(()=>calcFromHours(2));
+  await page.waitForFunction(()=>document.getElementById('startModalPrice').textContent.includes('17:00'));
+  assert.equal(await page.locator('#btnSubmitStart').isDisabled(),true);
+  assert.equal(await page.locator('#startModalPerPcPrice').innerText(),'—');
+  console.log('PASS tariff editing, preserved priority/VIP, cancel/delete, safe names and missing-time message blocking start');
+} finally {await browser.close();}

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { verifyPassword } from '../auth.js';
-import { requireRateForMoment, calculateTimeFromAmount, resolveZoneIdForComputer } from './pricingEngine.js';
+import { requireRateForMoment, calculateMinuteCost, calculateTimeFromAmount, resolveZoneIdForComputer } from './pricingEngine.js';
 export const isLiveMember = session => Boolean(session?.notes?.startsWith('CLIENT_BALANCE_LIVE:'));
 export const isPrepaidMember = session => Boolean(session?.notes?.startsWith('CLIENT_BALANCE_PREPAID:'));
 export const isMemberSession = session => isLiveMember(session) || isPrepaidMember(session);
@@ -25,8 +25,8 @@ export function quoteMemberMinutes(pcId, minutes, now = new Date()) {
   const pc = db.prepare('SELECT * FROM computers WHERE id=?').get(pcId);
   if (!pc) throw new Error('Kompyuter topilmadi.');
   const zone = resolveZoneIdForComputer(pc.id, pc.club_id);
-  const rates = Array.from({length:minutes}, (_, i) => Number(requireRateForMoment(
-    new Date(now.getTime() + i * 60000), false, pc.club_id, zone).pricePerHour) / 60);
+  const rates = Array.from({length:minutes}, (_, i) => calculateMinuteCost(
+    new Date(now.getTime() + i * 60000), false, pc.club_id, zone));
   if (rates.some(rate => !Number.isFinite(rate) || rate < 0)) throw new Error('Tarif noto‘g‘ri.');
   return { pc, rates, amount:Math.round(rates.reduce((a,b)=>a+b,0)),
     rate:requireRateForMoment(now,false,pc.club_id,zone) };

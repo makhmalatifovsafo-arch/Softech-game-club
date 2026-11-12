@@ -2215,10 +2215,11 @@
             </div>
           </div>
 
+          <p class="text-xs text-amber-300">Tarif belgilanmagan kun yoki vaqtga seans ochilmaydi. Xonaga alohida tarif kiritilgan bo‘lsa, o‘sha xona tariflari ishlaydi. Boshlanish va tugash bir xil bo‘lsa, tarif tanlangan kunlarda 24 soat amal qiladi.</p>
           <!-- 1. Yangi Dinamik Jadval Qo'shish -->
           <form onsubmit="handleCreateSchedule(event)" class="p-4 rounded-xl border border-[#27272a] bg-[#09090b] space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-white uppercase tracking-wider">+ Yangi Vaqt va Kun Tarfini Qo'shish</span>
+              <span class="text-xs font-bold text-white uppercase tracking-wider">+ Vaqt va Kun Tarifini Qo'shish</span>
               <span class="text-[11px] text-[#71717a]">Soat oralig'i va kunlar bo'yicha narxlash</span>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -2250,7 +2251,8 @@
               </div>
             </div>
             <div class="flex justify-end pt-1">
-              <button type="submit" class="softech-btn-primary text-xs !py-1.5 px-4 font-semibold">
+              <button type="button" id="schedCancel" onclick="cancelScheduleEdit()" class="hidden text-xs px-4">Bekor qilish</button>
+              <button type="submit" id="schedSave" class="softech-btn-primary text-xs !py-1.5 px-4 font-semibold">
                 + Qoidani Saqlash
               </button>
             </div>
@@ -2267,21 +2269,6 @@
             </div>
           </div>
 
-          <!-- 3. Asosiy Bazaviy Tariflar -->
-          <div class="pt-4 border-t border-[#27272a]">
-            <div class="flex items-center justify-between mb-3">
-              <div>
-                <h4 class="text-sm font-bold text-white">Standart Paketlar</h4>
-                <p class="text-xs text-[#71717a]">Soatlik va paket bazaviy stavkalari</p>
-              </div>
-              <button id="btnSaveStandardTariffs" onclick="saveTariffsUpdate()" class="softech-btn-primary text-xs !py-1.5 px-4 hidden transition-all duration-200">
-                ✓ Standart Tariflarni Saqlash
-              </button>
-            </div>
-            <div id="tariffsEditorList" class="space-y-3">
-              <!-- Dinamik -->
-            </div>
-          </div>
         </div>
 
         <!-- TAB 3: CLIENTS & PREPAID TOP-UP -->
@@ -7396,7 +7383,7 @@
       document.getElementById('settingsModal').classList.remove('hidden');
       renderAdminComputersTable();
       renderVipSettings();
-      renderTariffsEditor();
+
       loadDynamicSchedules();
       loadClientsManagement();
       loadStaffList();
@@ -7434,7 +7421,7 @@
       if (tabKey === 'tariffs') {
         renderVipSettings();
         loadDynamicSchedules();
-        loadAndRenderTariffsEditor();
+
       } else if (tabKey === 'clients') {
         loadClientsManagement();
       } else if (tabKey === 'staff') {
@@ -7957,137 +7944,6 @@
     }
 
     // --- TAB 2: TARIFFS & PRICING ---
-    function markTariffsDirty() {
-      const btn = document.getElementById('btnSaveStandardTariffs');
-      if (btn) {
-        btn.classList.remove('hidden');
-      }
-    }
-
-    async function loadAndRenderTariffsEditor() {
-      try {
-        const res = await fetch('/api/tariffs', {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (res.ok) {
-          tariffsData = await res.json();
-        }
-      } catch (err) {
-        console.warn('Tariflarni yuklashda xato:', err);
-      }
-      renderTariffsEditor();
-    }
-
-    function renderTariffsEditor() {
-      const container = document.getElementById('tariffsEditorList');
-      if (!container) return;
-      container.innerHTML = '';
-
-      const saveBtn = document.getElementById('btnSaveStandardTariffs');
-      if (saveBtn) saveBtn.classList.add('hidden');
-
-      const items = (tariffsData || []).filter(t => t.is_active !== 0 && t.is_active !== false);
-      if (items.length === 0) {
-        container.innerHTML = '<div class="p-4 text-center text-zinc-500 text-xs bg-[#09090b] rounded-xl border border-[#27272a]">Tariflar mavjud emas</div>';
-        return;
-      }
-
-      // Group tariffs by zone_name
-      const groups = {};
-      items.forEach(t => {
-        const zName = t.zone_name || 'Umumiy Zal';
-        if (!groups[zName]) groups[zName] = [];
-        groups[zName].push(t);
-      });
-
-      Object.keys(groups).forEach(zName => {
-        const groupWrapper = document.createElement('div');
-        groupWrapper.className = 'space-y-2 mb-4 p-3 bg-[#0c0d12] rounded-xl border border-zinc-800/80';
-
-        const header = document.createElement('div');
-        header.className = 'flex items-center justify-between pb-1.5 border-b border-zinc-800';
-        header.innerHTML = `
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-sky-400">🏢 ${zName}</span>
-            <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20">${groups[zName].length} ta tarif</span>
-          </div>
-        `;
-        groupWrapper.appendChild(header);
-
-        groups[zName].forEach(t => {
-          const row = document.createElement('div');
-          row.className = 'p-3 bg-[#12131a] border border-[#27272a] rounded-lg hover:border-zinc-700/60 transition-all';
-          row.innerHTML = `
-            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-              <!-- Tarif Nomi -->
-              <div class="sm:col-span-6 flex flex-col justify-end">
-                <div class="flex items-center justify-between mb-1.5 h-4">
-                  <label class="text-[11px] font-semibold text-zinc-300">Tarif Nomi</label>
-                  <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/50 uppercase tracking-wider">Turi: ${t.type || 'HOURLY'}</span>
-                </div>
-                <input type="text" id="tariff-name-${t.id}" value="${t.name}" oninput="markTariffsDirty()" class="h-9 bg-[#141418] border border-[#27272a] focus:border-purple-500 rounded-lg px-3 text-xs text-white font-semibold w-full outline-none transition-all">
-              </div>
-
-              <!-- Daqiqa -->
-              <div class="sm:col-span-3 flex flex-col justify-end">
-                <div class="flex items-center mb-1.5 h-4">
-                  <label class="text-[11px] font-semibold text-zinc-300">Davomiyligi (daqiqa)</label>
-                </div>
-                <input type="number" id="tariff-min-${t.id}" value="${t.fixed_duration_minutes || 60}" oninput="markTariffsDirty()" class="h-9 bg-[#141418] border border-[#27272a] focus:border-purple-500 rounded-lg px-3 text-xs text-white font-mono w-full outline-none transition-all">
-              </div>
-
-              <!-- Narxi -->
-              <div class="sm:col-span-3 flex flex-col justify-end">
-                <div class="flex items-center mb-1.5 h-4">
-                  <label class="text-[11px] font-semibold text-zinc-300">Narxi (UZS / soat)</label>
-                </div>
-                <input type="number" id="tariff-price-${t.id}" value="${t.fixed_price || t.price_per_hour || 10000}" oninput="markTariffsDirty()" class="h-9 bg-[#141418] border border-[#27272a] focus:border-emerald-500 rounded-lg px-3 text-xs text-emerald-400 font-bold font-mono w-full outline-none transition-all">
-              </div>
-            </div>
-          `;
-          groupWrapper.appendChild(row);
-        });
-
-        container.appendChild(groupWrapper);
-      });
-    }
-
-    async function saveTariffsUpdate() {
-      const items = (tariffsData || []).filter(t => t.is_active !== 0 && t.is_active !== false);
-
-      const updated = items.map(t => {
-        const nameEl = document.getElementById(`tariff-name-${t.id}`);
-        const minEl = document.getElementById(`tariff-min-${t.id}`);
-        const priceEl = document.getElementById(`tariff-price-${t.id}`);
-        return {
-          id: t.id,
-          name: nameEl ? nameEl.value : t.name,
-          fixed_duration_minutes: minEl ? parseInt(minEl.value, 10) : (t.fixed_duration_minutes || 60),
-          fixed_price: priceEl ? parseFloat(priceEl.value) : (t.fixed_price || t.price_per_hour || 10000),
-          price_per_hour: priceEl ? parseFloat(priceEl.value) : (t.price_per_hour || 10000),
-        };
-      });
-
-      const res = await fetch('/api/admin/tariffs', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({ tariffs: updated })
-      });
-
-      if (res.ok) {
-        showToast('✓ Tariflar muvaffaqiyatli saqlandi va yangilandi!', 'success');
-        const saveBtn = document.getElementById('btnSaveStandardTariffs');
-        if (saveBtn) saveBtn.classList.add('hidden');
-        await loadAndRenderTariffsEditor();
-        await fetchData();
-      } else {
-        alert('Tariflarni yangilashda ruxsat yetarli emas.');
-      }
-    }
-
     // --- TAB 2 CONTINUED: DYNAMIC SCHEDULES ENGINE ---
     async function loadDynamicSchedules() {
       try {
@@ -8100,7 +7956,7 @@
           if (!listEl) return;
           listEl.innerHTML = '';
           if (dynamicSchedulesData.length === 0) {
-            listEl.innerHTML = '<div class="p-3 text-center text-xs text-zinc-500 bg-[#09090b] rounded-xl border border-[#27272a]">Dinamik jadval qoidalari mavjud emas</div>';
+            listEl.innerHTML = '<div class="p-3 text-center text-xs text-zinc-500 bg-[#09090b] rounded-xl border border-[#27272a]">Tarif kiritilmagan. Seans ochish uchun kun, vaqt va soatlik narxni kiriting.</div>';
             return;
           }
           const daysMap = {
@@ -8119,17 +7975,17 @@
             row.innerHTML = `
               <div>
                 <div class="flex items-center gap-2">
-                  <span class="font-bold text-white text-xs">${s.name}</span>
-                  <span class="font-mono text-[11px] text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">${s.start_time} - ${s.end_time}</span>
-                  <span class="text-[10px] text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded">${daysLabel}</span>
+                  <span class="font-bold text-white text-xs">${escapeHtml(s.name)}</span>
+                  <span class="font-mono text-[11px] text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">${escapeHtml(s.start_time)} - ${escapeHtml(s.end_time)}</span>
+                  <span class="text-[10px] text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded">${escapeHtml(String(daysLabel))}</span>
                 </div>
                 <div class="text-[11px] font-mono font-bold text-emerald-400 mt-1">
                   ${(s.price_per_hour || 0).toLocaleString()} UZS / soat
                 </div>
               </div>
-              <button onclick="deleteSchedule(${s.id})" class="text-zinc-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition text-xs" title="O'chirish">
+              <div class="flex items-center gap-2"><button onclick="editSchedule(${Number(s.id)})" class="text-sky-400 p-1.5">Tahrirlash</button><button onclick="deleteSchedule(${Number(s.id)})" class="text-zinc-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition text-xs" title="O'chirish">
                 🗑️
-              </button>
+              </button></div>
             `;
             listEl.appendChild(row);
           });
@@ -8137,6 +7993,30 @@
       } catch (err) {
         console.error('Load schedules error:', err);
       }
+    }
+
+    let editingScheduleId = null;
+    function cancelScheduleEdit() {
+      editingScheduleId = null;
+      document.getElementById('schedName').value = '';
+      document.getElementById('schedSave').textContent = '+ Qoidani Saqlash';
+      document.getElementById('schedCancel').classList.add('hidden');
+    }
+    function editSchedule(id) {
+      const schedule = dynamicSchedulesData.find(item => Number(item.id) === id);
+      if (!schedule) return;
+      editingScheduleId = id;
+      document.getElementById('schedName').value = schedule.name;
+      document.getElementById('schedStart').value = schedule.start_time;
+      document.getElementById('schedEnd').value = schedule.end_time;
+      document.getElementById('schedRate').value = schedule.price_per_hour;
+      const select = document.getElementById('schedDays');
+      const days = typeof schedule.days_of_week === 'string' ? schedule.days_of_week : JSON.stringify(schedule.days_of_week);
+      if (![...select.options].some(option => option.value === days)) select.add(new Option('Tanlangan kunlar: '+days, days));
+      select.value = days;
+      document.getElementById('schedSave').textContent = 'O‘zgarishlarni saqlash';
+      document.getElementById('schedCancel').classList.remove('hidden');
+      document.getElementById('schedName').focus();
     }
 
     async function handleCreateSchedule(e) {
@@ -8153,8 +8033,9 @@
       }
 
       try {
-        const res = await fetch('/api/admin/tariff-schedules', {
-          method: 'POST',
+        const existing = dynamicSchedulesData.find(item => Number(item.id) === editingScheduleId);
+        const res = await fetch('/api/admin/tariff-schedules' + (editingScheduleId ? '/' + editingScheduleId : ''), {
+          method: editingScheduleId ? 'PUT' : 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
@@ -8168,12 +8049,14 @@
             start_time: startTime,
             end_time: endTime,
             price_per_hour: pricePerHour,
-            days_of_week: daysOfWeek
+            days_of_week: daysOfWeek,
+            is_vip: existing?.is_vip || 0,
+            priority: existing?.priority ?? 1
           })
         });
         if (res.ok) {
-          document.getElementById('schedName').value = '';
-          loadDynamicSchedules();
+          cancelScheduleEdit();
+          await loadDynamicSchedules();
         } else {
           const err = await res.json();
           alert(err.error || 'Tarif qoidasini yaratishda xatolik yuz berdi');
@@ -8191,7 +8074,8 @@
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (res.ok) {
-          loadDynamicSchedules();
+          if (editingScheduleId === Number(id)) cancelScheduleEdit();
+          await loadDynamicSchedules();
         } else {
           const err = await res.json();
           alert(err.error || 'O\'chirishda xatolik yuz berdi');
@@ -9074,17 +8958,10 @@
       document.getElementById('startModalPcId').value = targetSelectedPcIds[0];
 
       // Soatlik tarifni va xonani aniqlash
-      if (firstPc && firstPc.currentRate) {
-        currentHourlyRate = Number(firstPc.currentRate);
-      } else if (tariffsData && tariffsData.length > 0) {
-        const hourlyTariff = tariffsData.find(t => t.type === 'HOURLY') || tariffsData[0];
-        currentHourlyRate = hourlyTariff.price_per_hour || hourlyTariff.fixed_price || 12000;
-      } else {
-        currentHourlyRate = 12000;
-      }
+      currentHourlyRate = Number(firstPc?.currentRate) || 0;
 
       const roomName = firstPc?.roomName || (firstPc?.zone === 'VIP' ? 'VIP Xona' : (firstPc?.zone === 'PLAYSTATION' ? 'PlayStation' : 'Standart Zal'));
-      document.getElementById('startModalTariffRate').textContent = `Tarif: ${currentHourlyRate.toLocaleString()} UZS / soat (${roomName})`;
+      document.getElementById('startModalTariffRate').textContent = currentHourlyRate > 0 ? `Tarif: ${currentHourlyRate.toLocaleString()} UZS / soat (${roomName})` : 'Tarif belgilanmagan — Sozlamalarda tarif kiriting.';
 
       // Tugash vaqti default: hozirdan 1 soat keyin
       const defTime = new Date();
@@ -9201,7 +9078,10 @@
     function setStartQuotePending(pending, error = false) {
       const button = document.getElementById('btnSubmitStart');
       if (button) button.disabled = pending;
-      if (error) document.getElementById('startModalPrice').textContent = 'Tarif hisoblanmadi. Qayta urinib ko‘ring.';
+      if (error) {
+        document.getElementById('startModalPrice').textContent = typeof error === 'string' ? error : 'Tarif hisoblanmadi. Sozlamalarda tarif kiriting.';
+        document.getElementById('startModalPerPcPrice').textContent = '—';
+      }
     }
 
     // 1. Soat bo'yicha hisoblash
@@ -9245,7 +9125,7 @@
             document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
             setStartQuotePending(false);
           }
-        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true, true); }
+        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true, e.message); }
       }, 150);
     }
 
@@ -9260,7 +9140,7 @@
       setStartQuotePending(true);
       const perPc = Math.max(0, parseFloat(val) || 0);
       const pcId = targetSelectedPcIds[0];
-      let mins = Math.round((perPc / currentHourlyRate) * 60);
+      let mins = currentHourlyRate > 0 ? Math.round((perPc / currentHourlyRate) * 60) : 0;
       let h = (mins / 60).toFixed(1);
       const count = Math.max(1, targetSelectedPcIds.length);
       const total = perPc * count;
@@ -9297,7 +9177,7 @@
               setStartQuotePending(false);
             }
           }
-        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true, true); }
+        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true, e.message); }
       }, 150);
     }
 
@@ -9346,7 +9226,7 @@
           }
         } catch (err) {
           console.error('Tariff calculate error:', err);
-          if (revision === priceCalculationRevision) setStartQuotePending(true, true);
+          if (revision === priceCalculationRevision) setStartQuotePending(true, err.message);
         }
       }, 200);
     }
@@ -9459,7 +9339,7 @@
         amount = Math.round(h * currentHourlyRate);
       } else if (currentStartMode === 'price') {
         amount = parseFloat(document.getElementById('inputPrice').value) || 10000;
-        durationMinutes = Math.round((amount / currentHourlyRate) * 60);
+        durationMinutes = currentHourlyRate > 0 ? Math.round((amount / currentHourlyRate) * 60) : 0;
       } else if (currentStartMode === 'endtime') {
         targetEndTime = document.getElementById('inputTargetEndTime').value;
         const text = document.getElementById('startModalPerPcPrice').textContent.replace(/[^\d]/g, '');

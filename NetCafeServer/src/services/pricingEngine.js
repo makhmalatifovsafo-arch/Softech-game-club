@@ -127,6 +127,22 @@ export function requireRateForMoment(momentDate, isVip = false, clubId = 1, zone
   return rate;
 }
 
+// Split at clock-minute boundaries, including sessions that start at :30 seconds.
+function* rateSlices(startEpoch, endEpoch, isVip, clubId, zoneId) {
+  for (let cursor = startEpoch; cursor < endEpoch;) {
+    const end = Math.min(endEpoch, (Math.floor(cursor / 60000) + 1) * 60000);
+    yield { rate:requireRateForMoment(new Date(cursor),isVip,clubId,zoneId), minutes:(end-cursor)/60000 };
+    cursor = end;
+  }
+}
+
+export function calculateMinuteCost(momentDate, isVip = false, clubId = 1, zoneId = null) {
+  const start = new Date(momentDate).getTime();
+  let amount = 0;
+  for (const {rate,minutes} of rateSlices(start,start+60000,isVip,clubId,zoneId)) amount += rate.pricePerHour * minutes / 60;
+  return amount;
+}
+
 /**
  * 1. Vaqt oralig'i bo'yicha dinamik narxni hisoblash (Start Time -> End Time)
  */
@@ -147,10 +163,8 @@ export function calculateIntervalPrice(startDateInput, endDateInput, isVip = fal
   let totalAmount = 0;
   const breakdownMap = new Map();
 
-  let currentMoment = new Date(startEpoch);
-  for (let m = 0; m < totalMinutes; m++) {
-    const rateInfo = requireRateForMoment(currentMoment, isVip, clubId, zoneId);
-    const minuteRate = rateInfo.pricePerHour / 60;
+  for (const {rate:rateInfo, minutes} of rateSlices(startEpoch, endEpoch, isVip, clubId, zoneId)) {
+    const minuteRate = rateInfo.pricePerHour * minutes / 60;
     totalAmount += minuteRate;
 
     const key = `${rateInfo.tariffId || rateInfo.scheduleId || 'def'}_${rateInfo.pricePerHour}`;
@@ -163,10 +177,9 @@ export function calculateIntervalPrice(startDateInput, endDateInput, isVip = fal
       });
     }
     const item = breakdownMap.get(key);
-    item.minutes += 1;
+    item.minutes += minutes;
     item.amount += minuteRate;
 
-    currentMoment.setTime(currentMoment.getTime() + 60 * 1000);
   }
 
   const breakdown = Array.from(breakdownMap.values()).map(b => ({
@@ -218,7 +231,7 @@ export function calculateTimeFromAmount(startDateInput, targetAmount, isVip = fa
   // Maksimal 72 soat (4320 daqiqa) xavfsizlik cheklovi
   while (maxBudget - accumulated > 1e-7 && minutes < 4320) {
     const rateInfo = requireRateForMoment(currentMoment, isVip, clubId, zoneId);
-    const minuteRate = rateInfo.pricePerHour / 60;
+    const minuteRate = calculateMinuteCost(currentMoment, isVip, clubId, zoneId);
 
     if (accumulated + minuteRate > maxBudget + 1e-7) {
       break;

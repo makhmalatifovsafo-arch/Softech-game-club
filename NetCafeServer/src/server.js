@@ -1,3 +1,4 @@
+import { validateSchedule } from './services/tariffValidation.js';
 import { getFinancialBreakdown } from './services/financialBreakdown.js';
 import { autoWakeComputer } from './services/autoWake.js';
 import { normalizeMacAddress } from './services/macAddress.js';
@@ -1033,7 +1034,7 @@ function handleRequest(req, res) {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'HOURLY', 1)
         `);
 
-        // Standart boshlang'ich 2 ta oraliq agar foydalanuvchi oraliqlar bermagan bo'lsa
+        // Only save explicit room rules; rooms without rules use the club schedule.
         const intervalsToSave = Array.isArray(tariffs) ? tariffs : [];
 
         let createdZoneId;
@@ -1046,11 +1047,8 @@ function handleRequest(req, res) {
 
           intervalsToSave.forEach((t, i) => {
             const tariffId = `trf_z${createdZoneId}_${i + 1}_${Date.now().toString(36)}`;
-            const tName = t.name || `Tarif ${i + 1}`;
-            const tRate = parseFloat(t.price_per_hour || t.pricePerHour || 12000);
-            const tStart = t.start_time || t.startTime || '10:00';
-            const tEnd = t.end_time || t.endTime || '18:00';
-            const tDays = typeof t.days_of_week === 'string' ? t.days_of_week : JSON.stringify(t.days_of_week || [1,2,3,4,5,6,7]);
+            const validated = validateSchedule({ ...t, name:t.name || `Tarif ${i + 1}`, days_of_week:t.days_of_week ?? [1,2,3,4,5,6,7] });
+            const { name:tName, price:tRate, start:tStart, end:tEnd, days:tDays } = validated;
             const tVipAllowed = t.is_vip_postpaid_allowed !== undefined ? (t.is_vip_postpaid_allowed ? 1 : 0) : 1;
 
             insertTariff.run(tariffId, clubId, createdZoneId, tName, tRate, tStart, tEnd, tDays, tVipAllowed);
@@ -1145,7 +1143,7 @@ function handleRequest(req, res) {
 
           if (Array.isArray(tariffs)) {
             // Ushbu xonaning eski tariflarini tozalash va yangilarini saqlash
-            db.prepare('DELETE FROM tariffs WHERE zone_id = ? AND club_id = ?').run(zoneId, clubId);
+            db.prepare('UPDATE tariffs SET is_active=0 WHERE zone_id = ? AND club_id = ?').run(zoneId, clubId);
 
             const insertTariff = db.prepare(`
               INSERT INTO tariffs (id, club_id, zone_id, name, price_per_hour, start_time, end_time, days_of_week, is_vip_postpaid_allowed, type, is_active)
@@ -1154,11 +1152,8 @@ function handleRequest(req, res) {
 
             tariffs.forEach((t, i) => {
               const tariffId = `trf_z${zoneId}_${i + 1}_${Date.now().toString(36)}`;
-              const tName = t.name || `Tarif ${i + 1}`;
-              const tRate = parseFloat(t.price_per_hour || t.pricePerHour || 12000);
-              const tStart = t.start_time || t.startTime || '10:00';
-              const tEnd = t.end_time || t.endTime || '18:00';
-              const tDays = typeof t.days_of_week === 'string' ? t.days_of_week : JSON.stringify(t.days_of_week || [1,2,3,4,5,6,7]);
+              const validated = validateSchedule({ ...t, name:t.name || `Tarif ${i + 1}`, days_of_week:t.days_of_week ?? [1,2,3,4,5,6,7] });
+              const { name:tName, price:tRate, start:tStart, end:tEnd, days:tDays } = validated;
               const tVipAllowed = t.is_vip_postpaid_allowed !== undefined ? (t.is_vip_postpaid_allowed ? 1 : 0) : 1;
 
               insertTariff.run(tariffId, clubId, zoneId, tName, tRate, tStart, tEnd, tDays, tVipAllowed);
@@ -1261,37 +1256,27 @@ function handleRequest(req, res) {
     return;
   }
 
-  // 9b. POST /api/admin/tariff-schedules — Yangi dinamik tarif jadvali qo'shish
-  if (url.pathname === '/api/admin/tariff-schedules' && req.method === 'POST') {
-    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner'], permission: 'tariffs:manage' })) return;
+  // Create/edit an explicit tariff; updates preserve IDs used in history.
+  const scheduleEdit = url.pathname.match(/^\/api\/admin\/tariff-schedules\/(\d+)$/);
+  if ((url.pathname === '/api/admin/tariff-schedules' && req.method === 'POST') || (scheduleEdit && req.method === 'PUT')) {
+    if (!authenticate(req,res,{roles:['superadmin','club_owner'],permission:'tariffs:manage'})) return;
     const clubId = getTenantClubId(req) || 1;
-
-    readBody(req, (body) => {
+    readBody(req, body => {
       try {
-        const name = (body.name || '').trim();
-        const start_time = body.start_time || body.startTime || '10:00';
-        const end_time = body.end_time || body.endTime || '17:00';
-        const price_per_hour = body.price_per_hour !== undefined ? body.price_per_hour : (body.pricePerHour !== undefined ? body.pricePerHour : 10000);
-        const days_of_week = body.days_of_week || body.daysOfWeek || '[1,2,3,4,5,6,7]';
-        const is_vip = body.is_vip !== undefined ? body.is_vip : (body.isVip ? 1 : 0);
-        const priority = body.priority !== undefined ? body.priority : 1;
-
-        if (!name) {
-          sendJson(res, 400, { error: 'Tarif nomi talab qilinadi.' });
-          return;
+        const t = validateSchedule(body);
+        let id;
+        if (scheduleEdit) {
+          id = Number(scheduleEdit[1]);
+          const changed = db.prepare('UPDATE tariff_schedules SET name=?,days_of_week=?,start_time=?,end_time=?,price_per_hour=?,is_vip=?,priority=? WHERE id=? AND club_id=?')
+            .run(t.name,t.days,t.start,t.end,t.price,t.vip,t.priority,id,clubId);
+          if (!changed.changes) { sendJson(res,404,{error:'Tarif topilmadi.'}); return; }
+        } else {
+          id = Number(db.prepare('INSERT INTO tariff_schedules(club_id,name,days_of_week,start_time,end_time,price_per_hour,is_vip,priority) VALUES(?,?,?,?,?,?,?,?)')
+            .run(clubId,t.name,t.days,t.start,t.end,t.price,t.vip,t.priority).lastInsertRowid);
         }
-
-        const daysJson = typeof days_of_week === 'string' ? days_of_week : JSON.stringify(days_of_week);
-        const resInsert = db.prepare(`
-          INSERT INTO tariff_schedules (club_id, name, days_of_week, start_time, end_time, price_per_hour, is_vip, priority)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(clubId, name, daysJson, start_time, end_time, parseFloat(price_per_hour), is_vip ? 1 : 0, parseInt(priority, 10) || 1);
-
         broadcastAdminUpdate();
-        sendJson(res, 201, { success: true, id: Number(resInsert.lastInsertRowid) });
-      } catch (err) {
-        sendJson(res, 500, { error: err.message });
-      }
+        sendJson(res,scheduleEdit ? 200 : 201,{success:true,id});
+      } catch (err) { sendJson(res,400,{error:err.message}); }
     });
     return;
   }
@@ -1921,7 +1906,7 @@ function handleRequest(req, res) {
           }
         }
 
-        if (!isPostpaidReq) calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
+        if (!isPostpaidReq) calculateIntervalPrice(startedAt, finalEndsAt, false, clubId, pcZoneId);
 
         // Standart soatlik tarif
         const defaultTariff = db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
@@ -2038,7 +2023,7 @@ function handleRequest(req, res) {
         });
       } catch (e) {
         try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, 500, { error: e.message });
+        sendJson(res, e.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500, { error: e.message });
       }
     });
     return;
@@ -2767,7 +2752,7 @@ function handleRequest(req, res) {
         });
       } catch (err) {
         try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, 500, { error: 'Guruh seansini ochishda xatolik: ' + err.message });
+        sendJson(res, err.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500, { error: 'Guruh seansini ochishda xatolik: ' + err.message });
       }
     });
     return;

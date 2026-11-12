@@ -10,7 +10,7 @@ function run(body) {
   fs.copyFileSync('NetCafeServer/schema.sql',path.join(root,'schema.sql'));
   fs.writeFileSync(path.join(root,'case.mjs'),`import assert from 'node:assert/strict';
     import {db,initDatabase} from './src/db.js';initDatabase();
-    import {calculateFromDurationHours,resolveZoneIdForComputer} from './src/services/pricingEngine.js';
+    import {calculateFromDurationHours,calculateIntervalPrice,calculateTimeFromAmount,getActiveRateForMoment,resolveZoneIdForComputer} from './src/services/pricingEngine.js';
     import {SessionScheduler} from './src/services/sessionScheduler.js';
     import {ClientManager} from './src/services/clientManager.js';
     import {BarLedgerService} from './src/services/barLedgerService.js';
@@ -21,19 +21,25 @@ function run(body) {
   const result=spawnSync(process.execPath,['case.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test'},windowsHide:true,encoding:'utf8',timeout:20000});
   assert.equal(result.status,0,result.stdout+'\n'+result.stderr);
 }
-test('two hours at 7000 remains 14000 across an uncovered 17:00 boundary; package rates are not hourly rates',()=>run(`
+test('uncovered time rejects quotes instead of falling back to packages or another hourly rate',()=>run(`
   db.exec("DELETE FROM tariff_schedules; INSERT INTO zones(id,club_id,name) VALUES(90,1,'Test room')");
   const add=db.prepare("INSERT INTO tariffs(id,club_id,zone_id,name,price_per_hour,type,start_time,end_time) VALUES(?,1,90,?,?,?,?,?)");
   add.run('a-night','Night package',0,'NIGHT','17:00','10:00');
   add.run('b-day','Day',7000,'HOURLY','10:00','17:00');
-  for(const time of ['10:00','16:18','16:36','17:30']){
+  for(const time of ['10:00','15:00']){
     const result=calculateFromDurationHours(new Date('2026-11-12T'+time+':00'),2,false,1,90);
     assert.equal(result.totalAmount,14000,time);assert.equal(result.totalMinutes,120);
   }
+  for (const time of ['16:18','16:36','17:30']) assert.throws(()=>calculateFromDurationHours(new Date('2026-11-12T'+time+':00'),2,false,1,90), /tarif belgilanmagan/);
+  assert.throws(()=>calculateTimeFromAmount(new Date('2026-11-12T16:36:00'),14000,false,1,90), /17:00.*tarif belgilanmagan/);
+  assert.throws(()=>calculateFromDurationHours(new Date('2026-11-12T16:59:30'),1/60,false,1,90), /17:00.*tarif belgilanmagan/);
+  assert.equal(calculateIntervalPrice(new Date('2026-11-12T16:59:30'),new Date('2026-11-12T17:00:00'),false,1,90).totalAmount,58);
+  assert.equal(calculateTimeFromAmount(new Date('2026-11-12T16:00:00'),7000,false,1,90).totalMinutes,60);
   add.run('c-evening','Evening',10000,'HOURLY','17:00','10:00');
   assert.equal(calculateFromDurationHours(new Date('2026-11-12T16:00:00'),2,false,1,90).totalAmount,17000);
   db.prepare("INSERT INTO tariff_schedules(club_id,name,days_of_week,start_time,end_time,price_per_hour) VALUES(1,'Only day','[1,2,3,4,5,6,7]','10:00','17:00',7000)").run();
-  assert.equal(calculateFromDurationHours(new Date('2026-11-12T16:36:00'),2,false,1).totalAmount,14000);
+  assert.throws(()=>calculateFromDurationHours(new Date('2026-11-12T16:36:00'),2,false,1), /17:00.*tarif belgilanmagan/);
+  assert.equal(getActiveRateForMoment(new Date('2026-11-12T17:30:00'),false,1).configured,false);
   assert.throws(()=>calculateFromDurationHours(new Date(),Infinity));
 `));
 
@@ -60,7 +66,7 @@ test('VIP remains open until cashier checkout and closes without bar-reminder wi
 `));
 
 test('account login then client logout notifies both screens once, refunds game balance and leaves bar debt collectible',()=>run(`
-  db.exec("DELETE FROM tariff_schedules; UPDATE tariffs SET price_per_hour=7000 WHERE id='trf_standard_1h'");
+  db.exec("UPDATE tariff_schedules SET price_per_hour=7000,days_of_week='[1,2,3,4,5,6,7]',start_time='00:00',end_time='00:00'");
   db.prepare("INSERT INTO users(club_id,username,password_hash,role,permissions,balance) VALUES(1,'member-notice',?,'client','[]',50000)").run(hashPassword('fixture-password'));
   const uid=db.prepare("SELECT id FROM users WHERE username='member-notice'").get().id;
   db.prepare("INSERT INTO computers(id,club_id,pc_number,name,status) VALUES('member-pc',1,9,'PC-9','ONLINE')").run();
@@ -125,4 +131,25 @@ test('expiry persists exact unpaid Cola/Fanta notice; later collection never bil
   assert.throws(()=>BarLedgerService.executeSessionCheckout({target:'paid',clubId:1}));
   assert.equal(db.prepare("SELECT payment_status FROM bar_orders WHERE order_number='OLD'").get().payment_status,'PENDING_AT_CHECKOUT');
   assert.equal(db.prepare("SELECT dismissed_at FROM session_end_notices WHERE session_id='paid'").get().dismissed_at,null);
+`));
+
+test('empty schedules remain empty after restart; member balances and session records stay untouched',()=>run(`
+  db.exec('DELETE FROM tariff_schedules');initDatabase();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tariff_schedules').get().n,0);
+  assert.equal(getActiveRateForMoment(new Date()).pricePerHour,null);
+  assert.throws(()=>calculateFromDurationHours(new Date(),1), /tarif belgilanmagan/);
+  db.prepare("INSERT INTO computers(id,club_id,name,pc_number) VALUES('missing',1,'Missing',99)").run();
+  const before=db.prepare("SELECT balance FROM users WHERE username='gamer1'").get().balance;
+  assert.throws(()=>startMemberSession('missing','gamer1','gamer123',60), /tarif belgilanmagan/);
+  assert.equal(db.prepare("SELECT balance FROM users WHERE username='gamer1'").get().balance,before);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE computer_id='missing'").get().n,0);
+`));
+
+test('24-hour rules include 23:59 and overnight rules follow their starting weekday',()=>run(`
+  db.exec("DELETE FROM tariff_schedules; INSERT INTO tariff_schedules(club_id,name,days_of_week,start_time,end_time,price_per_hour) VALUES(1,'All day','[1,2,3,4,5,6,7]','00:00','00:00',7000)");
+  assert.equal(calculateFromDurationHours(new Date('2026-11-12T23:59:00'),2).totalAmount,14000);
+  db.exec("UPDATE tariff_schedules SET days_of_week='[5]',start_time='22:00',end_time='06:00'");
+  assert.equal(calculateFromDurationHours(new Date('2026-11-13T23:00:00'),6).totalAmount,42000);
+  assert.throws(()=>calculateFromDurationHours(new Date('2026-11-13T05:00:00'),1), /tarif belgilanmagan/);
+  assert.throws(()=>calculateFromDurationHours(new Date('2026-11-14T05:00:00'),2), /06:00.*tarif belgilanmagan/);
 `));

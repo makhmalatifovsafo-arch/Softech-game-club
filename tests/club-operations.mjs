@@ -26,6 +26,35 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal(added.body.computer.status, 'OFFLINE');
   assert.equal(added.body.computer.isOnline, false);
   const addedId = added.body.computer.id;
+  // Missing tariffs must reject single/batch starts before charging or writing sessions.
+  const tomorrowDay = (new Date().getDay() || 7) % 7 + 1;
+  const tariffRule = {name:'Coverage fixture',start_time:'00:00',end_time:'00:00',price_per_hour:7000,days_of_week:[tomorrowDay]};
+  const noCoverage = await api('/api/zones','POST',{name:'Coverage fixture',tariffs:[tariffRule]});
+  assert.equal(noCoverage.status,201,JSON.stringify(noCoverage.body));
+  const noCoverageDb = new DatabaseSync(databasePath);
+  noCoverageDb.prepare('UPDATE computers SET zone_id=? WHERE id=?').run(noCoverage.body.zone.id,addedId);
+  for (const [route,body] of [
+    ['/api/sessions/start',{computerId:addedId,mode:'hours',durationMinutes:60}],
+    ['/api/sessions/start',{computerId:addedId,mode:'postpaid'}],
+    ['/api/sessions/batch-start',{computerIds:[addedId],mode:'hours',durationMinutes:60}]
+  ]) {
+    const result = await api(route,'POST',body);
+    assert.equal(result.status,400,JSON.stringify(result.body));
+    assert.match(result.body.error,/tarif belgilanmagan/);
+  }
+  assert.equal(noCoverageDb.prepare('SELECT COUNT(*) AS n FROM sessions WHERE computer_id=?').get(addedId).n,0);
+  noCoverageDb.prepare('UPDATE computers SET zone_id=NULL WHERE id=?').run(addedId);
+  noCoverageDb.prepare('DELETE FROM tariffs WHERE zone_id=?').run(noCoverage.body.zone.id);
+  noCoverageDb.prepare('DELETE FROM zones WHERE id=?').run(noCoverage.body.zone.id);
+  noCoverageDb.close();
+  // Create/edit/delete uses the same validated rules as pricing.
+  for (const bad of [{price_per_hour:0},{price_per_hour:-1},{start_time:'25:00'},{days_of_week:[]}])
+    assert.equal((await api('/api/admin/tariff-schedules','POST',{...tariffRule,...bad})).status,400);
+  const rule = await api('/api/admin/tariff-schedules','POST',tariffRule);
+  assert.equal(rule.status,201,JSON.stringify(rule.body));
+  assert.equal((await api('/api/admin/tariff-schedules/'+rule.body.id,'PUT',{...tariffRule,name:'Edited fixture',price_per_hour:9000})).status,200);
+  assert.equal((await api('/api/tariff-schedules')).body.find(row=>row.id===rule.body.id).price_per_hour,9000);
+  assert.equal((await api('/api/admin/tariff-schedules/'+rule.body.id,'DELETE')).status,200);
   assert.equal((await api('/api/admin/computers/' + addedId, 'PUT', { macAddress: '00:00:00:00:00:00', zone: 'STANDARD' })).status, 400);
   assert.equal((await api('/api/admin/computers/' + addedId, 'PUT', { macAddress: '02-AB-CD-EF-00-07', zone: 'STANDARD' })).status, 200);
   const fixtureDb = new DatabaseSync(databasePath);
@@ -268,7 +297,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const batchDb=new DatabaseSync(databasePath);batchDb.exec('PRAGMA busy_timeout=5000');
   for(const [num,rate] of [[910,7000],[911,10000]]){
     batchDb.prepare('INSERT INTO zones(id,club_id,name) VALUES(?,1,?)').run(num,'Quote '+num);
-    batchDb.prepare("INSERT INTO tariffs(id,club_id,zone_id,name,price_per_hour,type,start_time,end_time) VALUES(?,1,?,'Quote',?,'HOURLY','10:00','17:00')").run('quote-'+num,num,rate);
+    batchDb.prepare("INSERT INTO tariffs(id,club_id,zone_id,name,price_per_hour,type,start_time,end_time) VALUES(?,1,?,'Quote',?,'HOURLY','00:00','00:00')").run('quote-'+num,num,rate);
     batchDb.prepare("INSERT INTO computers(id,club_id,pc_number,name,zone_id,status) VALUES(?,1,?,?,?,'ONLINE')").run('quote-pc-'+num,num,'Quote-'+num,num);
   }
   for(const [num,amount] of [[910,14000],[911,20000]])assert.equal((await api('/api/tariffs/calculate','POST',{computerId:'quote-pc-'+num,durationHours:2})).body.price,amount);
