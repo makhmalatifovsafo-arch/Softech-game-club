@@ -130,7 +130,8 @@
 
                     <!-- Options -->
                     <CheckBox x:Name="ChkDesktopShortcut" Content="Ish stolida 'Softech Client' yorlig'ini yaratish" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,8"/>
-                    <CheckBox x:Name="ChkAutoStart" Content="Windows yoqilganda avtomatik ishga tushib, ekranni qulflasin (Tavsiya etiladi)" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,14"/>
+                    <CheckBox x:Name="ChkAutoStart" Content="Windows hisobiga kirilganda avtomatik qulflasin (tasdiqsiz)" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,6"/>
+                    <TextBlock Text="Setupni o‘yin uchun ishlatiladigan administrator hisobida o‘rnating. Windows paroli bo‘lsa, avval hisobga kirish kerak." TextWrapping="Wrap" Foreground="#9CA3AF" Margin="0,0,0,14"/>
 
                     <TextBlock Text="Favqulodda chiqish paroli" FontSize="13" FontWeight="SemiBold" Foreground="#FBBF24" Margin="0,0,0,6"/>
                     <TextBlock Text="Parolni faqat dastur egasi belgilaydi. Qayta o'rnatishda mavjud parol kerak; yangi parol bo'sh bo'lsa avvalgisi saqlanadi." TextWrapping="Wrap" FontSize="11" Foreground="#9CA3AF" Margin="0,0,0,10"/>

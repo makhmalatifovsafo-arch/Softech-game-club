@@ -35,6 +35,16 @@ incomplete rollback evidence remains. Unknown directories and junctions are skip
 Existing accumulated backups are pruned after the next successful automatic update.
 Live databases, license files and configuration are preserved.
 
+CLIENT AUTOMATIC LOCK (v1.0.25+ setup)
+Install once from the administrator account used for gaming, leaving automatic lock
+enabled. Setup registers a per-user interactive logon task with highest privileges,
+no network/battery requirement or runtime limit, and removes the legacy Startup link.
+Installer elevation requires consent once; subsequent task launches do not prompt.
+This starts after Windows sign-in, not before it. Windows automatic sign-in is a
+separate machine setting; the installer does not store account passwords or change it.
+OTA alone does not install this task: run the new client setup once on older machines.
+Validate one actual reboot before rollout; Windows policy may prevent task execution.
+
 FIRST ROLLOUT
 Existing machines have the old updater. Install the prepared bootstrap setup once:
   Releases/v1.0.6/SoftechServerSetup.exe on server computers

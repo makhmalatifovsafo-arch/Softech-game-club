@@ -2316,7 +2316,7 @@ async function submitBarOrder() {
       return;
     }
 
-    computerId = pc.pcNumber || pc.id;
+    computerId = pc.id;
     sessionId = pc.activeSession.sessionId;
     paymentMethod = 'ON_PC_SESSION';
     paymentStatus = 'PENDING_AT_CHECKOUT';

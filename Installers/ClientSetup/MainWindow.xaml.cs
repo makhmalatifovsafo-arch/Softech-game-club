@@ -142,15 +142,7 @@ namespace ClientSetup
                             description: "Softech Game Club Client Kiosk");
                     }
 
-                    if (enableAutoStart)
-                    {
-                        string startupPath = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-                        CreateShortcut(
-                            shortcutPath: Path.Combine(startupPath, "SoftechClientKiosk.lnk"),
-                            targetPath: exePath,
-                            workingDir: targetDir,
-                            description: "Softech Client Auto Lock on Startup");
-                    }
+                    ClientAutoStart.Configure(targetDir, enableAutoStart);
                 });
 
                 PbProgress.IsIndeterminate = false;

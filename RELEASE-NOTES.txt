@@ -1,3 +1,14 @@
+2026-11-12: 1.0.25 client automatic lock at Windows sign-in
+- Client setup requests administrator approval once and registers an interactive,
+  highest-privilege logon task for the installing administrator account.
+- Subsequent logons start the kiosk without UAC confirmation, including offline
+  and battery-powered operation. The legacy Startup shortcut is removed.
+- Turning off automatic start during setup removes the per-user task.
+- Existing PCs need this client setup once; OTA alone does not register the task.
+- Windows account sign-in remains separate; automatic sign-in is not configured.
+- Actual task definition validated by Windows Task Scheduler without registration.
+  A physical reboot on the target gaming account remains a deployment check.
+
 2026-11-12: 1.0.24 automatic update disk cleanup
 - After a healthy automatic update, keep one rollback backup and database snapshot.
 - Remove older updater transactions, prepared duplicates and obsolete staged packages.

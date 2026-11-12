@@ -61,6 +61,7 @@ jobs:
       - run: node tests/client-protocol-audit.mjs
       - run: dotnet run --project tests/UpdatePolicy/UpdatePolicy.csproj
       - run: dotnet run --project tests/StartupSafety/StartupSafety.csproj
+      - run: dotnet run --project tests/ClientAutoStart/ClientAutoStart.csproj
       - run: dotnet build SoftechUpdater/SoftechUpdater.csproj
       - run: dotnet build tests/FixtureClient/FixtureClient.csproj
       - run: node tests/updater-transaction.mjs
