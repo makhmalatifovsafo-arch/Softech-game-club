@@ -11,7 +11,11 @@ server.on('connection',socket=>{const index=++connections;socket.on('message',ra
  if(m.type!=='CLIENT_HELLO')return;hellos++;if(m.pcNumber!=='PC-07')failure='Wrong PC identity';
  const send=(type,payload)=>socket.send(JSON.stringify({type,payload}));
  send('CONFIG_UPDATE',{zoneName:'VIP',pricePerHour:12000});
- const start=JSON.stringify({type:'START_SESSION',payload:{sessionId:'paid-session',remainingSeconds:1800,clientBalance:0}});socket.send(start.slice(0,20),{fin:false});socket.send(start.slice(20),{fin:true});
+ const now=Date.now();
+ const info={sessionId:'cash-session',startedAt:now-3600000,asOf:now,gameAmount:14000,isPostpaid:false,canSelfClose:false};
+ send('START_SESSION',{sessionId:'cash-session',remainingSeconds:1800,canSelfClose:false,sessionInfo:info});
+ send('SESSION_INFO',{sessionInfo:{...info,sessionId:'stale-session'}});
+ const start=JSON.stringify({type:'START_SESSION',payload:{sessionId:'paid-session',remainingSeconds:1800,clientBalance:0,canSelfClose:true}});socket.send(start.slice(0,20),{fin:false});socket.send(start.slice(20),{fin:true});
  send('UPDATE_TIME',{remainingSeconds:600});
  });});
 const child=spawn(process.env.DOTNET_EXE || path.resolve('.tools/dotnet/dotnet.exe'),['tests/ClientProtocol/bin/Debug/net8.0-windows/ClientProtocol.dll','ws://127.0.0.1:'+server.address().port],{windowsHide:true,stdio:['ignore','pipe','pipe']});

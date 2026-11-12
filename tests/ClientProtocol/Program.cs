@@ -96,16 +96,40 @@ class ClientProtocolAudit
   var logoutButton=(System.Windows.Controls.Button)widget.FindName("BtnLogout");
   if(logoutButton.Visibility!=Visibility.Collapsed)throw new Exception("VIP must be closed by cashier");
   widget.UpdateTime(3600);
-  if(logoutButton.Visibility!=Visibility.Visible)throw new Exception("Member/prepaid logout must remain available");
-  Console.WriteLine("PASS local prepaid expiry and unlimited-session timer");
+  if(logoutButton.Visibility!=Visibility.Collapsed)throw new Exception("Time update exposed cashier logout");
+  long infoNow=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+  widget.UpdateSessionInfo(new SessionInfo("member",false,true,infoNow-600000,infoNow,7000,null));
+  widget.UpdateTime(1200);
+  if(logoutButton.Visibility!=Visibility.Visible)throw new Exception("Authenticated member logout missing after time update");
+  widget.UpdateSessionInfo(new SessionInfo("cash",false,false,infoNow-600000,infoNow,14000,null));
+  if(logoutButton.Visibility!=Visibility.Collapsed)throw new Exception("Cashier prepaid exposed logout");
+  var priceText=(System.Windows.Controls.TextBlock)widget.FindName("TxtTariff");
+  if(!priceText.Text.Contains("Seans narxi")||!priceText.Text.Contains("14"))throw new Exception("Prepaid amount missing");
+  widget.UpdateTime(-1);
+  widget.UpdateSessionInfo(new SessionInfo("vip",true,false,infoNow-7200000,infoNow,14000,null));
+  tick.Invoke(widget,new object[]{null,EventArgs.Empty});
+  if(logoutButton.Visibility!=Visibility.Collapsed||!((System.Windows.Controls.TextBlock)widget.FindName("TxtRemainingTime")).Text.StartsWith("02:00:"))throw new Exception("Postpaid elapsed display failed");
+  if(!priceText.Text.Contains("O‘yin hisobi"))throw new Exception("Postpaid bill missing");
+  if(!((System.Windows.Controls.TextBlock)widget.FindName("TxtSessionInterval")).Text.Contains("—"))throw new Exception("Session interval missing");
+  widget.SetServerConnected(false);
+  if(!((System.Windows.Controls.TextBlock)widget.FindName("TxtBillingStatus")).Text.Contains("aloqa uzilgan"))throw new Exception("Offline bill looks current");
+  var widgetRoot=(FrameworkElement)widget.Content;widgetRoot.Measure(new Size(350,150));widgetRoot.Arrange(new Rect(0,0,350,150));widgetRoot.UpdateLayout();
+  var widgetImage=new System.Windows.Media.Imaging.RenderTargetBitmap(350,150,96,96,System.Windows.Media.PixelFormats.Pbgra32);widgetImage.Render(widgetRoot);
+  var widgetEncoder=new System.Windows.Media.Imaging.PngBitmapEncoder();widgetEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(widgetImage));
+  using(var output=File.Create(".test-output/client-postpaid-widget.png"))widgetEncoder.Save(output);
+  widget.UpdateSessionInfo(new SessionInfo("vip",true,false,infoNow-7200000,infoNow,null,"Tarifni tekshiring"));
+  if(!priceText.Text.Contains("aniqlanmadi"))throw new Exception("Missing tariff displayed invented amount");
+  widget.StopSession();
+  Console.WriteLine("PASS member-only logout, paid amount, Postpaid elapsed/bill, offline status and local expiry");
   app.Dispatcher.InvokeAsync(async ()=>{
    var service=new WebSocketClientService();var done=new TaskCompletionSource();
-   int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false,memberReceipt=false;
+   int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false,memberReceipt=false,cashBlocked=false,billReceived=false;
    Task<bool>? logoutCheck=null;
    service.OnMemberSessionEnded+=receipt=>memberReceipt=receipt.Username=="member-test"&&receipt.Balance==46500;
    service.OnSessionBarNotice+=(id,message,amount)=>barNotice=id=="paid-session"&&message.Contains("Cola")&&amount==10000;
    service.OnConnectionStatusChanged+=online=>{if(online)connections++;};
-   service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;logoutCheck=service.SendLogoutAsync();};
+   service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;if(id=="cash-session"){cashBlocked=!service.CanSelfClose&&!service.SendLogoutAsync().GetAwaiter().GetResult();return;}zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;logoutCheck=service.SendLogoutAsync();};
+   service.OnSessionInfo+=info=>{if(info.SessionId=="stale-session")throw new Exception("Stale billing packet accepted");billReceived|=info.SessionId=="cash-session"&&info.GameAmount==14000;};
    service.OnUpdateTime+=seconds=>time=seconds==600;
    service.OnStopSession+=reason=>stopped=reason=="test-end";
    service.OnLockScreen+=()=>locked=true;
@@ -115,7 +139,7 @@ class ClientProtocolAudit
    try{
     service.Start();await done.Task.WaitAsync(TimeSpan.FromSeconds(25));
     if(logoutCheck==null||!await logoutCheck||!memberReceipt)throw new Exception("Logout acknowledgement or member receipt failed");
-    if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power||!barNotice)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power},bar={barNotice}");
+    if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power||!barNotice||!cashBlocked||!billReceived)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power},bar={barNotice},cashBlocked={cashBlocked},bill={billReceived}");
     Console.WriteLine("PASS native client WebSocket handshake, fragmented messages, zero-balance session, time/config/lock/stop/power dispatch, disconnect and reconnect");
    }catch(Exception error){Console.Error.WriteLine(error.Message);Environment.ExitCode=1;}
    finally{service.Stop();app.Shutdown();}

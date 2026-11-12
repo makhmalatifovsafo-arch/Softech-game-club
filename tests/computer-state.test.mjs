@@ -22,7 +22,8 @@ test('new and legacy locked computers are never online without a live connection
 });
 test('connection state takes precedence over active session while online states remain distinct', () => {
   assert.equal(state({ isOnline: false, lastHeartbeat: '2026-11-10', activeSession: {} }).key, 'DISCONNECTED');
-  assert.equal(state({ isOnline: true, status: 'LOCKED' }).key, 'LOCKED');
+  assert.equal(state({ isOnline: true, status: 'LOCKED' }).key, 'AVAILABLE');
+  assert.equal(state({ isOnline: true, status: 'LOCKED' }).color, state({ isOnline: true, status: 'AVAILABLE' }).color);
   assert.equal(state({ is_online: 1, status: 'LOCKED', activeSession: {} }).key, 'OCCUPIED');
   assert.equal(state({ isOnline: true, status: 'ONLINE' }).key, 'AVAILABLE');
   assert.equal(state({ isOnline: true, status: 'MAINTENANCE' }).key, 'MAINTENANCE');

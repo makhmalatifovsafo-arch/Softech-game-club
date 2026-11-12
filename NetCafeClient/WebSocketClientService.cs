@@ -97,6 +97,8 @@ public class WebSocketClientService
     public event Action<string, double, int, string>?          OnMemberLoginSuccess; // sessionId, balance, remainingSecs, username
     public event Action<string>?                               OnMemberLoginFailed;  // error
     public event Action<double>?                               OnBalanceUpdate;      // balance
+    public event Action<SessionInfo>?                          OnSessionInfo;
+    public bool CanSelfClose { get; private set; }
     public event Action<string>?                               OnPowerCommand;       // SHUTDOWN | REBOOT | LOCK | UNLOCK
     public event Action<string, double, string, string>?       OnPcConfigReceived;   // zoneName, pricePerHour, formattedRate, qrToken
     public event Action<string, string>?                       OnEmergencyLockdown;  // reason, message (SaaS Remote Kill-Switch)
@@ -468,7 +470,9 @@ public class WebSocketClientService
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
                         _activeSessionId = sessionId;
+                        CanSelfClose = data.TryGetProperty("canSelfClose", out var selfClose) && selfClose.ValueKind == JsonValueKind.True && remaining >= 0;
                         OnStartSession?.Invoke(sessionId, remaining, tariff, customer, clientBal);
+                        if (SessionInfo.Parse(data) is { } info && info.SessionId == sessionId) OnSessionInfo?.Invoke(info);
                     });
                     break;
                 }
@@ -492,7 +496,9 @@ public class WebSocketClientService
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
                         _activeSessionId = sessionId;
+                        CanSelfClose = data.TryGetProperty("canSelfClose", out var selfClose) && selfClose.ValueKind == JsonValueKind.True;
                         OnMemberLoginSuccess?.Invoke(sessionId, balance, remaining, username);
+                        if (SessionInfo.Parse(data) is { } info && info.SessionId == sessionId) OnSessionInfo?.Invoke(info);
                     });
                     break;
                 }
@@ -538,6 +544,19 @@ public class WebSocketClientService
                     break;
                 }
 
+                case "SESSION_INFO":
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        if (SessionInfo.Parse(data) is { } info && info.SessionId == _activeSessionId)
+                        {
+                            CanSelfClose = info.CanSelfClose && !info.IsPostpaid;
+                            OnSessionInfo?.Invoke(info);
+                        }
+                    });
+                    break;
+                case "CLIENT_LOGOUT_REJECTED":
+                    _logoutResponse?.TrySetResult(false);
+                    break;
                 // ---- Seans Tugash ----
                 case "STOP_SESSION":
                 {
@@ -546,6 +565,7 @@ public class WebSocketClientService
                     {
                         OnStopSession?.Invoke(reason);
                         _activeSessionId = null;
+                        CanSelfClose = false;
                         _logoutResponse?.TrySetResult(true);
                         if (data.TryGetProperty("memberSummary", out var summaryValue) && MemberSessionSummary.Parse(summaryValue) is { } summary)
                             OnMemberSessionEnded?.Invoke(summary);
@@ -655,7 +675,7 @@ public class WebSocketClientService
 
     public async Task<bool> SendLogoutAsync()
     {
-        if (!IsConnected || _logoutResponse != null) return false;
+        if (!CanSelfClose || !IsConnected || _logoutResponse != null) return false;
         var response = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _logoutResponse = response;
         var msg = new

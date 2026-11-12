@@ -131,6 +131,7 @@ public partial class App : WpfApplication
         // ---- 9. TimeWidget logout hodisalari ----
         _timeWidget.OnLogoutRequested += async () =>
         {
+            if (!_wsService.CanSelfClose) return;
             _timeWidget.SetLogoutPending(true);
             try
             {
@@ -144,14 +145,18 @@ public partial class App : WpfApplication
             // The local monotonic timer also protects a PC disconnected from LAN.
             _lockWindow?.ResetFields();
             LockScreen();
-            _ = _wsService.SendLogoutAsync();
+            if (_wsService.CanSelfClose) _ = _wsService.SendLogoutAsync();
         });
 
         // ---- 10. WebSocket hodisalariga ulanish ----
 
         _wsService.OnConnectionStatusChanged += isConnected =>
         {
-            Dispatcher.Invoke(() => _lockWindow?.SetServerStatus(isConnected));
+            Dispatcher.Invoke(() =>
+            {
+                _lockWindow?.SetServerStatus(isConnected);
+                _timeWidget?.SetServerConnected(isConnected);
+            });
         };
 
         _wsService.OnPcConfigReceived += (zoneName, pricePerHour, formattedRate, qrToken) =>
@@ -173,6 +178,7 @@ public partial class App : WpfApplication
 
         _wsService.OnMemberLoginSuccess += (sessionId, balance, remainingSeconds, username) =>
         {
+            if (!_wsService.CanSelfClose) return;
             Dispatcher.Invoke(() =>
             {
                 _isSessionActive = true;
@@ -206,7 +212,7 @@ public partial class App : WpfApplication
 
                 // Reveal the existing Windows desktop or third-party shell.
                 // 3. Time Widget
-                if (clientBalance.HasValue)
+                if (_wsService.CanSelfClose && clientBalance.HasValue)
                 {
                     _timeWidget?.StartMemberSession(customerName, clientBalance.Value, remainingSeconds, _wsService.PcNumber);
                 }
@@ -221,6 +227,7 @@ public partial class App : WpfApplication
         {
             _timeWidget?.UpdateTime(remainingSeconds);
         };
+        _wsService.OnSessionInfo += info => _timeWidget?.UpdateSessionInfo(info);
 
         _wsService.OnStopSession += reason =>
         {

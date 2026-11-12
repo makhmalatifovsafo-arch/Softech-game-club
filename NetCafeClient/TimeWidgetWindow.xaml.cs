@@ -12,6 +12,10 @@ public partial class TimeWidgetWindow : Window
     private int _remainingSeconds = 0;
     private readonly DispatcherTimer _timer;
     private long? _expiresAtTimestamp;
+    private bool _canSelfClose;
+    private SessionInfo? _sessionInfo;
+    private long _infoTimestamp;
+    private bool _serverConnected = true;
 
     public event Action? OnLogoutRequested;
     public event Action? OnSessionExpired;
@@ -26,7 +30,7 @@ public partial class TimeWidgetWindow : Window
     {
         _remainingSeconds = seconds;
         _expiresAtTimestamp = seconds < 0 ? null : Stopwatch.GetTimestamp() + (long)seconds * Stopwatch.Frequency;
-        BtnLogout.Visibility = seconds < 0 ? Visibility.Collapsed : Visibility.Visible;
+        BtnLogout.Visibility = _canSelfClose && seconds >= 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public TimeWidgetWindow()
@@ -52,6 +56,10 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            _canSelfClose = true;
+            _sessionInfo = null;
+            TxtSessionInterval.Text = "";
+            TxtBillingStatus.Text = "";
             SetRemainingTime(remainingSeconds);
             TxtPc.Text = $"PC #{pcNumber}";
             TxtMemberName.Text = $"👤 {username}";
@@ -72,11 +80,15 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            _canSelfClose = false;
+            _sessionInfo = null;
+            TxtSessionInterval.Text = "";
+            TxtBillingStatus.Text = "Seansni kassir yakunlaydi.";
             SetRemainingTime(remainingSeconds);
             TxtPc.Text = $"PC #{pcNumber}";
             TxtMemberName.Text = $"👤 {customerName}";
             TxtBalance.Visibility = Visibility.Collapsed;
-            TxtTariff.Text = tariffName;
+            TxtTariff.Text = "Hisob ma’lumoti kutilmoqda…";
 
             UpdateDisplay();
             _timer.Start();
@@ -107,6 +119,9 @@ public partial class TimeWidgetWindow : Window
         {
             _timer.Stop();
             _expiresAtTimestamp = null;
+            _sessionInfo = null;
+            _canSelfClose = false;
+            BtnLogout.Visibility = Visibility.Collapsed;
             Hide();
         });
     }
@@ -124,15 +139,53 @@ public partial class TimeWidgetWindow : Window
                 OnSessionExpired?.Invoke();
             }
         }
+        else UpdateDisplay();
+    }
+
+    public void UpdateSessionInfo(SessionInfo info)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            _sessionInfo = info;
+            _infoTimestamp = Stopwatch.GetTimestamp();
+            _canSelfClose = info.CanSelfClose && !info.IsPostpaid;
+            BtnLogout.Visibility = _canSelfClose ? Visibility.Visible : Visibility.Collapsed;
+            UpdateDisplay();
+        });
+    }
+
+    public void SetServerConnected(bool connected)
+    {
+        Dispatcher.Invoke(() => { _serverConnected = connected; UpdateDisplay(); });
     }
 
     private void UpdateDisplay()
     {
-        var ts = TimeSpan.FromSeconds(_remainingSeconds);
-        TxtRemainingTime.Text = _remainingSeconds < 0 ? "Ochiq seans" : $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        var elapsed = _sessionInfo == null ? 0 : Math.Max(0,(_sessionInfo.AsOf - _sessionInfo.StartedAt)/1000.0 +
+            (Stopwatch.GetTimestamp()-_infoTimestamp)/(double)Stopwatch.Frequency);
+        var ts = TimeSpan.FromSeconds(_remainingSeconds < 0 ? elapsed : _remainingSeconds);
+        TxtTimeLabel.Text = _remainingSeconds < 0 ? "O‘tgan vaqt: " : "Qolgan vaqt: ";
+        TxtRemainingTime.Text = _remainingSeconds < 0 && _sessionInfo == null ? "Ochiq seans" : $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        if (_sessionInfo is { } info)
+        {
+            var start = DateTimeOffset.FromUnixTimeMilliseconds(info.StartedAt).ToLocalTime();
+            var until = start.AddSeconds(elapsed);
+            TxtSessionInterval.Text = $"{start:HH:mm:ss} — {until:HH:mm:ss}";
+            if (!_canSelfClose)
+            {
+                TxtTariff.Text = info.GameAmount is double amount
+                    ? $"{(info.IsPostpaid ? "O‘yin hisobi" : "Seans narxi")}: {amount:N0} UZS"
+                    : "Hisob aniqlanmadi";
+                TxtTariff.Foreground = System.Windows.Media.Brushes.LightGreen;
+                TxtBillingStatus.Text = info.BillingError ?? (info.IsPostpaid
+                    ? $"Hisob: {DateTimeOffset.FromUnixTimeMilliseconds(info.AsOf).ToLocalTime():HH:mm:ss} da · Kassir yakunlaydi"
+                    : "Seansni kassir yakunlaydi.");
+                if (!_serverConnected) TxtBillingStatus.Text += " · Server bilan aloqa uzilgan";
+            }
+        }
 
         // Agar 5 daqiqadan kam qolsa, qizil/ogohlantiruvchi rang
-        if (_remainingSeconds < 300)
+        if (_remainingSeconds >= 0 && _remainingSeconds < 300)
         {
             TxtRemainingTime.Foreground = System.Windows.Media.Brushes.Tomato;
         }
@@ -144,6 +197,7 @@ public partial class TimeWidgetWindow : Window
 
     private void BtnLogout_Click(object sender, RoutedEventArgs e)
     {
+        if (!_canSelfClose || _remainingSeconds < 0) return;
         var result = System.Windows.MessageBox.Show(
             "Haqiqatan ham seansni tugatib tizimdan chiqmoqchimisiz?\n\nQolgan mablag'ingiz hisobingizda xavfsiz saqlanadi.",
             "Seansni Tugatish",

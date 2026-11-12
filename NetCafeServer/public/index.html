@@ -269,13 +269,10 @@
       background: #f43f5e;
       box-shadow: 0 0 6px rgba(244, 63, 94, 0.9);
     }
-    .floor-desk[data-status="AVAILABLE"] .floor-desk-monitor {
+    .floor-desk[data-status="AVAILABLE"] .floor-desk-monitor,
+    .floor-desk[data-status="LOCKED"] .floor-desk-monitor {
       background: #10b981;
       box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
-    }
-    .floor-desk[data-status="LOCKED"] .floor-desk-monitor {
-      background: #f59e0b;
-      box-shadow: 0 0 6px rgba(245, 158, 11, 0.8);
     }
     .floor-desk[data-status="OFFLINE"] .floor-desk-monitor {
       background: #52525b;
@@ -819,7 +816,6 @@
       <span style="color:#fb7185" title="Avval ulangan klient bilan hozir aloqa yo‘q">● Aloqa uzilgan</span>
       <span style="color:#34d399">● Bo‘sh / tayyor</span>
       <span style="color:#fbbf24">● Band</span>
-      <span style="color:#c084fc" title="Klient ulangan, ekran qulflangan">● Qulflangan</span>
       <span style="color:#38bdf8">● Texnik xizmat</span>
     </div>
     <div id="pcGrid" class="hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 transition-all select-none mb-6">
@@ -3720,7 +3716,7 @@
       if (dot) {
         dot.className = isOccupied ? 'w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.6)] animate-pulse' : (
           isOffline ? 'w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : (
-            isLocked ? 'w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]' : 'w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+            'w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
           )
         );
         const state = computerState(pc);
@@ -4019,7 +4015,7 @@
 
       const isOccupied = pc.status === 'OCCUPIED' || Boolean(pc.activeSession || pc.active_session);
       const isOnline = computerState(pc).online;
-      const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
+      const isAvailable = computerState(pc).key === 'AVAILABLE';
       const isOffline = !isOnline;
 
       let html = '';
@@ -4688,8 +4684,7 @@
       filtered.forEach((pc, idx) => {
         const activeS = pc.activeSession || pc.active_session || null;
         const isOccupied = pc.status === 'OCCUPIED' || Boolean(activeS);
-        const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-        const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
+        const isAvailable = computerState(pc).key === 'AVAILABLE';
         const isOnline = computerState(pc).online;
         const isOffline = !isOnline;
         const isSelected = selectedPcIds.has(pc.id);
@@ -4798,13 +4793,6 @@
           actionsHtml = `
             <div class="flex items-center justify-end gap-1.5">
               <button onclick="openStartModal('${pc.id}', '${pc.name}')" class="softech-btn-primary text-xs !py-1 !px-3 font-semibold shadow-sm cursor-pointer">Seans Ochish</button>
-              <button onclick="openPowerMenu('${pc.id}', true, event)" class="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer" title="Quvvat / Boshqaruv">⚡</button>
-            </div>
-          `;
-        } else if (isLocked) {
-          actionsHtml = `
-            <div class="flex items-center justify-end gap-1.5">
-              <button onclick="openStartModal('${pc.id}', '${pc.name}')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-semibold transition cursor-pointer">Ochish</button>
               <button onclick="openPowerMenu('${pc.id}', true, event)" class="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer" title="Quvvat / Boshqaruv">⚡</button>
             </div>
           `;
@@ -5285,8 +5273,7 @@
       filteredComputers.forEach(pc => {
         const activeS = pc.activeSession || pc.active_session || null;
         const isOccupied = pc.status === 'OCCUPIED' || Boolean(activeS);
-        const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-        const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
+        const isAvailable = computerState(pc).key === 'AVAILABLE';
         const isOnline = computerState(pc).online;
         const isOffline = !isOnline;
         const isSelected = selectedPcIds.has(pc.id) || (selectedDeskId === pc.id);
@@ -5313,8 +5300,6 @@
           border = 'border-2 border-amber-400/80 bg-amber-950/30 shadow-[0_0_15px_rgba(245,158,11,0.35)]';
         } else if (isAvailable) {
           border = 'border-2 border-emerald-500/80 bg-emerald-950/30 shadow-[0_0_14px_rgba(16,185,129,0.3)]';
-        } else if (isLocked) {
-          border = 'border-2 border-purple-500/80 bg-purple-950/30 shadow-[0_0_14px_rgba(168,85,247,0.3)]';
         }
 
         if (isSelected) {
@@ -5335,7 +5320,6 @@
         if (isOffline) statusDotClass = 'bg-rose-500 shadow-[0_0_6px_#f43f5e]';
         else if (isOccupied) statusDotClass = 'bg-amber-400 shadow-[0_0_6px_#f59e0b] animate-pulse';
         else if (isAvailable) statusDotClass = 'bg-emerald-400 shadow-[0_0_6px_#10b981]';
-        else if (isLocked) statusDotClass = 'bg-purple-400 shadow-[0_0_6px_#a855f7]';
 
         let bottomText = '';
         if (isOffline) {
@@ -5352,8 +5336,6 @@
           `;
         } else if (isAvailable) {
           bottomText = `<span class="text-[9px] font-mono font-semibold text-emerald-400 leading-none">${isPs ? 'PS Bo\'sh' : 'Bo\'sh'}</span>`;
-        } else if (isLocked) {
-          bottomText = `<span class="text-[9px] font-mono font-semibold text-purple-400 leading-none">Qulflangan</span>`;
         } else {
           bottomText = `<span class="text-[9px] font-mono font-semibold text-rose-400 leading-none">O'chiq</span>`;
         }
@@ -5409,7 +5391,7 @@
             }
             if (isOccupied) {
               handleCardClick(pc.id, 0, e);
-            } else if (isAvailable || isLocked) {
+            } else if (isAvailable) {
               openStartModal(pc.id, pc.name);
             } else {
               openPowerMenu(pc.id, true, e);
@@ -7444,15 +7426,13 @@
       }
 
       computersData.forEach(pc => {
-        const isOccupied = pc.status === 'OCCUPIED';
-        const isAvail = pc.status === 'AVAILABLE' || pc.status === 'ONLINE';
-        const isLocked = pc.status === 'LOCKED';
-
+        const state = computerState(pc);
+        const isOccupied = state.key === 'OCCUPIED';
+        const isAvail = state.key === 'AVAILABLE';
         let badgeBg = 'bg-zinc-800 text-zinc-400';
-        let statusTitle = "O'chiq";
-        if (isOccupied) { badgeBg = 'bg-rose-500/10 text-rose-400 border border-rose-500/20'; statusTitle = 'Band'; }
-        else if (isAvail) { badgeBg = 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'; statusTitle = "Online"; }
-        else if (isLocked) { badgeBg = 'bg-amber-500/10 text-amber-400 border border-amber-500/20'; statusTitle = 'Qulflangan'; }
+        const statusTitle = state.label;
+        if (isOccupied) badgeBg = 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+        else if (isAvail) badgeBg = 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
 
         const zone = pc.zone || 'STANDARD';
         let zoneMarkup = '<span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">STD</span>';
@@ -8674,8 +8654,7 @@
       filtered.forEach((pc, idx) => {
         const activeS = pc.activeSession || pc.active_session || null;
         const isOccupied = pc.status === 'OCCUPIED' || Boolean(activeS);
-        const isAvailable = computerState(pc).online && (pc.status === 'AVAILABLE' || pc.status === 'ONLINE') && !isOccupied;
-        const isLocked = computerState(pc).online && pc.status === 'LOCKED' && !isOccupied;
+        const isAvailable = computerState(pc).key === 'AVAILABLE';
         const isOnline = computerState(pc).online;
         const isOffline = !isOnline;
         const isSelected = selectedPcIds.has(pc.id);
@@ -8747,8 +8726,6 @@
             borderClasses = 'border-amber-500/40 hover:border-amber-500/70 shadow-[0_0_15px_rgba(245,158,11,0.15)] bg-[#17140c]/80';
           } else if (isAvailable) {
             borderClasses = 'border-emerald-500/35 hover:border-emerald-500/60 bg-[#0d1612]/80';
-          } else if (isLocked) {
-            borderClasses = 'border-purple-500/40 hover:border-purple-500/70 shadow-[0_0_15px_rgba(168,85,247,0.15)] bg-[#160f1c]/80';
           }
 
           if (isSelected) {
@@ -8843,14 +8820,6 @@
                     <span class="text-emerald-400/80">Yoniq</span>
                   </div>
                 </div>
-              ` : (isLocked ? `
-                <div class="py-2.5">
-                  <div class="text-xs font-semibold text-purple-400">Ulangan · Ekran qulflangan</div>
-                  <div class="flex items-center justify-between text-[10px] font-mono text-zinc-500 mt-1.5">
-                    <span>IP: ${pc.ipAddress || '192.168.1.x'}</span>
-                    <span class="text-purple-400/80">Qulflangan</span>
-                  </div>
-                </div>
               ` : `
                 <div class="py-2.5">
                   <div class="text-xs font-semibold" style="color:${state.color}">${state.label}</div>
@@ -8859,7 +8828,7 @@
                     <span class="font-bold" style="color:${state.color}">${state.label}</span>
                   </div>
                 </div>
-              `))}
+              `)}
 
               ${pc.upcomingBooking ? `
                 <div class="mt-2.5 p-2 rounded-xl ${pc.upcomingBooking.isImminent ? 'bg-amber-500/20 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.25)] animate-pulse' : 'bg-amber-500/10 border-amber-500/30'} border flex items-center justify-between text-[11px] text-amber-300 pointer-events-auto">

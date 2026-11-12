@@ -26,7 +26,7 @@ export function clientSessionState(id, now = Date.now()) {
   const member = /^CLIENT_BALANCE_(PREPAID|LIVE):/.test(session.notes || '');
   return {
     canSelfClose:canClientCloseSession(session), isPostpaid:postpaid, startedAt,
-    remainingSeconds:postpaid ? -1 : Math.max(0,Math.floor((Date.parse(session.ends_at)-now)/1000)),
+    remainingSeconds:postpaid ? -1 : Math.max(0,Math.ceil((Date.parse(session.ends_at)-now)/1000)),
     clientBalance:member ? db.prepare('SELECT balance FROM users WHERE id=? AND club_id=?').get(session.user_id,session.club_id)?.balance : null,
     sessionInfo:{sessionId:id,isPostpaid:postpaid,canSelfClose:canClientCloseSession(session),startedAt,asOf:now,gameAmount,billingError}
   };

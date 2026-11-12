@@ -16,6 +16,7 @@ function run(body) {
     import {BarLedgerService} from './src/services/barLedgerService.js';
     import {ProtocolDispatcher} from './src/handlers/protocolDispatcher.js';
     import {startMemberSession} from './src/services/memberBilling.js';
+    import {clientSessionState,postpaidGameBill} from './src/services/clientSessionState.js';
     import {hashPassword} from './src/auth.js';
     try { ${body} } finally {db.close();}`);
   const result=spawnSync(process.execPath,['case.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test'},windowsHide:true,encoding:'utf8',timeout:20000});
@@ -53,7 +54,7 @@ test('VIP remains open until cashier checkout and closes without bar-reminder wi
   SessionScheduler.checkActiveSessions();SessionScheduler.expireSession({id:'vip'});
   ProtocolDispatcher.handleClientLogout(socket,{});
   assert.equal(db.prepare("SELECT status FROM sessions WHERE id='vip'").get().status,'ACTIVE');
-  assert.equal(sent.length,0,'VIP must not receive timed expiry or client-logout STOP');
+  assert.ok(sent.every(m=>['CLIENT_LOGOUT_REJECTED','SESSION_INFO'].includes(m.type)),'VIP must not receive timed expiry or client-logout STOP');
   const preview=BarLedgerService.getSessionCheckoutPreview('vip',1);
   assert.ok(preview.gameBill>0);assert.equal(preview.barBill,10000);
   const receipt=BarLedgerService.executeSessionCheckout({target:'vip',clubId:1,paymentMethod:'CASH'});
@@ -152,4 +153,48 @@ test('24-hour rules include 23:59 and overnight rules follow their starting week
   assert.equal(calculateFromDurationHours(new Date('2026-11-13T23:00:00'),6).totalAmount,42000);
   assert.throws(()=>calculateFromDurationHours(new Date('2026-11-13T05:00:00'),1), /tarif belgilanmagan/);
   assert.throws(()=>calculateFromDurationHours(new Date('2026-11-14T05:00:00'),2), /06:00.*tarif belgilanmagan/);
+`));
+
+test('cashier prepaid and cashier account sessions reject client logout, while expiry still closes them',()=>run(`
+  const sent=[];ClientManager.send=(pc,type,payload)=>sent.push({pc,type,payload});ClientManager.broadcast=()=>{};
+  const user=db.prepare("SELECT id FROM users WHERE username='gamer1'").get();
+  for (const [id,notes] of [['cash','hours'],['cash-member','CLIENT_BALANCE_PREPAID:'+user.id]]) {
+    db.prepare("INSERT INTO computers(id,club_id,name,pc_number,status) VALUES(?,1,?,?,'OCCUPIED')").run(id,id,id==='cash'?91:92);
+    db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,user_id,started_at,ends_at,paid_amount,total_amount,status,notes) VALUES(?,1,?,'trf_standard_1h',?,?,?,14000,14000,'ACTIVE',?)")
+      .run(id,id,user.id,new Date(Date.now()-600000).toISOString(),new Date(Date.now()+600000).toISOString(),notes);
+    const socket={};ClientManager.socketToPcId.set(socket,id);
+    const state=clientSessionState(id);
+    assert.equal(state.canSelfClose,false);assert.equal(state.sessionInfo.gameAmount,14000);
+    ProtocolDispatcher.handleClientLogout(socket,{sessionId:id,canSelfClose:true});
+    assert.equal(db.prepare('SELECT status FROM sessions WHERE id=?').get(id).status,'ACTIVE');
+    assert.ok(sent.some(m=>m.type==='CLIENT_LOGOUT_REJECTED'&&m.pc===id));
+    db.prepare('UPDATE sessions SET ends_at=? WHERE id=?').run(new Date(Date.now()-1000).toISOString(),id);
+  }
+  SessionScheduler.checkActiveSessions();
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE status='ACTIVE'").get().n,0);
+`));
+
+test('self-service origin survives reconnect and Postpaid widget amount matches cashier schedule/custom bill',()=>run(`
+  db.prepare("INSERT INTO computers(id,club_id,name,pc_number,status) VALUES('self',1,'Self',91,'ONLINE')").run();
+  const opened=startMemberSession('self','gamer1','gamer123',30);
+  assert.equal(opened.canSelfClose,true);initDatabase();assert.equal(clientSessionState(opened.sessionId).canSelfClose,true);
+  assert.equal(db.prepare('SELECT client_self_service FROM sessions WHERE id=?').get(opened.sessionId).client_self_service,1);
+  db.exec("UPDATE tariff_schedules SET start_time='00:00',end_time='00:00',days_of_week='[1,2,3,4,5,6,7]',price_per_hour=7000");
+  db.prepare("INSERT INTO computers(id,club_id,name,pc_number,status) VALUES('post',1,'Post',92,'OCCUPIED')").run();
+  const now=Date.now(),start=new Date(now-7200000).toISOString();
+  db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,started_at,ends_at,status,notes) VALUES('post',1,'post','trf_standard_1h',?,?,'ACTIVE','BATCH_VIP')").run(start,new Date(now+86400000).toISOString());
+  const state=clientSessionState('post',now);
+  assert.equal(state.remainingSeconds,-1);assert.equal(state.canSelfClose,false);
+  assert.equal(state.sessionInfo.gameAmount,14000);assert.equal(state.sessionInfo.asOf-state.sessionInfo.startedAt,7200000);
+  assert.equal(BarLedgerService.getSessionCheckoutPreview('post',1).gameBill,state.sessionInfo.gameAmount);
+  db.prepare("UPDATE club_settings SET vip_pricing_mode='CUSTOM',vip_custom_price=9000 WHERE club_id=1").run();
+  assert.equal(clientSessionState('post',now).sessionInfo.gameAmount,18000);
+  db.prepare("UPDATE club_settings SET vip_pricing_mode='SCHEDULE' WHERE club_id=1").run();
+  db.exec('DELETE FROM tariff_schedules');
+  assert.equal(clientSessionState('post',now).sessionInfo.gameAmount,null,'Missing tariffs must never display a made-up zero bill');
+  assert.ok(clientSessionState('post',now).sessionInfo.billingError);
+  const sent=[];ClientManager.send=(pc,type,payload)=>sent.push({pc,type,payload});ClientManager.broadcast=()=>{};
+  SessionScheduler.lastSyncMinute=-1;SessionScheduler.checkActiveSessions();
+  assert.ok(sent.some(m=>m.pc==='post'&&m.type==='SESSION_INFO'&&m.payload.isPostpaid));
+  assert.equal(db.prepare("SELECT status FROM sessions WHERE id='post'").get().status,'ACTIVE');
 `));
