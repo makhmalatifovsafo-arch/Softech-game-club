@@ -43,6 +43,11 @@ test('fresh installs wait for super admin and never create a local manager passw
 
       }finally{inspection.close();}
       assert.equal((await app.call('/api/auth/setup')).body.required,true);
+      for(const route of ['/','/licenseGuard.js']){
+        const response=await fetch(app.url+route);
+        assert.equal(response.headers.get('cache-control'),'no-store');
+        await response.text();
+      }
       assert.equal((await app.call('/api/auth/setup',{username:'replacement',password:'never-create-local-owner'})).status,403);
       assert.equal((await app.call('/api/auth/login',{username:'manager',password:'Softech006'})).status,401);
       await stop(app.child);app=await boot(dir);

@@ -7,16 +7,35 @@
 
 (function () {
   let licensePollingTimer = null;
-  let currentServerHwid = null;
 
   let lastOverlayState = null;
+  let statusRequestInFlight = false;
+
+  async function localLicenseRequest(url, options = {}) {
+    let response;
+    try {
+      // A forced status refresh may also wait for a new activation request.
+      response = await fetch(url, { ...options, cache: 'no-store', signal: AbortSignal.timeout(65000) });
+    } catch (error) {
+      throw new Error(error.name === 'TimeoutError'
+        ? 'Mahalliy server javobi kechikdi. So‘rov saqlangan bo‘lishi mumkin; Tekshirish tugmasini bosing.'
+        : 'Mahalliy Softech serveri bilan aloqa uzildi. Server dasturini qayta oching va Tekshirish tugmasini bosing.');
+    }
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error(`Mahalliy server yaroqsiz javob qaytardi (HTTP ${response.status}). Yangilangan Server Setup ni o‘rnating.`); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Mahalliy server litsenziya javobini qaytarmadi. Yangilangan Server Setup ni o‘rnating.');
+    }
+    if (!response.ok) throw new Error(data.error || `Mahalliy server xatosi (HTTP ${response.status}).`);
+    return data;
+  }
 
   async function checkLicenseStatus(refresh = false) {
+    if (statusRequestInFlight) return;
+    statusRequestInFlight = true;
     try {
-      const res = await fetch('/api/license/status' + (refresh ? '?refresh=1' : ''), { cache: 'no-store' });
-      if (!res.ok) return;
-      const status = await res.json();
-      if (status.hwid) currentServerHwid = status.hwid;
+      const status = await localLicenseRequest('/api/license/status' + (refresh ? '?refresh=1' : ''));
       updateLicenseOverlay(status);
       const statusText = document.getElementById('activationStatusText');
       if (statusText && status.state !== 'ACTIVE') {
@@ -29,7 +48,9 @@
       }
     } catch (err) {
       console.warn('⚠️ Litsenziya holatini tekshirishda xatolik:', err);
-    }
+      const statusText = document.getElementById('activationStatusText');
+      if (statusText) { statusText.textContent = err.message; statusText.style.color = '#f43f5e'; }
+    } finally { statusRequestInFlight = false; }
   }
 
   function ensureOverlayContainer() {
@@ -250,27 +271,14 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Tekshirilmoqda...'; }
 
     try {
-      // 1. Avval lokal serverdan HWID ni olamiz
-      let hwid = currentServerHwid || 'UNKNOWN';
-      if (hwid === 'UNKNOWN') {
-        try {
-          const statusRes = await fetch('/api/license/status');
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            hwid = statusData.hwid || 'UNKNOWN';
-            if (hwid !== 'UNKNOWN') currentServerHwid = hwid;
-          }
-        } catch (e) {}
-      }
-
-      const cloudRes = await fetch('/api/license/activate-with-key', {
+      // Hardware identity and installed version are supplied by the local server.
+      const cloudData = await localLicenseRequest('/api/license/activate-with-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey: key, hardwareFingerprint: hwid, totalPcs: 16, serverVersion: '1.0.2' })
+        body: JSON.stringify({ licenseKey: key })
       });
-      const cloudData = await cloudRes.json();
 
-      if (cloudRes.ok && cloudData.success) {
+      if (cloudData.success) {
         if (errEl) { errEl.style.display = 'none'; }
         const resultEl = document.getElementById('cloudRequestResult');
         if (resultEl) {
@@ -290,7 +298,7 @@
       }
     } catch (err) {
       if (errEl) {
-        errEl.textContent = "Bulut serveriga ulanishda xatolik: " + err.message;
+        errEl.textContent = err.message;
         errEl.style.display = 'block';
       }
     } finally {
@@ -314,31 +322,12 @@
     if (resultEl) { resultEl.style.display = 'none'; }
 
     try {
-      // 1. Lokal serverdan HWID ni olamiz
-      let hwid = currentServerHwid || 'UNKNOWN';
-      if (hwid === 'UNKNOWN') {
-        try {
-          const statusRes = await fetch('/api/license/status');
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            hwid = statusData.hwid || 'UNKNOWN';
-            if (hwid !== 'UNKNOWN') currentServerHwid = hwid;
-          }
-        } catch (e) {}
-      }
-
-      const cloudRes = await fetch('/api/license/request-activation', {
+      const cloudData = await localLicenseRequest('/api/license/request-activation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clubName: clubName,
-          hardwareFingerprint: hwid,
-          totalPcs: 16,
-          serverVersion: '1.0.2'
-        })
+        body: JSON.stringify({ clubName })
       });
-      const cloudData = await cloudRes.json();
-      if (!cloudRes.ok || !cloudData.success) throw new Error(cloudData.error || 'So\'rov saqlanmadi.');
+      if (!cloudData.success) throw new Error(cloudData.error || 'So\'rov saqlanmadi.');
 
       if (statusText) {
         statusText.textContent = cloudData.message || "So\'rov saqlandi. Super Admin tasdig\'i kutilmoqda.";
@@ -355,7 +344,7 @@
       checkLicenseStatus();
     } catch (err) {
       if (statusText) {
-        statusText.textContent = "⚠️ Bulut serveriga ulanishda xatolik: " + err.message;
+        statusText.textContent = err.message;
         statusText.style.color = '#f43f5e';
       }
       if (resultEl) {

@@ -37,7 +37,13 @@ for (const [kind, asset] of [['client', 'SoftechClient.zip'], ['server', 'Softec
   console.log('PASS release archive integrity and native helper: ' + kind);
 }
 const serverDir = path.join(work, 'server');
+let cloudUnavailable = false;
 const cloudStub = http.createServer((req, res) => {
+  if (cloudUnavailable) {
+    res.writeHead(503, { 'Content-Type': 'text/html' });
+    res.end('<html>Cloud temporarily unavailable</html>');
+    return;
+  }
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({ success: true, status: 'PENDING', version: '0.0.0' }));
 });
@@ -65,6 +71,24 @@ try {
   assert.ok(ready, logs);
   const status = await (await fetch('http://127.0.0.1:' + port + '/api/updates/status')).json();
   assert.equal(status.silent, true);
+  const base = 'http://127.0.0.1:' + port;
+  for (const asset of ['/', '/licenseGuard.js']) {
+    const response = await fetch(base + asset);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    await response.text();
+  }
+  cloudUnavailable = true;
+  const failed = await (await fetch(base + '/api/license/status?refresh=1')).json();
+  assert.match(failed.activationError, /HTTP 503/);
+  assert.equal(failed.state, 'PENDING_ACTIVATION');
+  cloudUnavailable = false;
+  const recovered = await (await fetch(base + '/api/license/status?refresh=1')).json();
+  assert.equal(recovered.activationError, null);
+  assert.equal(recovered.activationStatus, 'PENDING');
+  for (const file of ['diagnose-connection.mjs', 'diagnose-connection.cmd', 'src/services/cloudConnection.js', 'public/licenseGuard.js']) {
+    assert.equal(fs.readFileSync(path.join(serverDir, file), 'utf8'), fs.readFileSync(path.join('NetCafeServer', file), 'utf8'));
+  }
+  console.log('PASS packaged license flow reports cloud outage, recovers, and serves current uncached UI');
   console.log('PASS packaged server starts using bundled Node.js and dependencies');
 } finally {
   if (server.exitCode === null) { const done = once(server, 'exit'); server.kill(); await done; }

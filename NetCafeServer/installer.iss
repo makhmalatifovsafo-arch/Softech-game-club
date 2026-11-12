@@ -46,6 +46,8 @@ Source: "schema.sql"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start-server.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_server.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_server_background.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "diagnose-connection.mjs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "diagnose-connection.cmd"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

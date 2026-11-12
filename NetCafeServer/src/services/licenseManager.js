@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 import { HwidService } from './hwidService.js';
 import { resolveCloudUrl } from './cloudUrl.js';
-import { readCloudResponse } from './cloudResponse.js';
+import { requestCloudJson } from './cloudConnection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,9 +113,8 @@ export class LicenseManager {
     const url = `${this.cloudUrl}/api/telemetry/activation-request`;
     try {
       console.log(`📡 [Activation] Bulutga faollashtirish so'rovi yuborilmoqda: ${url}`);
-      const res = await fetch(url, {
+      const { response: res, data } = await requestCloudJson(url, {
         method: 'POST',
-        signal: AbortSignal.timeout(15000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clubName,
@@ -124,8 +123,9 @@ export class LicenseManager {
           serverVersion: installedVersion()
         })
       });
-      const data = await readCloudResponse(res);
       if (!res.ok || !data.success) throw new Error(data.error || 'Bulut litsenziya so\'rovini qabul qilmadi.');
+      this.lastApprovalError = null;
+      this.lastApprovalStatus = data.status || 'PENDING';
       console.log('✅ [Activation] So\'rov muvaffaqiyatli yuborildi:', data.message || data);
 
       if (!this.approvalPollTimer) {
@@ -137,6 +137,7 @@ export class LicenseManager {
       return data;
     } catch (err) {
       console.warn('⚠️ [Activation] Bulutga so\'rov yuborishda xatolik:', err.message);
+      this.lastApprovalError = err.message;
       return { success: false, error: err.message };
     } finally { this.activationRequestInFlight = false; }
   }
@@ -150,9 +151,8 @@ export class LicenseManager {
 
     try {
       console.log(`📡 [Activation] Bulutdan kalit bilan faollashtirish: ${url}`);
-      const res = await fetch(url, {
+      const { response: res, data } = await requestCloudJson(url, {
         method: 'POST',
-        signal: AbortSignal.timeout(15000),
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           licenseKey: licenseKey.trim(),
@@ -162,7 +162,6 @@ export class LicenseManager {
         })
       });
 
-      const data = await readCloudResponse(res);
       if (!res.ok || !data.success) {
         return { success: false, error: data.error || "Faollashtirib bo'lmadi" };
       }
@@ -195,11 +194,11 @@ export class LicenseManager {
     this.approvalCheckInFlight = true;
     try {
       const hwid = HwidService.getHardwareFingerprint();
-      const res = await fetch(this.cloudUrl + '/api/telemetry/activation-status?hwid=' + encodeURIComponent(hwid), { signal: AbortSignal.timeout(10000), cache: 'no-store' });
-      const data = await readCloudResponse(res);
+      const { response: res, data } = await requestCloudJson(this.cloudUrl + '/api/telemetry/activation-status?hwid=' + encodeURIComponent(hwid));
       if (!res.ok) throw new Error(data.error || 'Bulut javobida xatolik.');
       if (!['APPROVED', 'PENDING', 'NONE', 'REJECTED'].includes(data.status)) throw new Error('Bulut aktivatsiya holatini qaytarmadi.');
       this.lastApprovalStatus = data.status;
+      this.lastApprovalError = null;
       if (data.status === 'APPROVED') {
         this.saveSignedLicense(data.signedLicense);
         if (this.approvalPollTimer) { clearInterval(this.approvalPollTimer); this.approvalPollTimer = null; }
@@ -214,7 +213,6 @@ export class LicenseManager {
         if (this.state !== 'LOCKED_BY_ADMIN') this.enforceLockdown('REMOTE_BLOCKED', data.reason);
         else this.lockMessage = data.reason || 'So\'rov rad etildi.';
       }
-      this.lastApprovalError = null;
     } catch (error) {
       this.lastApprovalError = error.message;
       console.warn('[License] Bulut tekshiruvi:', error.message);
@@ -552,6 +550,8 @@ export class LicenseManager {
     return {
       activationStatus: this.lastApprovalStatus || null,
       activationError: this.lastApprovalError || null,
+      serverVersion: installedVersion(),
+      cloudUrl: this.cloudUrl,
       state: this.state,
       isOperational: this.isOperational(),
       hwid: HwidService.getHardwareFingerprint(),

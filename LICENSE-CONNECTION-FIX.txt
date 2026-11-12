@@ -1,0 +1,31 @@
+SOFTECH SERVER v1.0.21 — ULANISH TUZATISHI
+
+O‘rnatish:
+1. Klubdagi faol ishlar tugagach Softech server oynasini yoping.
+2. Releases/v1.0.21/SoftechServerSetup.exe ni ishga tushiring.
+3. Avvalgi server o‘rnatilgan papkani tanlang; dasturni oching.
+4. Versiya v1.0.21 ekanini tekshiring, klub nomini yozib litsenziya so‘rovini yuboring.
+
+Xato qaytalansa:
+Server o‘rnatilgan papkada diagnose-connection.cmd ni oching.
+Hosil bo‘lgan connection-report.txt fayli ulanish va versiya haqida hisobot beradi.
+Vosita litsenziya yaratmaydi, kalit/parol/HWIDni hisobotga chiqarmaydi va Telegramga xabar yubormaydi.
+DNS: ENOTFOUND / EAI_AGAIN; HTTPS sertifikati: CERT / TLS;
+vaqt tugashi: TIMEOUT; mahalliy server ochilmagan: ECONNREFUSED.
+
+Tekshiruv natijasi (2026-11-12):
+Bulut /api/version va /api/telemetry/activation-status manzillari tekshiruv kompyuteridan HTTP 200 qaytardi.
+Xato bergan boshqa kompyuterdagi aniq uzilish sababi uning hisobotisiz tasdiqlanmagan.
+“V 1.0” yozuvi o‘rnatilgan paketning to‘liq versiyasini tasdiqlamaydi.
+Eski v1.0.3 manbasida oynadan to‘g‘ridan-to‘g‘ri bulutga so‘rov bor; yangi paket mahalliy API orqali ishlaydi.
+
+O‘zgarishlar:
+- DNS/TLS/socket xatolarining asl kodi va bulut hosti ko‘rsatiladi.
+- Bulutning javobi, jumladan javob tanasi uchun 30 soniyalik chegara qo‘llanadi.
+- Vaqtinchalik GET ulanish xatosida bir marta avtomatik qayta uriniladi.
+- POST avtomatik takrorlanmaydi: javob yo‘qolganda Telegramga ikki xabar yuborishning oldi olinadi.
+- Mahalliy serverga ulanish xatosi bulut xatosidan ajratiladi.
+- HTML/JS keshga saqlanmaydi; yangilangan litsenziya interfeysi yuklanadi.
+- Aktivatsiya qayta urinishidagi xato holat javobida saqlanadi.
+
+Paket lokal tayyorlanadi. GitHub release/Vercel deploy ushbu o‘zgarish bilan avtomatik bajarilmagan.

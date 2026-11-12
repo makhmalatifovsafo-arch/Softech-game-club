@@ -4113,7 +4113,8 @@ function handleRequest(req, res) {
       '.json': 'application/json',
       '.svg': 'image/svg+xml'
     };
-    res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain' });
+    // Unversioned UI files must not keep an old activation flow after an update.
+    res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain', 'Cache-Control': 'no-store' });
     fs.createReadStream(filePath).on('error',()=>res.destroy()).pipe(res);
     return;
   }

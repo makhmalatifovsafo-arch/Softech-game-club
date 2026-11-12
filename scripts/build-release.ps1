@@ -23,7 +23,7 @@ Publish-App 'NetCafeClient/NetCafeClient.csproj' $client $false
 Publish-App 'NetCafeServer/Launcher/SoftechCockpit.csproj' $server $false
 Copy-Item -LiteralPath (Join-Path $helper 'SoftechUpdater.exe') -Destination $client -Force
 Copy-Item -LiteralPath (Join-Path $helper 'SoftechUpdater.exe') -Destination $server -Force
-foreach ($item in @('src','public','schema.sql','start_server.bat','start-server.bat','start_server_background.vbs')) {
+foreach ($item in @('src','public','schema.sql','start_server.bat','start-server.bat','start_server_background.vbs','diagnose-connection.mjs','diagnose-connection.cmd')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "NetCafeServer/$item") -Destination $server -Recurse
 }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'NetCafeServer/Launcher/app.ico') -Destination $server

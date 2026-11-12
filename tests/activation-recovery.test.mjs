@@ -33,10 +33,12 @@ test('fresh activation recovers after network failure, throttles retries and res
   };
   try {
     assert.equal((await L.requestActivation('Recovery Club')).success,false);
+    assert.match(L.getStatusReport().activationError, /NETWORK_ERROR/);
     online=true;
     await L.checkApprovalStatus();assert.equal(posts,1,'No immediate retry loop');
     now+=60000;
     await L.checkApprovalStatus();assert.equal(posts,2);
+    assert.equal(L.getStatusReport().activationError,null);
     assert.equal(lastBody.clubName,'Recovery Club');
     assert.equal(lastBody.serverVersion,JSON.parse(fs.readFileSync('NetCafeServer/package.json')).version);
     now+=60000;await L.checkApprovalStatus();assert.equal(posts,2,'PENDING must not resend Telegram requests');
@@ -46,6 +48,9 @@ test('fresh activation recovers after network failure, throttles retries and res
     L.enforceLockdown=value=>{reason=value;};
     await L.checkApprovalStatus();assert.equal(reason,'CLUB_REMOVED');assert.equal(posts,2);
     L.licenseData=null;L.state='PENDING_ACTIVATION';
+    online=false;now+=60000;
+    await L.checkApprovalStatus();
+    assert.match(L.lastApprovalError,/NETWORK_ERROR/,'A successful status read must not hide the failed activation retry');
     let release;globalThis.fetch=()=>new Promise(resolve=>{release=resolve;});
     const first=L.requestActivation('Recovery Club');
     assert.equal((await L.requestActivation('Duplicate')).success,false);
