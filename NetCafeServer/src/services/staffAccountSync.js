@@ -1,6 +1,7 @@
 import { applyManagerAccount, applyAdministratorAccount, getManagerRevision, getAdministratorRevision } from './localOwnerSetup.js';
+import { cloudFetch } from './cloudIpv4.js';
 
-export function createStaffAccountSync({ db, getLicense, getSignedLicense, getCloudUrl, fetcher = fetch }) {
+export function createStaffAccountSync({ db, getLicense, getSignedLicense, getCloudUrl, fetcher = cloudFetch }) {
   let inFlight;
   return function sync() {
     if (inFlight) return inFlight;

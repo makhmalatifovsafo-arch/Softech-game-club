@@ -1,4 +1,5 @@
 import { commandResults, applyCloudCommands } from './cloudCommands.js';
+import { cloudFetch } from './cloudIpv4.js';
 import { execFile } from 'node:child_process';
 import { applyManagerAccount, getManagerRevision, applyAdministratorAccount, getAdministratorRevision } from './localOwnerSetup.js';
 import { createStaffAccountSync } from './staffAccountSync.js';
@@ -349,7 +350,7 @@ export class CloudLicenseService {
         occupiedPcsCount:pcs.filter(p=>p.current_session_id).length,
         workstations:pcs.map(p=>({pc:p.pc_number,status:p.current_session_id?'OCCUPIED':ClientManager.isConnected(p.id)?'AVAILABLE':'OFFLINE',
           zone:p.zone,minutesLeft:p.ends_at?Math.max(0,Math.ceil((Date.parse(p.ends_at)-Date.now())/60000)):0}))};
-      const response=await fetch(LicenseManager.cloudUrl+'/api/telemetry/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},
+      const response=await cloudFetch(LicenseManager.cloudUrl+'/api/telemetry/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)});
       if(!response.ok)throw new Error('HTTP '+response.status);
       const result=await response.json();

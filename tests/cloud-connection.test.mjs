@@ -7,6 +7,19 @@ import { describeCloudError, requestCloudJson } from '../NetCafeServer/src/servi
 const address = 'https://cloud.example/api/telemetry/activation-status?hwid=private';
 const networkError = code => new TypeError('fetch failed', { cause: Object.assign(new Error('socket'), { code }) });
 
+test('Windows ENOENT reports the failing operation and does not confuse DNS with missing files', () => {
+  const dnsError = networkError('ENOENT');
+  dnsError.cause.syscall = 'getaddrinfo';
+  const result = describeCloudError(dnsError, address);
+  assert.match(result.message, /Windows DNS/);
+  assert.match(result.message, /ENOENT; getaddrinfo/);
+  assert.equal(result.syscall, 'getaddrinfo');
+  const fileError = networkError('ENOENT');
+  fileError.cause.syscall = 'open';
+  assert.doesNotMatch(describeCloudError(fileError, address).message, /Windows DNS/);
+  assert.match(describeCloudError(fileError, address).message, /ENOENT; open/);
+});
+
 test('DNS, TLS, refused connection and timeout keep actionable causes without exposing request data', () => {
   for (const [code, message] of [['ENOTFOUND', /DNS/], ['CERT_HAS_EXPIRED', /sertifikat/], ['ECONNREFUSED', /rad etdi/], ['UND_ERR_CONNECT_TIMEOUT', /vaqtda/]]) {
     const result = describeCloudError(networkError(code), address);

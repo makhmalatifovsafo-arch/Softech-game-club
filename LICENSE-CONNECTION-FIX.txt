@@ -1,10 +1,10 @@
-SOFTECH SERVER v1.0.21 — ULANISH TUZATISHI
+SOFTECH SERVER v1.0.22 — WINDOWS DNS / ENOENT TUZATISHI
 
 O‘rnatish:
 1. Klubdagi faol ishlar tugagach Softech server oynasini yoping.
-2. Releases/v1.0.21/SoftechServerSetup.exe ni ishga tushiring.
+2. Releases/v1.0.22/SoftechServerSetup.exe ni ishga tushiring.
 3. Avvalgi server o‘rnatilgan papkani tanlang; dasturni oching.
-4. Versiya v1.0.21 ekanini tekshiring, klub nomini yozib litsenziya so‘rovini yuboring.
+4. Versiya v1.0.22 ekanini tekshiring, klub nomini yozib litsenziya so‘rovini yuboring.
 
 Xato qaytalansa:
 Server o‘rnatilgan papkada diagnose-connection.cmd ni oching.
@@ -15,15 +15,20 @@ vaqt tugashi: TIMEOUT; mahalliy server ochilmagan: ECONNREFUSED.
 
 Tekshiruv natijasi (2026-11-12):
 Bulut /api/version va /api/telemetry/activation-status manzillari tekshiruv kompyuteridan HTTP 200 qaytardi.
-Xato bergan boshqa kompyuterdagi aniq uzilish sababi uning hisobotisiz tasdiqlanmagan.
+Foydalanuvchi hisobotida Node 22.23.5, to‘g‘ri bulut domeni va ENOENT qayd etilgan.
+Mahalliy server tekshiruv vaqtida ECONNREFUSED qaytargan; diagnostikadan oldin SoftechCockpit.exe ni ochish kerak.
+ENOENTning ichki syscall qiymati eski hisobotda yo‘q. Yangi hisobot getaddrinfo va fayl xatosini ajratadi.
 “V 1.0” yozuvi o‘rnatilgan paketning to‘liq versiyasini tasdiqlamaydi.
 Eski v1.0.3 manbasida oynadan to‘g‘ridan-to‘g‘ri bulutga so‘rov bor; yangi paket mahalliy API orqali ishlaydi.
 
 O‘zgarishlar:
+- Windows getaddrinfo ENOENT xatosida dastur IPv4 va hints=0 orqali qayta ulanadi.
+- Bu usul litsenziya, xodim akkauntlari, heartbeat va mobil sinxronlash JSON APIlariga qo‘llanadi.
+- HTTPS sertifikati va domen tekshiruvi saqlanadi; doimiy IP yozilmaydi va Windows DNS sozlamalari o‘zgartirilmaydi.
 - DNS/TLS/socket xatolarining asl kodi va bulut hosti ko‘rsatiladi.
 - Bulutning javobi, jumladan javob tanasi uchun 30 soniyalik chegara qo‘llanadi.
 - Vaqtinchalik GET ulanish xatosida bir marta avtomatik qayta uriniladi.
-- POST avtomatik takrorlanmaydi: javob yo‘qolganda Telegramga ikki xabar yuborishning oldi olinadi.
+- Yuborilgan POST avtomatik takrorlanmaydi. Faqat HTTP hali yuborilmagan getaddrinfo xatosida IPv4 orqali uriniladi.
 - Mahalliy serverga ulanish xatosi bulut xatosidan ajratiladi.
 - HTML/JS keshga saqlanmaydi; yangilangan litsenziya interfeysi yuklanadi.
 - Aktivatsiya qayta urinishidagi xato holat javobida saqlanadi.

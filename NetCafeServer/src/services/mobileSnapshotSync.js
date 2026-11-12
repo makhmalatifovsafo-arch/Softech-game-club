@@ -1,8 +1,9 @@
 import { BarLedgerService } from './barLedgerService.js';
+import { cloudFetch } from './cloudIpv4.js';
 const dateString=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const previous=date=>new Date(Date.parse(date)-86400000).toISOString().slice(0,10);
 export class MobileSnapshotSync {
- constructor({db,getLicense,getCloudUrl,isOperational,localPort,createSession,destroySession,fetcher=fetch}){
+ constructor({db,getLicense,getCloudUrl,isOperational,localPort,createSession,destroySession,fetcher=cloudFetch}){
   Object.assign(this,{db,getLicense,getCloudUrl,isOperational,localPort,createSession,destroySession,fetcher});
   db.exec('CREATE TABLE IF NOT EXISTS mobile_snapshot_cursor(id INTEGER PRIMARY KEY,day TEXT NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS mobile_report_refresh(day TEXT PRIMARY KEY);CREATE TABLE IF NOT EXISTS mobile_report_cursor(ledger TEXT PRIMARY KEY,last_rowid INTEGER NOT NULL)');
