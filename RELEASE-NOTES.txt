@@ -1,3 +1,13 @@
+2026-11-12: 1.0.24 automatic update disk cleanup
+- After a healthy automatic update, keep one rollback backup and database snapshot.
+- Remove older updater transactions, prepared duplicates and obsolete staged packages.
+- Clean completed helper handovers on subsequent checks; preserve newer staged releases.
+- Serialize cleanup with live updates; skip unknown directories and junctions.
+- Preserve live databases, licenses and configuration, and retain incomplete rollback evidence.
+- Existing accumulated backups are pruned after the next successful automatic update.
+- Verified: 99 Node tests, ten-update retention, cancellation, restart, rollback,
+  packaged integrity/startup and unlicensed automatic staging with Windows DNS failure.
+
 2026-11-05: 1.0.18 activation recovery and installation fixes
 - Fresh installations retry failed activation registration after connectivity returns, at most once per minute.
 - Pending requests are not automatically resent; known bans and removed clubs remain blocked.

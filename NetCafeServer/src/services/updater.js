@@ -54,6 +54,11 @@ export class ServerUpdater {
     this.state.isChecking = true;
     this.state.lastChecked = new Date().toISOString();
     try {
+      // Only obsolete versions are removed. A staged newer release is retained.
+      try {
+        await execute(path.join(ROOT_DIR, 'SoftechUpdater.exe'), ['--cleanup', ROOT_DIR, this.currentVersion],
+          { windowsHide: true, timeout: 30000 });
+      } catch { /* A live update lock or older helper must not block checking. */ }
       const manifest = await this.fetchJson(this.manifestUrl);
       if (!manifest) return this.getStatus();
       const release = validateRelease(manifest, 'server');

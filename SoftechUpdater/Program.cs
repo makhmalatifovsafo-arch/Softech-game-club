@@ -14,6 +14,11 @@ public static class Program
     {
         try
         {
+            if (args.Length == 3 && args[0] == "--cleanup")
+            {
+                UpdateCleanup.OnStartup(Path.GetFullPath(args[1]), args[2], Log);
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--probe-idle")
             {
                 Console.WriteLine(JsonSerializer.Serialize(new { idleSeconds = IdleSafety.IdleSeconds() }));
@@ -56,6 +61,7 @@ public static class Program
         Process? restarted = null;
         bool committed = false;
         bool healthy = false;
+        bool restored = false;
         Directory.CreateDirectory(Path.Combine(target, ".ota"));
         FileStream transactionLock;
         try
@@ -156,6 +162,9 @@ public static class Program
             File.WriteAllText(Path.Combine(target, "updates-last-success.json"),
                 JsonSerializer.Serialize(new { version = plan.Version, at = DateTimeOffset.UtcNow }));
             Log("Update health verified.");
+            // Cleanup failure must never turn a healthy update into a rollback.
+            try { UpdateCleanup.AfterSuccess(target, plan.Version, transaction, Log); }
+            catch (Exception cleanupError) { Log("Cleanup deferred: " + cleanupError.Message); }
             return 0;
         }
         catch (Exception ex)
@@ -183,6 +192,7 @@ public static class Program
                 foreach (var suffix in new[] { "-wal", "-shm" })
                     if (File.Exists(db + suffix)) File.Delete(db + suffix);
             foreach (var db in databases) File.Copy(db.Value, db.Key, true);
+            restored = true;
             File.WriteAllText(Path.Combine(target, "updates-failed-version.json"),
                 JsonSerializer.Serialize(new { version = plan.Version, error = ex.Message, at = DateTimeOffset.UtcNow }));
             // Old client must not retain the new readiness marker.
@@ -194,7 +204,10 @@ public static class Program
         finally
         {
             restarted?.Dispose();
-            // Keep transaction backups for diagnosis; only generated control files are removed.
+            // Aborted preparation and completed rollback do not need duplicate
+            // snapshots. An interrupted/failed rollback keeps recovery evidence.
+            if (!committed || restored)
+                UpdateCleanup.DeleteOwnedTree(target, ".ota/" + Path.GetFileName(transaction), Log);
             foreach (string file in new[] { plan.ReadyFile, plan.CommitFile, plan.CancelFile })
                 try { if (File.Exists(file)) File.Delete(file); } catch { }
         }

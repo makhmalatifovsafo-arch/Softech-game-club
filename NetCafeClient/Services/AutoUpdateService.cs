@@ -92,6 +92,7 @@ public sealed class AutoUpdateService
         IsChecking = true;
         try
         {
+            await Task.Run(() => UpdateCleanup.OnStartup(root, CurrentVersion));
             using var response = await http.GetAsync(ManifestUrl, stopping.Token);
             if (!response.IsSuccessStatusCode) return false;
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(stopping.Token));

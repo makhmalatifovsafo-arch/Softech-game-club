@@ -25,6 +25,16 @@ Runtime behavior
   Last successful release: <installation>/updates-last-success.json
   Backups for inspection: <installation>/.ota/
 
+DISK CLEANUP (v1.0.24+)
+After a verified successful automatic update, only the latest transaction's rollback
+files and database snapshot are retained. Older updater-owned GUID transactions,
+prepared duplicates and staging packages at or below the installed version are removed.
+The running helper's handover directory is cleaned on a later update check.
+Cancelled preparations and successfully rolled-back transactions are removed;
+incomplete rollback evidence remains. Unknown directories and junctions are skipped.
+Existing accumulated backups are pruned after the next successful automatic update.
+Live databases, license files and configuration are preserved.
+
 FIRST ROLLOUT
 Existing machines have the old updater. Install the prepared bootstrap setup once:
   Releases/v1.0.6/SoftechServerSetup.exe on server computers

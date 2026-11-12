@@ -23,6 +23,8 @@ for (const scenario of ['cancel', 'concurrent', 'corrupt', 'success', 'rollback'
   fs.writeFileSync(path.join(target, 'behavior.txt'), 'old');
   fs.writeFileSync(path.join(target, 'config.json'), '{"pcNumber":"PC-77"}');
   fs.writeFileSync(path.join(target, 'netcafe.db'), 'preserved-user-data');
+  const previousBackup = path.join(target,'.ota',crypto.randomUUID().replaceAll('-',''),'backup');
+  fs.mkdirSync(previousBackup,{recursive:true});fs.writeFileSync(path.join(previousBackup,'old'),'previous rollback');
   fs.writeFileSync(path.join(source, 'behavior.txt'), scenario === 'rollback' ? 'fail' : 'good');
   fs.writeFileSync(path.join(source, 'new-file.txt'), 'new release only');
   fs.writeFileSync(path.join(source, 'SoftechUpdater.exe'), 'fixture-only-companion');
@@ -76,6 +78,10 @@ for (const scenario of ['cancel', 'concurrent', 'corrupt', 'success', 'rollback'
     }
     assert.equal(fs.readFileSync(path.join(target, 'config.json'), 'utf8'), '{"pcNumber":"PC-77"}');
     assert.equal(fs.readFileSync(path.join(target, 'netcafe.db'), 'utf8'), 'preserved-user-data');
+    const transactions=fs.readdirSync(path.join(target,'.ota')).filter(n=>/^[a-f0-9]{32}$/.test(n));
+    assert.equal(transactions.length,1,'Exactly one rollback backup remains');
+    assert.equal(fs.existsSync(previousBackup),scenario!=='success','Previous rollback is removed only after new health succeeds');
+    for(const name of transactions)assert.equal(fs.existsSync(path.join(target,'.ota',name,'prepared')),false);
     console.log('PASS updater transaction: ' + scenario);
   } finally {
     if (parent.exitCode === null) { parent.kill(); await parentExit; }
