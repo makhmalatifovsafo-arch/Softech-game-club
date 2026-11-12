@@ -682,10 +682,31 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         });
     }
 
+    private DispatcherTimer? _sessionBarNoticeTimer;
+    private string? _lastSessionBarNotice;
+    public void ShowSessionBarNotice(string sessionId, string message, double amount)
+    {
+        if (_lastSessionBarNotice == sessionId || amount <= 0) return;
+        _lastSessionBarNotice = sessionId;
+        _sessionBarNoticeTimer?.Stop();
+        SessionBarNoticeMessage.Text = message;
+        SessionBarNoticeAmount.Text = amount.ToString("N0", CultureInfo.GetCultureInfo("uz-UZ")) + " so‘m";
+        SessionBarNoticeOverlay.Visibility = Visibility.Visible;
+        _sessionBarNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _sessionBarNoticeTimer.Tick += (_, _) => HideSessionBarNotice();
+        _sessionBarNoticeTimer.Start();
+    }
+    private void HideSessionBarNotice()
+    {
+        _sessionBarNoticeTimer?.Stop();
+        SessionBarNoticeOverlay.Visibility = Visibility.Collapsed;
+    }
+
     public void ResetFields()
     {
         Dispatcher.Invoke(() =>
         {
+            HideSessionBarNotice();
             TxtPhone.Clear();
             TxtPassword.Clear();
             TxtPasswordPlain.Clear();

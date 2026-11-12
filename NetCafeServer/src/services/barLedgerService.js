@@ -1,7 +1,8 @@
 import { isMemberSession, settleMemberUsage } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
 import { db, getClubSettings } from '../db.js';
-import { calculateIntervalPrice } from './pricingEngine.js';
+import { calculateIntervalPrice, resolveZoneIdForComputer } from './pricingEngine.js';
+import { getSessionBarDebt } from './sessionBarDebt.js';
 import { ClientManager } from './clientManager.js';
 import { logAuditEvent } from './auditService.js';
 
@@ -24,17 +25,17 @@ export class BarLedgerService {
     const pc = db.prepare(`
       SELECT id, name, pc_number, current_session_id, club_id 
       FROM computers 
-      WHERE id = ? OR name = ? OR pc_number = ?
-    `).get(String(target), String(target), targetNum);
+      WHERE club_id = ? AND (id = ? OR name = ? OR pc_number = ?)
+    `).get(clubId, String(target), String(target), targetNum);
 
     const sessionId = pc?.current_session_id || target;
 
     const session = db.prepare(`
       SELECT s.*, c.name as computer_name, c.pc_number, c.id as resolved_pc_id, t.price_per_hour, t.name as tariff_name
       FROM sessions s
-      LEFT JOIN computers c ON (s.computer_id = c.id OR s.computer_id = c.pc_number)
+      LEFT JOIN computers c ON s.computer_id = c.id AND s.club_id = c.club_id
       LEFT JOIN tariffs t ON s.tariff_id = t.id
-      WHERE s.id = ? AND s.club_id = ? AND s.status = 'ACTIVE'
+      WHERE s.id = ? AND s.club_id = ? AND s.status IN ('ACTIVE','COMPLETED')
     `).get(sessionId, clubId);
 
     if (!session) {
@@ -43,10 +44,10 @@ export class BarLedgerService {
 
     const targetClubId = session.club_id || pc?.club_id || clubId || 1;
     const startedAt = new Date(session.started_at).getTime();
-    const now = Date.now();
+    const now = session.status === 'COMPLETED' ? Date.parse(session.ends_at) : Date.now();
     const playedMinutes = Math.max(1, Math.ceil((now - startedAt) / 60000));
     const playedHours = Number((playedMinutes / 60).toFixed(1));
-    const isPostpaid = !isMemberSession(session) && Boolean(session.notes === 'POSTPAID' || session.paid_amount === 0);
+    const isPostpaid = !isMemberSession(session) && /^(BATCH_)?(POSTPAID|VIP)$/.test(session.notes || '');
 
     // 1. O'yin vaqti narxi hisob-kitobi
     let gameBill = 0;
@@ -57,7 +58,7 @@ export class BarLedgerService {
         const rate = settings.vip_custom_price || 15000;
         gameBill = Math.round((playedMinutes / 60) * rate);
       } else {
-        const intervalCalc = calculateIntervalPrice(session.started_at, new Date(now), true, targetClubId);
+        const intervalCalc = calculateIntervalPrice(session.started_at, new Date(now), true, targetClubId, resolveZoneIdForComputer(session.computer_id, targetClubId));
         gameBill = Math.round(intervalCalc.totalAmount || 0);
       }
     } else {
@@ -69,12 +70,9 @@ export class BarLedgerService {
     const computerRef = session.resolved_pc_id || pc?.id || session.computer_id;
     const computerNum = session.pc_number || pc?.pc_number || targetNum;
 
-    const pendingOrders = db.prepare(`
-      SELECT * FROM bar_orders 
-      WHERE (session_id = ? OR (computer_id = ? AND session_id IS NULL AND payment_status = 'PENDING_AT_CHECKOUT') OR (computer_id = ? AND session_id IS NULL AND payment_status = 'PENDING_AT_CHECKOUT'))
-        AND payment_status = 'PENDING_AT_CHECKOUT' AND approval_status = 'CONFIRMED'
-        AND (club_id = ? OR club_id IS NULL)
-    `).all(session.id, computerRef, computerNum, targetClubId);
+    const pendingOrders = getSessionBarDebt(db, session, computerNum).orders;
+    if (session.status === 'COMPLETED' && pendingOrders.length === 0)
+      throw new Error('Seans hisobi allaqachon yopilgan.');
 
     let barBill = 0;
     const barItems = [];
@@ -121,6 +119,8 @@ export class BarLedgerService {
     return {
       success: true,
       sessionId: session.id,
+      sessionStatus: session.status,
+      pendingOrderIds: pendingOrders.map(order => order.id),
       computerId: session.computer_id,
       computerName: session.computer_name || `PC-${session.pc_number || session.computer_id}`,
       customerName: session.customer_name || 'Mehmon',
@@ -149,7 +149,7 @@ export class BarLedgerService {
 
     db.exec('BEGIN TRANSACTION;');
     try {
-      const settlement = settleMemberUsage(preview.sessionId,new Date(),true,true);
+      const settlement = preview.sessionStatus === 'ACTIVE' ? settleMemberUsage(preview.sessionId,new Date(),true,true) : null;
       preview = this.getSessionCheckoutPreview(target, clubId);
       const targetClubId = clubId || 1;
 
@@ -187,31 +187,30 @@ export class BarLedgerService {
         );
 
         // Barcha tegishli bar buyurtmalarini PAID holatiga o'tkazish
-        db.prepare(`
-          UPDATE bar_orders 
-          SET payment_status = 'PAID', payment_method = ?, paid_at = CURRENT_TIMESTAMP
-          WHERE (session_id = ? OR (session_id IS NULL AND computer_id = ? AND payment_status = 'PENDING_AT_CHECKOUT'))
-            AND payment_status = 'PENDING_AT_CHECKOUT' AND approval_status = 'CONFIRMED'
-        `).run(validPayMethod, preview.sessionId, preview.computerId);
+        const markPaid = db.prepare(`UPDATE bar_orders SET payment_status='PAID', payment_method=?, paid_at=CURRENT_TIMESTAMP
+          WHERE id=? AND club_id=? AND payment_status='PENDING_AT_CHECKOUT' AND approval_status='CONFIRMED'`);
+        for (const id of preview.pendingOrderIds) markPaid.run(validPayMethod, id, targetClubId);
       }
 
       // 3. Sessiyani yakunlash (COMPLETED)
       db.prepare(`
         UPDATE sessions 
-        SET status = 'COMPLETED', ends_at = CURRENT_TIMESTAMP, total_amount = ?, paid_amount = ?, updated_at = CURRENT_TIMESTAMP 
+        SET status = 'COMPLETED', ends_at = CASE WHEN status='ACTIVE' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE ends_at END,
+          total_amount = ?, paid_amount = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(preview.gameBill, preview.gameBill, preview.sessionId);
 
       // 4. Kompyuterni qulflash
-      db.prepare(`
+      const locked = db.prepare(`
         UPDATE computers 
         SET status = 'LOCKED', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP 
-        WHERE id = ? OR pc_number = ?
-      `).run(preview.computerId, preview.computerId);
+        WHERE id = ? AND club_id = ? AND current_session_id = ?
+      `).run(preview.computerId, targetClubId, preview.sessionId);
 
       db.exec('COMMIT;');
 
       // 5. Kiosk agentiga seans tugaganligi va ekranni qulflash haqida signal yuborish
+      if (locked.changes > 0) {
       ClientManager.send(preview.computerId, 'STOP_SESSION', {
         sessionId: preview.sessionId,
         reason: 'CHECKOUT_COMPLETED',
@@ -223,6 +222,7 @@ export class BarLedgerService {
         reason: 'SESSION_COMPLETED',
         message: 'Seans yakunlandi. Yangi seans boshlash uchun kassaga murojaat qiling.'
       });
+      }
 
       // 6. Audit jurnaliga hodisani yozish
       logAuditEvent(targetClubId, null, 'SESSION_STOP', {

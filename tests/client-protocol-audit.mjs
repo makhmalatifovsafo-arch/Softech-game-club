@@ -4,7 +4,7 @@ server.on('connection',socket=>{const index=++connections;socket.on('message',ra
  const send=(type,payload)=>socket.send(JSON.stringify({type,payload}));
  send('CONFIG_UPDATE',{zoneName:'VIP',pricePerHour:12000});
  const start=JSON.stringify({type:'START_SESSION',payload:{sessionId:'paid-session',remainingSeconds:1800,clientBalance:0}});socket.send(start.slice(0,20),{fin:false});socket.send(start.slice(20),{fin:true});
- send('UPDATE_TIME',{remainingSeconds:600});send('STOP_SESSION',{reason:'test-end'});send('LOCK_SCREEN',{});send('POWER_COMMAND',{command:'REBOOT'});
+ send('UPDATE_TIME',{remainingSeconds:600});send('STOP_SESSION',{reason:'test-end',barNotice:{sessionId:'paid-session',message:'Siz 1 ta Cola olgansiz.',barDebt:10000}});send('LOCK_SCREEN',{});send('POWER_COMMAND',{command:'REBOOT'});
  if(index===1)setTimeout(()=>socket.close(),150);else send('EMERGENCY_LOCKDOWN',{reason:'audit-ban',message:'Test only'});
  });});
 const child=spawn(process.env.DOTNET_EXE || path.resolve('.tools/dotnet/dotnet.exe'),['tests/ClientProtocol/bin/Debug/net8.0-windows/ClientProtocol.dll','ws://127.0.0.1:'+server.address().port],{windowsHide:true,stdio:['ignore','pipe','pipe']});

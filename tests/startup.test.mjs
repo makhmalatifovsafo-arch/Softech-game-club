@@ -77,8 +77,14 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     const localUrl = 'http://127.0.0.1:' + clubPort;
     const jsonHeaders = { 'Content-Type': 'application/json' };
     const adminHeaders = { ...jsonHeaders, Authorization: 'Bearer ' + accessToken };
-    const request = await fetch(localUrl + '/api/license/request-activation', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ clubName: "O'yin Club" }) });
-    const requested = await request.json();
+    let requested;
+    for (let attempt=0; attempt<50; attempt++) {
+      const request = await fetch(localUrl + '/api/license/request-activation', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ clubName: "O'yin Club" }) });
+      requested = await request.json();
+      // Automatic activation registration can still be in flight after HTTP health is ready.
+      if (!String(requested.error || '').includes('yuborilmoqda')) break;
+      await new Promise(resolve => setTimeout(resolve,100));
+    }
     assert.equal(requested.success, true, JSON.stringify(requested) + c.logs());
     assert.equal(requested.notification.success, false);
     const approval = await fetch(env.SOFTECH_CLOUD_URL + '/api/telemetry/activation-requests/' + requested.requestId + '/approve', {
@@ -214,6 +220,7 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
       socket.terminate();socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');let restored;socket.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='START_SESSION')restored=m.payload||m;});await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01'}}));for(let i=0;i<60&&!restored;i++)await new Promise(r=>setTimeout(r,50));assert.ok(restored);return restored;
     }});
     const fixture=new DatabaseSync(path.join(club,'netcafe.db'));
+    fixture.exec('PRAGMA busy_timeout=5000');
     fixture.prepare("INSERT INTO clubs(id,name,owner_name,phone,expires_at,is_active) VALUES(99,'Other club','Owner','123','2099-01-01',1)").run();
     const other=fixture.prepare("INSERT INTO users(club_id,username,password_hash,role,permissions) VALUES(99,'other-manager','invalid','club_owner','[]')").run();
     const foreign=await fetch(localUrl+'/api/admin/users/'+other.lastInsertRowid+'/permissions',{method:'PUT',headers:ownerHeaders,body:JSON.stringify({permissions:['*']})});assert.equal(foreign.status,404);

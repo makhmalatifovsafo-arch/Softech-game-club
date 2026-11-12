@@ -8,6 +8,13 @@ test('server auto update requires idle input and no sessions/writes', () => {
     { activeSessions: -1 }, { pendingWrites: 1 }, { idleSeconds: 9.999 }, { idleSeconds: 0 }, { idleSeconds: -1 },
     { idleSeconds: NaN }]) assert.equal(canApplyUpdate({ ...idle, ...patch }), false);
 });
+test('explicit manual update skips session/input gates but never write/readiness gates', () => {
+  const busy = { ...idle, manual: true, activeSessions: 12, idleSeconds: -1 };
+  assert.equal(canApplyUpdate(busy), true);
+  for (const patch of [{ manual: false }, { manual: 'true' }, { pendingWrites: 1 },
+    { activeSessions: -1 }, { activeSessions: NaN }, { staged: false }, { applying: true }])
+    assert.equal(canApplyUpdate({ ...busy, ...patch }), false);
+});
 test('release rejects unsafe paths, insecure downloads and missing integrity', () => {
   const manifest = { version: '1.0.6', server: { downloadUrl: 'https://example.com/v1.0.6/server.zip', sha256: 'a'.repeat(64) } };
   assert.equal(validateRelease(manifest, 'server').version, '1.0.6');

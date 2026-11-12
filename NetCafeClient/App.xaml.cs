@@ -227,6 +227,9 @@ public partial class App : WpfApplication
             });
         };
 
+        _wsService.OnSessionBarNotice += (sessionId, message, amount) =>
+            Dispatcher.Invoke(() => _lockWindow?.ShowSessionBarNotice(sessionId, message, amount));
+
         _wsService.OnPowerCommand += action =>
         {
             Dispatcher.Invoke(() => HandlePowerCommand(action));

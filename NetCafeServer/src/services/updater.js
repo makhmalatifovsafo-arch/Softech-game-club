@@ -122,6 +122,8 @@ export class ServerUpdater {
     return { ...this.state, source: undefined, currentVersion: this.currentVersion,
       latestVersion: this.state.latestManifest?.version || null,
       activeSessions: this.getActiveSessionsCount(), isApplying: this.applying, silent: true,
+      isPreparing: this.preparing,
+      updateAvailable: this.compareSemver(this.state.latestManifest?.version || this.currentVersion, this.currentVersion) > 0,
       idleSeconds: this.idleSeconds, canApply: canApplyUpdate(this.policy()) };
   }
   static broadcastUpdateNotice() { /* Silent updates do not interrupt the cashier. */ }
@@ -137,26 +139,28 @@ export class ServerUpdater {
   }
 
   static async evaluateIdleUpdate() {
-    if (!this.state.isStaged || this.applying || this.evaluating || Date.now() < this.nextApplyAttempt) return;
+    if (!this.state.isStaged || this.applying || this.preparing || this.evaluating || Date.now() < this.nextApplyAttempt) return;
     this.evaluating = true;
     try { await this.applyUpdate(); }
     catch (error) { this.state.error = error.message; this.nextApplyAttempt = Date.now() + 60000; }
     finally { this.evaluating = false; }
   }
 
-  static async applyUpdate() {
-    // Manual/remote requests cannot force a restart through a live game session.
+  static async applyUpdate({ force = false } = {}) {
+    const manual = force === true;
     if (this.applying || this.preparing || !this.state.isStaged || this.state.isDownloading)
-      return { success: false, error: 'No idle update ready.' };
-    this.idleSeconds = await this.probeIdle();
-    if (!canApplyUpdate(this.policy())) return { success: false, error: 'Waiting for idle input, no active sessions and no pending writes.' };
-    this.preparing = true; // Keep serving the cashier while files are copied.
+      return { success: false, error: 'Yangilanish hali tayyor emas yoki allaqachon o‘rnatilmoqda.' };
+    this.preparing = true; // Claim before awaiting: duplicate clicks cannot spawn two helpers.
     const handover = path.join(this.stagingDir, 'handover-' + crypto.randomUUID());
-    fs.mkdirSync(handover);
     const helperPath = path.join(handover, 'SoftechUpdater.exe');
     const source = this.state.source;
     let committed = false;
     try {
+      if (!manual) this.idleSeconds = await this.probeIdle();
+      if (!canApplyUpdate({ ...this.policy(), manual, ...(manual ? { pendingWrites: 0 } : {}) }))
+        return { success: false, error: 'Waiting for idle input, no active sessions and no pending writes.' };
+      this.state.error = null;
+      fs.mkdirSync(handover);
       fs.copyFileSync(path.join(source, 'SoftechUpdater.exe'), helperPath);
       const cockpitPid = Number(process.env.SOFTECH_COCKPIT_PID);
       const cockpitExe = process.env.SOFTECH_COCKPIT_EXE;
@@ -182,19 +186,23 @@ export class ServerUpdater {
           throw new Error('Updater preparation failed; current server stays running.');
         await sleep(100);
       }
-      this.idleSeconds = await this.probeIdle();
-      if (!canApplyUpdate({ ...this.policy(), applying: false }))
+      if (!manual) this.idleSeconds = await this.probeIdle();
+      if (!manual && !canApplyUpdate({ ...this.policy(), applying: false }))
         throw new Error('Cashier activity resumed; update postponed.');
-      // No async gap between the final gate and handing off the exact processes.
+      // Reject new writes, then drain requests already in flight before shutdown.
       this.applying = true;
+      const drainDeadline = Date.now() + 15000;
+      while (this.pendingWrites > 0 && Date.now() < drainDeadline) await sleep(50);
+      if (!canApplyUpdate({ ...this.policy(), applying: false, manual }))
+        throw new Error('Amaldagi yozuvlar tugamadi. Yangilash keyinga qoldirildi.');
       fs.writeFileSync(plan.CommitFile, plan.Version);
       if (useCockpit) fs.writeFileSync(path.join(this.updatesDir, 'cockpit-exit.json'),
         JSON.stringify({ pid: cockpitPid, at: Date.now() }));
       committed = true;
       setTimeout(() => this.onShutdown(), 100);
-      return { success: true, message: 'Silent update committed.' };
+      return { success: true, message: 'Yangilanish o‘rnatilmoqda. Server qayta ishga tushadi.' };
     } catch (error) {
-      fs.writeFileSync(path.join(handover, 'cancel'), 'cancel');
+      if (fs.existsSync(handover)) fs.writeFileSync(path.join(handover, 'cancel'), 'cancel');
       this.state.error = error.message;
       this.nextApplyAttempt = Date.now() + 60000;
       return { success: false, error: error.message };

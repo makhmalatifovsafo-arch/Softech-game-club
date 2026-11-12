@@ -45,6 +45,9 @@ public sealed class PackageManifest
             name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith(".db-wal", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith(".db-shm", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".db-journal", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".sqlite", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".sqlite3", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith(".sig", StringComparison.OrdinalIgnoreCase);
     }

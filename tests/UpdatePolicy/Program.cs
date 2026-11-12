@@ -21,6 +21,22 @@ foreach (string invalid in new[] { "../outside", @"..\outside", @"C:\outside", "
     Check(rejected, "Must reject " + invalid);
 }
 Console.WriteLine("Native idle policy and package path checks passed.");
+string extractionRoot = Path.GetFullPath(Path.Combine(".test-output", "safe-install-" + Guid.NewGuid().ToString("N")));
+Directory.CreateDirectory(extractionRoot);
+string extractionZip = Path.Combine(extractionRoot, "package.zip");
+string installTarget = Path.Combine(extractionRoot,"installed");
+Directory.CreateDirectory(installTarget);
+foreach (string name in new[] { "netcafe.db", "netcafe.db-wal", "config.json", "license.sig" }) File.WriteAllText(Path.Combine(installTarget,name),"original");
+using (var zip = System.IO.Compression.ZipFile.Open(extractionZip,System.IO.Compression.ZipArchiveMode.Create))
+{
+    foreach (string name in new[] { "netcafe.db", "netcafe.db-wal", "config.json", "license.sig", "data/backups/precious.db", "app.js" })
+    { using var writer = new StreamWriter(zip.CreateEntry(name).Open()); writer.Write("package contents"); }
+}
+SafePackageExtraction.Extract(extractionZip,installTarget);
+foreach (string name in new[] { "netcafe.db", "netcafe.db-wal", "config.json", "license.sig" }) Check(File.ReadAllText(Path.Combine(installTarget,name))=="original","Installer overwrote local data: "+name);
+Check(File.ReadAllText(Path.Combine(installTarget,"app.js"))=="package contents","Application was not upgraded");
+Check(!File.Exists(Path.Combine(installTarget,"data/backups/precious.db")),"Package injected database backup");
+Console.WriteLine("PASS reinstall replaces application files without overwriting database, WAL, config, license or backups");
 
 string cleanupRoot = Path.GetFullPath(Path.Combine(".test-output", "retention-" + Guid.NewGuid().ToString("N")));
 Directory.CreateDirectory(cleanupRoot);

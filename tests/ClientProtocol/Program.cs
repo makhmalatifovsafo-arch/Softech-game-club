@@ -62,6 +62,22 @@ class ClientProtocolAudit
   if((bool)granted.GetValue(loginWindow)!)throw new Exception("Stale authentication granted access to reopened modal");
   loginWindow.ResetFields();File.WriteAllText(configPath,fixtureConfig);
   Console.WriteLine("PASS offline emergency UI, incorrect password, retry cooldown and stale-auth rejection");
+  loginWindow.ShowSessionBarNotice("notice-test", "Siz 1 ta Cola, 2 ta Fanta olgansiz.", 22000);
+  var noticeOverlay=(System.Windows.Controls.Grid)loginWindow.FindName("SessionBarNoticeOverlay");
+  if(noticeOverlay.Visibility!=Visibility.Visible)throw new Exception("Bar notice did not appear");
+  var noticeFrame=new System.Windows.Threading.DispatcherFrame();
+  var noticeStart=System.Diagnostics.Stopwatch.StartNew();
+  var noticeCheck=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};
+  bool checkedBefore=false;
+  noticeCheck.Tick+=(_,_)=>{
+   if(noticeStart.Elapsed.TotalSeconds<7){if(noticeOverlay.Visibility!=Visibility.Visible)throw new Exception("Bar notice closed early");checkedBefore=true;}
+   if(noticeStart.Elapsed.TotalSeconds>=8.5)noticeFrame.Continue=false;
+  };
+  noticeCheck.Start();System.Windows.Threading.Dispatcher.PushFrame(noticeFrame);noticeCheck.Stop();
+  if(!checkedBefore||noticeOverlay.Visibility!=Visibility.Collapsed)throw new Exception("Bar notice must close after eight seconds");
+  loginWindow.ShowSessionBarNotice("notice-test", "Duplicate", 22000);
+  if(noticeOverlay.Visibility!=Visibility.Collapsed)throw new Exception("Duplicate stop reopened bar notice");
+  Console.WriteLine("PASS client bar reminder displays for eight seconds, dismisses only the reminder and ignores duplicate packets");
   var widget=new TimeWidgetWindow();int expirations=0;widget.OnSessionExpired+=()=>expirations++;
   var tick=typeof(TimeWidgetWindow).GetMethod("Timer_Tick",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
   widget.UpdateTime(0);tick.Invoke(widget,new object[]{null,EventArgs.Empty});tick.Invoke(widget,new object[]{null,EventArgs.Empty});
@@ -71,7 +87,8 @@ class ClientProtocolAudit
   Console.WriteLine("PASS local prepaid expiry and unlimited-session timer");
   app.Dispatcher.InvokeAsync(async ()=>{
    var service=new WebSocketClientService();var done=new TaskCompletionSource();
-   int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false;
+   int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false;
+   service.OnSessionBarNotice+=(id,message,amount)=>barNotice=id=="paid-session"&&message.Contains("Cola")&&amount==10000;
    service.OnConnectionStatusChanged+=online=>{if(online)connections++;};
    service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;};
    service.OnUpdateTime+=seconds=>time=seconds==600;
@@ -82,7 +99,7 @@ class ClientProtocolAudit
    service.OnEmergencyLockdown+=(reason,message)=>{if(reason=="audit-ban")done.TrySetResult();};
    try{
     service.Start();await done.Task.WaitAsync(TimeSpan.FromSeconds(25));
-    if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power}");
+    if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power||!barNotice)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power},bar={barNotice}");
     Console.WriteLine("PASS native client WebSocket handshake, fragmented messages, zero-balance session, time/config/lock/stop/power dispatch, disconnect and reconnect");
    }catch(Exception error){Console.Error.WriteLine(error.Message);Environment.ExitCode=1;}
    finally{service.Stop();app.Shutdown();}

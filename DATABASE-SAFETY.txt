@@ -1,0 +1,52 @@
+DATABASE PROTECTION — v1.0.28
+
+Club server database: <installation>/netcafe.db
+Local recovery snapshots: <installation>/data/backups/
+
+Protection
+- WAL + synchronous=FULL requests durable commits from Windows/storage.
+- Setup skips databases, WAL/journal files, data/, licenses and existing configuration.
+- Reinstall first creates and verifies a SQLite snapshot with the installed Node runtime.
+  Backup failure stops setup. It never restores a stale temporary .db over the live file.
+- Existing nonempty databases get a verified snapshot before startup migrations.
+- Schema changes run inside a transaction; failed destructive migrations roll back.
+- A missing/empty database with an existing marker or backup stops startup instead of
+  silently creating an empty club. A corrupt database also stops startup.
+- The installer remembers its installation path. Reinstall in that same directory.
+- OTA preserves the database and keeps its existing rollback mechanism. Independent
+  data/backups snapshots are excluded from OTA copying/rollback and version cleanup.
+
+Schedule and retention
+The running production server starts a separate hidden backup worker at startup and
+every hour. SQLite VACUUM INTO includes committed WAL data. A partial file is checked
+before becoming a completed .db snapshot. A failed backup does not delete good copies.
+Retained: 4 hourly snapshots, 7 daily snapshots, 3 startup snapshots, 3 setup snapshots.
+Rotation occurs after successful verification; failed attempts may leave extra files.
+Daily dates use UTC. The server must be running for scheduled snapshots to occur.
+Keep enough free disk space for the live database, WAL and recovery snapshots.
+Backup errors are logged with the [Database backup] prefix in server output.
+
+Verify a backup (from the installation directory)
+  runtime\node.exe src\services\databaseBackup.js --verify "data\backups\BACKUP_NAME.db"
+
+Recovery procedure
+1. Stop the Softech server/Cockpit and ensure no server process is using its database.
+2. Select a completed .db snapshot from before the problem. Verify it with the command above.
+3. Produce a separate recovered copy; the command refuses to overwrite an existing file:
+   runtime\node.exe src\services\databaseBackup.js --recover-copy "data\backups\BACKUP_NAME.db" "netcafe.recovered.db"
+4. With the server still stopped, preserve the original netcafe.db, netcafe.db-wal and
+   netcafe.db-shm together in a separate recovery-evidence folder. Do not discard them.
+5. Rename netcafe.recovered.db to netcafe.db in the installation directory.
+6. Start the server and check customers, balances and reports against the backup time.
+Restoring a snapshot does not include transactions committed after that snapshot.
+Do not copy only a live .db file: recent transactions can still be in its WAL file.
+
+Limits
+Local copies cannot survive losing/formatting the entire disk, ransomware affecting
+all copies or manual deletion of the whole installation and backup folder. A separate
+disk/off-site backup and a UPS are needed for those cases. These changes protect the
+club SQLite database; hosted Supabase recovery/retention is a separate provider setting.
+
+References
+https://www.sqlite.org/pragma.html#pragma_synchronous
+https://www.sqlite.org/lang_vacuum.html

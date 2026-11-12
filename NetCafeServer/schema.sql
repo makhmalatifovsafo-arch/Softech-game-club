@@ -339,3 +339,12 @@ CREATE INDEX IF NOT EXISTS idx_tariff_schedules_club ON tariff_schedules(club_id
 CREATE INDEX IF NOT EXISTS idx_tariff_schedules_priority ON tariff_schedules(priority, is_vip);
 CREATE INDEX IF NOT EXISTS idx_client_transactions_club ON client_transactions(club_id);
 CREATE INDEX IF NOT EXISTS idx_client_transactions_user ON client_transactions(user_id);
+
+-- Cashier reminders survive reconnects/restarts until explicitly dismissed.
+CREATE TABLE IF NOT EXISTS session_end_notices (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+    club_id INTEGER NOT NULL REFERENCES clubs(id),
+    payload_json TEXT NOT NULL,
+    dismissed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

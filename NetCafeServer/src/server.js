@@ -1388,9 +1388,9 @@ function handleRequest(req, res) {
 
   // 3. POST /api/updates/apply — Tayyorlangan yangilanishni qo'llash (0 active sessions yoki force)
   if (url.pathname === '/api/updates/apply' && req.method === 'POST') {
-    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner'] })) return;
+    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner', 'administrator'] })) return;
     readBody(req, async (body) => {
-      const force = Boolean(body?.force);
+      const force = body?.force === true;
       const result = await ServerUpdater.applyUpdate({ force });
       sendJson(res, result.success ? 200 : 400, result);
     });
@@ -1403,6 +1403,22 @@ function handleRequest(req, res) {
     Promise.resolve(ServerUpdater.state.latestManifest || ServerUpdater.fetchJson(ServerUpdater.manifestUrl))
       .then(manifest => sendJson(res, manifest ? 200 : 503, manifest || { error: 'Release manifest is not available yet.' }))
       .catch(() => sendJson(res, 503, { error: 'Release feed temporarily unavailable.' }));
+    return;
+  }
+
+  if (url.pathname === '/api/session-end-notices' && req.method === 'GET') {
+    if (!authenticate(req, res, { permission: 'session:manage', allowExpiredClub: true })) return;
+    const rows = db.prepare('SELECT payload_json FROM session_end_notices WHERE club_id=? AND dismissed_at IS NULL ORDER BY created_at')
+      .all(req.user.clubId || 1);
+    sendJson(res, 200, { notices: rows.map(row => JSON.parse(row.payload_json)) });
+    return;
+  }
+  const dismissNotice = url.pathname.match(/^\/api\/session-end-notices\/([^/]+)\/dismiss$/);
+  if (dismissNotice && req.method === 'POST') {
+    if (!authenticate(req, res, { permission: 'session:manage', allowExpiredClub: true })) return;
+    db.prepare('UPDATE session_end_notices SET dismissed_at=CURRENT_TIMESTAMP WHERE session_id=? AND club_id=?')
+      .run(decodeURIComponent(dismissNotice[1]), req.user.clubId || 1);
+    sendJson(res, 200, { success: true });
     return;
   }
 
@@ -1850,7 +1866,7 @@ function handleRequest(req, res) {
         } = data;
 
         const pcNum = /^\d+$/.test(String(computerId || '').trim()) ? parseInt(computerId, 10) : -999999;
-        const targetPcRow = db.prepare('SELECT id, status, mac_address, name, pc_number, zone, zone_id FROM computers WHERE id = ? OR name = ? OR pc_number = ?').get(String(computerId), String(computerId), pcNum);
+        const targetPcRow = db.prepare('SELECT id, status, mac_address, name, pc_number, zone, zone_id FROM computers WHERE club_id=? AND (id = ? OR name = ? OR pc_number = ?) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1').get(clubId, String(computerId), String(computerId), pcNum, String(computerId));
         if (!targetPcRow) { sendJson(res, 404, { error: 'Kompyuter topilmadi.' }); return; }
         const activeSession = db.prepare("SELECT id FROM sessions WHERE computer_id = ? AND status = 'ACTIVE'").get(targetPcRow.id);
         if (activeSession) { sendJson(res, 409, { error: 'Kompyuterda faol seans mavjud.' }); return; }
@@ -1882,7 +1898,13 @@ function handleRequest(req, res) {
           finalAmount = 0;
           finalEndsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
         } else {
-          if (mode === 'hours' || (!amount && durationMinutes)) {
+          if (mode === 'endtime') {
+            if (!data.targetEndTime) throw new Error('Tugash vaqtini kiriting.');
+            const calc = calculateIntervalPrice(startedAt, data.targetEndTime, false, clubId, pcZoneId);
+            finalDuration = calc.totalMinutes;
+            finalAmount = calc.totalAmount;
+            finalEndsAt = new Date(calc.endTime);
+          } else if (mode === 'hours' || (!amount && durationMinutes)) {
             const calc = calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
             finalAmount = calc.totalAmount;
             finalEndsAt = new Date(calc.endTime);
@@ -1957,7 +1979,7 @@ function handleRequest(req, res) {
           durationMinutes: Math.round(finalDuration),
           endTime: finalEndsAt.toISOString(),
           zoneName: (targetPcRow && targetPcRow.zone) ? targetPcRow.zone : 'VIP',
-          pricePerHour: (tariff && tariff.price_per_hour) ? tariff.price_per_hour : 10000,
+            pricePerHour: activeRate.pricePerHour,
           tariffName: isPostpaid ? 'VIP Postpaid (Ochiq)' : (tariff?.name || 'Standart'),
           startedAt: startedAt.getTime(),
           endsAt: finalEndsAt.getTime(),
@@ -2234,7 +2256,7 @@ function handleRequest(req, res) {
         if (addHours !== undefined && addHours !== null) {
           const hours = parseFloat(addHours);
           addMins = Math.round(hours * 60);
-          const calc = calculateFromDurationHours(new Date(currentEnd), hours, false, sessionRow.club_id || clubId || 1);
+          const calc = calculateFromDurationHours(new Date(currentEnd), hours, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(sessionRow.computer_id, sessionRow.club_id || clubId || 1));
           addAmt = addAmount !== undefined ? parseFloat(addAmount) : calc.totalAmount;
         } else if (addAmount !== undefined && addAmount !== null) {
           addAmt = parseFloat(addAmount);
@@ -2244,7 +2266,7 @@ function handleRequest(req, res) {
           addMins = parseInt(additionalMinutes, 10);
           addAmt = additionalAmount !== undefined 
             ? parseFloat(additionalAmount) 
-            : calculateFromDurationHours(new Date(currentEnd), addMins / 60, false, sessionRow.club_id || clubId || 1).totalAmount;
+            : calculateFromDurationHours(new Date(currentEnd), addMins / 60, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(sessionRow.computer_id, sessionRow.club_id || clubId || 1)).totalAmount;
         } else {
           addMins = 60;
           addAmt = sessionRow.price_per_hour || 10000;
@@ -2607,70 +2629,42 @@ function handleRequest(req, res) {
           return;
         }
 
-        const normalizedMode = mode.toUpperCase();
+        const normalizedMode = String(mode).toUpperCase();
         const startedAt = new Date();
-        let perPcDurationMins = 60;
-        let perPcAmount = 10000;
-        let isPostpaid = false;
-        let endsAt;
-
-        if (normalizedMode === 'POSTPAID' || normalizedMode === 'VIP') {
-          const settings = getClubSettings(clubId);
-          if (!settings.vip_enabled) {
-            sendJson(res, 403, { error: 'VIP Postpaid hozirda faol emas (Menejer tomonidan sozlamalarda o\'chirilgan).' });
-            return;
+        const isPostpaid = ['POSTPAID','VIP'].includes(normalizedMode);
+        if (isPostpaid && !getClubSettings(clubId).vip_enabled) throw new Error('VIP Postpaid faol emas.');
+        const plans = computerIds.map(rawId => {
+          const number = /^\d+$/.test(String(rawId)) ? Number(rawId) : -1;
+          const pc = db.prepare('SELECT * FROM computers WHERE club_id=? AND (id=? OR name=? OR pc_number=?) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1')
+            .get(clubId,String(rawId),String(rawId),number,String(rawId));
+          if (!pc) throw new Error('Kompyuter topilmadi.');
+          if (db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id)) throw new Error('Kompyuter band.');
+          const zoneId = resolveZoneIdForComputer(pc.id,clubId);
+          const rate = getActiveRateForMoment(startedAt,false,clubId,zoneId);
+          if (isPostpaid && rate.isVipPostpaidAllowed === false) throw new Error('Xonada Postpaid taqiqlangan.');
+          let calc;
+          if (isPostpaid) calc = {totalMinutes:1440,totalAmount:0,endTime:new Date(startedAt.getTime()+86400000).toISOString()};
+          else if (['END_TIME','ENDTIME'].includes(normalizedMode)) {
+            if (!data.targetEndTime && !value) throw new Error('Tugash vaqti kerak.');
+            calc = calculateIntervalPrice(startedAt,data.targetEndTime||value,false,clubId,zoneId);
+          } else if (['AMOUNT','PRICE'].includes(normalizedMode)) {
+            const amount = Number(data.amount ?? value);
+            if (!Number.isFinite(amount) || amount <= 0) throw new Error('Summa noto‘g‘ri.');
+            calc = calculateTimeFromAmount(startedAt,amount,false,clubId,zoneId);
+          } else {
+            calc = calculateFromDurationHours(startedAt,data.durationMinutes != null ? Number(data.durationMinutes)/60 : Number(value ?? 1),false,clubId,zoneId);
+            // Preserve the existing member-discount flow; ordinary hourly quotes are server-calculated.
+            if (normalizedMode === 'CLIENT' && data.amount !== undefined) {
+              const memberAmount = Number(data.amount);
+              if (!Number.isFinite(memberAmount) || memberAmount < 0) throw new Error('Mijoz summasi noto‘g‘ri.');
+              calc.totalAmount = memberAmount;
+            }
           }
-          isPostpaid = true;
-          perPcDurationMins = 24 * 60;
-          perPcAmount = 0;
-          endsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
-        } else if (normalizedMode === 'END_TIME' || normalizedMode === 'ENDTIME') {
-          const timeTarget = data.targetEndTime || value || '18:00';
-          const calc = calculateIntervalPrice(startedAt, timeTarget, false);
-          perPcDurationMins = data.durationMinutes || calc.totalMinutes;
-          perPcAmount = data.amount !== undefined ? parseFloat(data.amount) : calc.totalAmount;
-          endsAt = new Date(calc.endTime);
-        } else if (normalizedMode === 'AMOUNT' || normalizedMode === 'PRICE') {
-          const amtTarget = data.amount !== undefined ? parseFloat(data.amount) : (parseFloat(value) || 10000);
-          const calc = calculateTimeFromAmount(startedAt, amtTarget, false);
-          perPcDurationMins = data.durationMinutes || calc.totalMinutes;
-          perPcAmount = amtTarget;
-          endsAt = new Date(calc.endTime);
-        } else if (normalizedMode === 'HOURS') {
-          const hours = data.durationMinutes ? (data.durationMinutes / 60) : (parseFloat(value) || 1);
-          const calc = calculateFromDurationHours(startedAt, hours, false);
-          perPcDurationMins = data.durationMinutes || calc.totalMinutes;
-          perPcAmount = data.amount !== undefined ? parseFloat(data.amount) : calc.totalAmount;
-          endsAt = new Date(calc.endTime);
-        } else {
-          // CLIENT rejim
-          const hours = data.durationMinutes ? (data.durationMinutes / 60) : (parseFloat(value) || 1);
-          const calc = calculateFromDurationHours(startedAt, hours, false);
-          perPcDurationMins = data.durationMinutes || calc.totalMinutes;
-          perPcAmount = data.amount !== undefined ? parseFloat(data.amount) : calc.totalAmount;
-          endsAt = new Date(calc.endTime);
-        }
-
+          return {pcId:pc.id,rate,perPcAmount:calc.totalAmount,perPcDurationMins:calc.totalMinutes,endsAt:new Date(calc.endTime)};
+        });
+        if (new Set(plans.map(p=>p.pcId)).size !== plans.length) throw new Error('Kompyuter takroran tanlangan.');
+        const totalAmountAllPcs = plans.reduce((sum,p)=>sum+p.perPcAmount,0);
         const results = [], notifications = [];
-        const totalAmountAllPcs = perPcAmount * computerIds.length;
-
-        // Helper to resolve PC identifier (e.g. "pc_1", 1, "PC-01")
-        const resolvePcId = (rawId) => {
-          if (typeof rawId === 'number') return `pc_${rawId}`;
-          const str = String(rawId).trim();
-          if (str.startsWith('pc_')) return str;
-          const digits = str.replace(/\D/g, '');
-          if (digits) return `pc_${parseInt(digits, 10)}`;
-          return str;
-        };
-
-        if (!Number.isFinite(perPcAmount) || perPcAmount < 0 || !Number.isFinite(perPcDurationMins) || perPcDurationMins <= 0) throw new Error('Summa yoki vaqt noto‘g‘ri.');
-        const resolvedIds=computerIds.map(resolvePcId);
-        if (new Set(resolvedIds).size!==resolvedIds.length) throw new Error('Kompyuter takroran tanlangan.');
-        for(const pcId of resolvedIds) {
-          if(!db.prepare('SELECT id FROM computers WHERE id=? AND club_id=?').get(pcId,clubId)) throw new Error('Kompyuter topilmadi.');
-          if(db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pcId)) throw new Error('Kompyuter band.');
-        }
         db.exec('BEGIN IMMEDIATE');
         // Agar CLIENT bo'lsa va balansdan to'lansa
         if (paymentType === 'BALANCE') {
@@ -2684,8 +2678,7 @@ function handleRequest(req, res) {
         const defaultTariff = db.prepare('SELECT id, name FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
           || db.prepare('SELECT id, name FROM tariffs ORDER BY price_per_hour ASC LIMIT 1').get();
 
-        for (const rawId of computerIds) {
-          const pcId = resolvePcId(rawId);
+        for (const {pcId, rate, perPcAmount, perPcDurationMins, endsAt} of plans) {
           const sessionId = `ses_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
           const notes = paymentType === 'BALANCE' ? 'CLIENT_BALANCE_PREPAID:'+customerId : isPostpaid ? 'POSTPAID' : `BATCH_${normalizedMode}`;
 
@@ -2697,7 +2690,7 @@ function handleRequest(req, res) {
             sessionId,
             clubId,
             pcId,
-            defaultTariff?.id || 'trf_standard_1h',
+            rate.tariffId || defaultTariff?.id || 'trf_standard_1h',
             customerId || null,
             customerName,
             startedAt.toISOString(),
@@ -2746,6 +2739,7 @@ function handleRequest(req, res) {
           results.push({
             computerId: pcId,
             sessionId,
+            amount: perPcAmount, durationMinutes: perPcDurationMins,
             status: 'STARTED'
           });
         }
@@ -2758,8 +2752,8 @@ function handleRequest(req, res) {
           mode: normalizedMode,
           count: results.length,
           startedComputersCount: results.length,
-          perPcDurationMinutes: perPcDurationMins,
-          perPcAmount,
+          perPcDurationMinutes: plans[0].perPcDurationMins,
+          perPcAmount: plans.every(p=>p.perPcAmount===plans[0].perPcAmount) ? plans[0].perPcAmount : null,
           totalAmount: totalAmountAllPcs,
           isPostpaid,
           results

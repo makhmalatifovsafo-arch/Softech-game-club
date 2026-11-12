@@ -1,4 +1,5 @@
 import { ensureLocalOwner } from './services/localOwnerSetup.js';
+import { guardDatabase, markDatabase, snapshot, pruneBackups, verifyDatabase, startDatabaseBackups } from './services/databaseBackup.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,14 +12,20 @@ const __dirname = path.dirname(__filename);
 const DB_FILE = path.resolve(__dirname, '../netcafe.db');
 const SCHEMA_FILE = path.resolve(__dirname, '../schema.sql');
 
+guardDatabase(DB_FILE);
+const existingDatabase = fs.existsSync(DB_FILE) && fs.statSync(DB_FILE).size > 0;
+if (existingDatabase) verifyDatabase(DB_FILE);
 export const db = new DatabaseSync(DB_FILE);
 
 db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA synchronous = NORMAL;');
+db.exec('PRAGMA synchronous = FULL;');
 db.exec('PRAGMA foreign_keys = ON;');
 db.exec('PRAGMA busy_timeout = 5000;');
 
 export function initDatabase() {
+  if (existingDatabase) snapshot(DB_FILE, 'startup');
+  db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;');
+  try {
   migrateSchemaToMultiTenant();
 
   if (fs.existsSync(SCHEMA_FILE)) {
@@ -29,7 +36,13 @@ export function initDatabase() {
 
   migrateFinancialSchema();
   seedInitialData();
+  db.exec('COMMIT;');
+  } catch (error) { db.exec('ROLLBACK;'); throw error; }
+  finally { db.exec('PRAGMA foreign_keys=ON;'); }
+  markDatabase(DB_FILE);
+  try { pruneBackups(DB_FILE); } catch (error) { console.warn('[Database backup cleanup]', error.message); }
   if (process.env.NODE_ENV !== 'test') ensureLocalOwner(db, path.dirname(DB_FILE));
+  if (process.env.NODE_ENV !== 'test') startDatabaseBackups(DB_FILE);
 }
 
 /**
@@ -97,10 +110,10 @@ function migrateSchemaToMultiTenant() {
       if (userTableInfo.length > 0) {
         // Eski 'manager' rolini 'club_owner' ga xaritaymiz
         db.exec(`
-          INSERT OR IGNORE INTO users_mt (id, club_id, username, password_hash, role, phone_number, balance, permissions, created_at)
+          INSERT INTO users_mt (id, club_id, username, password_hash, role, phone_number, balance, permissions, created_at)
           SELECT 
             id,
-            COALESCE(club_id, 1),
+            ${hasClubId ? 'COALESCE(club_id, 1)' : '1'},
             username,
             password_hash,
             CASE WHEN role = 'manager' THEN 'club_owner' ELSE role END,
@@ -183,7 +196,7 @@ function migrateSchemaToMultiTenant() {
             FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE,
             FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL
           );
-          INSERT OR IGNORE INTO computers_online_patch SELECT * FROM computers;
+          INSERT INTO computers_online_patch SELECT * FROM computers;
           DROP TABLE computers;
           ALTER TABLE computers_online_patch RENAME TO computers;
           PRAGMA foreign_keys = ON;
@@ -191,7 +204,7 @@ function migrateSchemaToMultiTenant() {
         console.log("✅ [Database] 'computers' jadvali yangilandi ('ONLINE' qabul qilinadi).");
       }
     } catch (patchErr) {
-      console.warn("[Database] computers patch warning:", patchErr.message);
+      throw patchErr;
     }
 
     // tariffs jadvaliga zone_id, is_vip_postpaid_allowed, start_time, end_time, days_of_week ustunlarini qo'shish
@@ -520,6 +533,7 @@ function migrateSchemaToMultiTenant() {
     db.exec('PRAGMA foreign_keys = ON;');
   } catch (err) {
     db.exec('PRAGMA foreign_keys = ON;');
+    throw err;
     console.error('⚠️ [Database] Multi-Tenant migratsiyasida xatolik:', err);
   }
 }

@@ -27,6 +27,8 @@ try {
     dbInstance = new DatabaseSync(tmpFile);
   }
 } catch (err) {
+  if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME)
+    throw new Error('Doimiy bulut bazasini ochib bo‘lmadi. Vaqtinchalik bo‘sh baza bilan ish davom ettirilmaydi.', { cause: err });
   try {
     dbInstance = new DatabaseSync(':memory:');
   } catch (err2) {
@@ -69,7 +71,7 @@ export function initDatabase() {
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
-    PRAGMA synchronous = NORMAL;
+    PRAGMA synchronous = FULL;
     PRAGMA busy_timeout = 5000;
   `);
 

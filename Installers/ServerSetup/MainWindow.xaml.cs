@@ -12,10 +12,17 @@ namespace ServerSetup
     public partial class MainWindow : Window
     {
         private string installedDirectory = @"C:\SoftechServer";
+        private readonly string? previousInstall;
 
         public MainWindow()
         {
             InitializeComponent();
+            string candidate = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Softech\Server", "InstallPath", @"C:\SoftechServer") as string ?? @"C:\SoftechServer";
+            if (File.Exists(Path.Combine(candidate, "netcafe.db")))
+            {
+                previousInstall = Path.GetFullPath(candidate);
+                TxtInstallPath.Text = previousInstall;
+            }
         }
 
         private void BtnBrowse_Click(object sender, RoutedEventArgs e)
@@ -42,6 +49,12 @@ namespace ServerSetup
             }
 
             installedDirectory = targetDir;
+            if (previousInstall != null && !Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar).Equals(
+                previousInstall.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show("Mavjud baza " + previousInstall + " papkasida. Ma’lumotlar bilan davom etish uchun shu papkaga qayta o‘rnating.", "Mavjud bazani saqlash", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             BtnInstall.IsEnabled = false;
             BtnBrowse.IsEnabled = false;
             PbProgress.Visibility = Visibility.Visible;
@@ -75,14 +88,7 @@ namespace ServerSetup
                         catch { }
                     }
 
-                    // 2. Agar mavjud netcafe.db bo'lsa, uni zaxiralab olamiz (qayta o'rnatishda foydalanuvchi bazasi yo'qolmasligi uchun)
-                    string existingDbPath = Path.Combine(targetDir, "netcafe.db");
-                    string? tempDbBackup = null;
-                    if (File.Exists(existingDbPath))
-                    {
-                        tempDbBackup = Path.Combine(Path.GetTempPath(), $"softech_db_backup_{Guid.NewGuid():N}.db");
-                        try { File.Copy(existingDbPath, tempDbBackup, overwrite: true); } catch { tempDbBackup = null; }
-                    }
+                    DatabaseSafety.Backup(targetDir);
 
                     string? previousConfiguration = File.Exists(Path.Combine(targetDir, "config.json"))
                         ? File.ReadAllText(Path.Combine(targetDir, "config.json")) : null;
@@ -104,27 +110,17 @@ namespace ServerSetup
                                 resourceStream.CopyTo(fileStream);
                             }
 
-                            ZipFile.ExtractToDirectory(tempZipPath, targetDir, overwriteFiles: true);
+                            Softech.Updates.SafePackageExtraction.Extract(tempZipPath, targetDir);
                             if (previousConfiguration != null)
                                 File.WriteAllText(Path.Combine(targetDir, "config.json"), previousConfiguration);
                             else if (!File.Exists(Path.Combine(targetDir, "config.json")))
                                 File.WriteAllText(Path.Combine(targetDir, "config.json"), "{\"updateIdleSeconds\":10}");
-
-                            // Agar avvalgi baza bo'lsa, uni tiklaymiz
-                            if (tempDbBackup != null && File.Exists(tempDbBackup))
-                            {
-                                File.Copy(tempDbBackup, existingDbPath, overwrite: true);
-                            }
                         }
                         finally
                         {
                             if (File.Exists(tempZipPath))
                             {
                                 try { File.Delete(tempZipPath); } catch { }
-                            }
-                            if (tempDbBackup != null && File.Exists(tempDbBackup))
-                            {
-                                try { File.Delete(tempDbBackup); } catch { }
                             }
                         }
                     }
@@ -161,6 +157,7 @@ namespace ServerSetup
                 });
 
                 PbProgress.IsIndeterminate = false;
+                Registry.SetValue(@"HKEY_CURRENT_USER\Software\Softech\Server", "InstallPath", Path.GetFullPath(targetDir));
                 PbProgress.Value = 100;
                 TxtStatus.Text = "✅ Server muvaffaqiyatli o'rnatildi! Dasturni ishga tushirishingiz mumkin.";
                 TxtStatus.Foreground = System.Windows.Media.Brushes.LightGreen;

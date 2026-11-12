@@ -1,3 +1,37 @@
+2026-11-12: 1.0.31 pricing and session-expiry bar reminders
+- Uncovered time spans retain the latest applicable daily rate; fixed/night packages
+  are not accidentally used as zero hourly rates. Explicit later hourly rates still apply.
+- Quotes ignore stale responses and wait for server calculation. Group sessions use
+  each computer's room rate; single end-time sessions and extensions use the same rules.
+- Expiry stores a persistent cashier reminder with session duration, items and bar debt.
+  Only confirmed unpaid orders for that session are included. Close does not mark paid.
+- The client shows an illustrated bar-payment reminder for eight seconds, then stays locked.
+- Expired prepaid bar bills remain collectible without charging game time again or
+  stopping a replacement session. Server and client both need this release for the full flow.
+
+2026-11-12: 1.0.30 visible workstation selection
+- Drag-selected floor-plan and grid cards use a blue background and bright border.
+- Selection overrides status colors immediately, including during a drag.
+- Deselection restores the latest status colors, including after a dashboard redraw.
+- Verified with real Edge pointer gestures and the marquee selection tests.
+
+2026-11-12: 1.0.29 server update button below the sidebar menus
+- Shows download/preparation status and enables Install after package verification.
+- Explicit manual installation works with active sessions and recent cashier input.
+- Blocks new writes and drains in-flight requests before restarting the server.
+- Duplicate clicks are serialized; preparation/drain failures keep the server running.
+- Without a click, automatic updates retain the no-session/input-idle requirement.
+- Dashboard waits for the target version to respond before reloading.
+
+2026-11-12: 1.0.28 database preservation and local recovery snapshots
+- Reinstall preserves database/WAL/data/license/config files and requires a verified
+  SQLite backup before replacing application files. Backup failure stops installation.
+- WAL FULL durability, atomic schema migrations and verified pre-migration snapshots.
+- Hourly/daily local backups run in a separate worker with bounded retention.
+- Missing/corrupt databases stop startup rather than silently resetting club data.
+- Recovery produces a new file without overwriting the live database.
+- See DATABASE-SAFETY.txt for retention, recovery steps and local-disk limitations.
+
 2026-11-12: cloud club inventory synchronization
 - Super admin club cards, inspector and network total use the reported PC inventory.
 - Offline PCs count toward inventory; removed PCs and an empty inventory reconcile correctly.

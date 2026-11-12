@@ -117,6 +117,9 @@ public static class Program
                 foreach (var db in candidates)
                 {
                     string relative = Path.GetRelativePath(target, db);
+                    // Independent recovery snapshots are not live databases and must
+                    // never be copied again or rolled back with application files.
+                    if (relative.Replace('\\', '/').StartsWith("data/backups/", StringComparison.OrdinalIgnoreCase)) continue;
                     string snapshot = PackageManifest.ChildPath(Path.Combine(transaction, "databases"), relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(snapshot)!);
                     File.Copy(db, snapshot, true);

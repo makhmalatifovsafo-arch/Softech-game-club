@@ -92,6 +92,7 @@ public class WebSocketClientService
     public event Action<string, int, string, string, double?>? OnStartSession;       // sessionId, remainingSecs, tariffName, customerName, clientBalance?
     public event Action<int>?                                  OnUpdateTime;         // remainingSeconds
     public event Action<string>?                               OnStopSession;        // reason
+    public event Action<string, string, double>?               OnSessionBarNotice;
     public event Action<bool>?                                 OnConnectionStatusChanged; // isConnected
     public event Action<string, double, int, string>?          OnMemberLoginSuccess; // sessionId, balance, remainingSecs, username
     public event Action<string>?                               OnMemberLoginFailed;  // error
@@ -539,6 +540,11 @@ public class WebSocketClientService
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
                         OnStopSession?.Invoke(reason);
+                        if (data.TryGetProperty("barNotice", out var notice) && notice.ValueKind == JsonValueKind.Object &&
+                            notice.TryGetProperty("barDebt", out var debt) && debt.ValueKind == JsonValueKind.Number && debt.TryGetDouble(out var amount) && double.IsFinite(amount) && amount > 0 &&
+                            notice.TryGetProperty("sessionId", out var session) && session.ValueKind == JsonValueKind.String &&
+                            notice.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+                            OnSessionBarNotice?.Invoke(session.GetString()!, message.GetString()!, amount);
                     });
                     break;
                 }

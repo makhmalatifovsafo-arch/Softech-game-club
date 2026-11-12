@@ -66,8 +66,9 @@ export function resolveZoneIdForComputer(computerId, clubId = 1) {
       SELECT c.id, c.pc_number, c.zone_id, c.zone, g.zone_id as grid_zone_id
       FROM computers c
       LEFT JOIN grid_layout g ON (c.pc_number = g.computer_id AND c.club_id = g.club_id)
-      WHERE c.id = ? OR c.name = ? OR c.pc_number = ?
-    `).get(String(computerId), String(computerId), num);
+      WHERE c.club_id = ? AND (c.id = ? OR c.name = ? OR c.pc_number = ?)
+      ORDER BY CASE WHEN c.id = ? THEN 0 ELSE 1 END LIMIT 1
+    `).get(clubId || 1, String(computerId), String(computerId), num, String(computerId));
 
     return pc?.zone_id || pc?.grid_zone_id || null;
   } catch (err) {
@@ -88,7 +89,7 @@ export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zo
   if (zoneId) {
     const zoneTariffs = db.prepare(`
       SELECT * FROM tariffs
-      WHERE zone_id = ? AND (club_id = ? OR club_id IS NULL) AND is_active = 1
+      WHERE zone_id = ? AND club_id = ? AND is_active = 1 AND type = 'HOURLY'
       ORDER BY id ASC
     `).all(zoneId, clubId || 1);
 
@@ -127,7 +128,8 @@ export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zo
 
     // Agar vaqt oralig'i to'liq mos kelmasa, xonaning 1-faol tarifini zaxira sifatida ishlatamiz
     if (zoneTariffs.length > 0) {
-      const fallback = zoneTariffs[0];
+      const fallback = nearestApplicableRate(zoneTariffs, dayOfWeek, minuteOfDay);
+      if (fallback) {
       return {
         tariffId: fallback.id,
         scheduleId: fallback.id,
@@ -137,6 +139,7 @@ export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zo
         isVipPostpaidAllowed: Boolean(fallback.is_vip_postpaid_allowed),
         zoneId: Number(zoneId)
       };
+      }
     }
   }
 
@@ -183,19 +186,31 @@ export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zo
     }
   }
 
-  // 3. Umumiy zaxira: tariffs jadvalidagi standart soatlik narx
-  const defaultTariff = db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE (zone_id IS NULL OR zone_id = 0) AND (club_id = ? OR club_id IS NULL) AND is_active = 1 ORDER BY price_per_hour ASC LIMIT 1').get(clubId || 1)
-    || db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE is_active = 1 ORDER BY price_per_hour ASC LIMIT 1').get();
+  // An uncovered time span keeps the most recent configured daily rate.
+  // Fixed-price/night packages must never become an implicit zero hourly rate.
+  const scheduledFallback = nearestApplicableRate(schedules.filter(s => !s.is_vip || isVip), dayOfWeek, minuteOfDay);
+  if (scheduledFallback) return { tariffId: null, scheduleId: scheduledFallback.id, name: scheduledFallback.name,
+    pricePerHour: Number(scheduledFallback.price_per_hour), isVip: Boolean(scheduledFallback.is_vip), isVipPostpaidAllowed: true, zoneId: null };
+  const defaultTariff = db.prepare("SELECT id, name, price_per_hour FROM tariffs WHERE (zone_id IS NULL OR zone_id = 0) AND club_id = ? AND is_active = 1 AND type='HOURLY' ORDER BY id LIMIT 1").get(clubId || 1);
 
   return {
     tariffId: defaultTariff?.id || 'trf_standard_1h',
     scheduleId: null,
     name: defaultTariff?.name || 'Standart soatlik',
-    pricePerHour: defaultTariff?.price_per_hour ? Number(defaultTariff.price_per_hour) : 10000,
+    pricePerHour: defaultTariff ? Number(defaultTariff.price_per_hour) : 10000,
     isVip: false,
     isVipPostpaidAllowed: true,
     zoneId: null
   };
+}
+
+function nearestApplicableRate(rates, day, minute) {
+  return rates.filter(rate => {
+    try { const days = typeof rate.days_of_week === 'string' ? JSON.parse(rate.days_of_week) : rate.days_of_week;
+      return (!days || days.includes(day)) && Number.isFinite(Number(rate.price_per_hour));
+    } catch { return false; }
+  }).sort((a, b) => ((minute - timeStrToMinutes(a.start_time) + 1440) % 1440) -
+    ((minute - timeStrToMinutes(b.start_time) + 1440) % 1440))[0];
 }
 
 /**
@@ -338,7 +353,9 @@ export function calculateTimeFromAmount(startDateInput, targetAmount, isVip = fa
  */
 export function calculateFromDurationHours(startDateInput, durationHours, isVip = false, clubId = 1, zoneId = null) {
   const start = parseDateOrTodayTime(startDateInput);
-  const minutes = Math.max(1, Math.round(Number(durationHours || 1) * 60));
+  const hours = Number(durationHours);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 72) throw new Error('Seans vaqti 0 dan katta va 72 soatdan oshmasligi kerak.');
+  const minutes = Math.max(1, Math.round(hours * 60));
   const endEpoch = start.getTime() + minutes * 60 * 1000;
   return calculateIntervalPrice(start, new Date(endEpoch), isVip, clubId, zoneId);
 }

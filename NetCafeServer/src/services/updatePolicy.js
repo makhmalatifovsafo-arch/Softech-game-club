@@ -1,6 +1,7 @@
-export function canApplyUpdate({ staged, applying, activeSessions, pendingWrites, idleSeconds, minimumIdleSeconds = 10 }) {
-  return Boolean(staged) && !applying && activeSessions === 0 && pendingWrites === 0 &&
-    Number.isFinite(idleSeconds) && idleSeconds >= Math.max(5, minimumIdleSeconds);
+export function canApplyUpdate({ staged, applying, activeSessions, pendingWrites, idleSeconds, minimumIdleSeconds = 10, manual = false }) {
+  return Boolean(staged) && !applying && pendingWrites === 0 &&
+    (manual === true ? Number.isInteger(activeSessions) && activeSessions >= 0 :
+      activeSessions === 0 && Number.isFinite(idleSeconds) && idleSeconds >= Math.max(5, minimumIdleSeconds));
 }
 export function validateRelease(manifest, component) {
   if (!/^\d+\.\d+\.\d+$/.test(manifest?.version ?? '')) throw new Error('Invalid release version');

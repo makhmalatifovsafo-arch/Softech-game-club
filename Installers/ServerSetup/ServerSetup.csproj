@@ -16,6 +16,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../Shared/Updates/UpdatePlan.cs" Link="Updates/UpdatePlan.cs" />
+    <Compile Include="../../Shared/Updates/SafePackageExtraction.cs" Link="Updates/SafePackageExtraction.cs" />
     <EmbeddedResource Include="payload.zip">
       <LogicalName>payload.zip</LogicalName>
     </EmbeddedResource>

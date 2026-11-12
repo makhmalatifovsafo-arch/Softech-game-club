@@ -237,6 +237,13 @@
       pointer-events: auto !important;
       z-index: 20;
     }
+    /* Selection overrides inline status colors; removing it restores the live status. */
+    .floor-desk.pc-selected,
+    #pcGrid > [data-pc-id].pc-selected {
+      border-color: #38bdf8 !important;
+      background-color: #0c4a6e !important;
+      box-shadow: 0 0 0 2px #38bdf8, 0 0 22px rgba(56, 189, 248, 0.55) !important;
+    }
     .floor-desk.dragging {
       z-index: 60 !important;
       opacity: 0.95;
@@ -517,6 +524,12 @@
 
       <!-- Bottom: User profile, Settings, Logout (Liquid Glass Card) -->
       <div id="sidebarFooter" class="shrink-0 p-3.5 border-t border-white/10 space-y-2.5 bg-black/40 backdrop-blur-xl relative z-10">
+        <section id="sidebarUpdate" class="hidden rounded-xl border border-amber-400/50 bg-amber-400/10 p-3" aria-live="polite">
+          <p id="sidebarUpdateTitle" class="text-sm font-bold text-amber-300">Yangi versiya chiqdi</p>
+          <p id="sidebarUpdateStatus" class="text-xs text-zinc-300 mt-1"></p>
+          <button id="sidebarUpdateInstall" type="button" onclick="applyServerUpdate(true)" class="mt-2 w-full rounded-lg bg-amber-400 px-3 py-2 text-sm font-bold text-black disabled:opacity-50">Yangilanishni o‘rnatish</button>
+          <p class="mt-2 text-[10px] text-zinc-400">Server qisqa vaqt qayta ishga tushadi. Bosmasangiz, bo‘sh vaqtda avtomatik o‘rnatiladi.</p>
+        </section>
         <!-- Specular Highlight for Bottom Widget -->
         <div class="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none"></div>
 
@@ -3273,7 +3286,7 @@
           <button type="button" onclick="closeUpdateModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white bg-[#18181b] hover:bg-[#27272a] transition cursor-pointer">
             Yopish
           </button>
-          <button type="button" onclick="applyServerUpdate(false)" id="btnApplyUpdate" class="px-4 py-2 rounded-xl text-xs font-bold text-black bg-amber-400 hover:bg-amber-300 transition shadow-[0_0_15px_rgba(245,158,11,0.4)] cursor-pointer">
+          <button type="button" onclick="applyServerUpdate(true)" id="btnApplyUpdate" class="px-4 py-2 rounded-xl text-xs font-bold text-black bg-amber-400 hover:bg-amber-300 transition shadow-[0_0_15px_rgba(245,158,11,0.4)] cursor-pointer">
             Hozir yangilash va qayta ishga tushirish ➔
           </button>
         </div>
@@ -3624,6 +3637,7 @@
     let dynamicSchedulesData = [];
     let clientsData = [];
     let calcDebounceTimer = null;
+    let priceCalculationRevision = 0;
     let clubSettingsData = { vip_enabled: true, vip_pricing_mode: 'SCHEDULE', vip_custom_price: 15000 };
     let selectedVipPayMethod = 'CASH';
 
@@ -3982,9 +3996,7 @@
       document.querySelectorAll('.floor-desk').forEach(desk => {
         const id = desk.getAttribute('data-pc-id');
         const isSel = selectedPcIds.has(id);
-        desk.classList.toggle('ring-2', isSel);
-        desk.classList.toggle('ring-sky-400', isSel);
-        desk.classList.toggle('border-sky-400', isSel);
+        desk.classList.toggle('pc-selected', isSel);
       });
 
       // Jadvaldagi qatorlar va checkboxlarni yangilash
@@ -4000,11 +4012,7 @@
       document.querySelectorAll('#pcGrid > [data-pc-id]').forEach(card => {
         const id = card.getAttribute('data-pc-id');
         const isSel = selectedPcIds.has(id);
-        if (isSel) {
-          card.classList.add('border-sky-400', 'ring-2', 'ring-sky-500/80', 'bg-sky-950/30');
-        } else {
-          card.classList.remove('border-sky-400', 'ring-2', 'ring-sky-500/80', 'bg-sky-950/30');
-        }
+        card.classList.toggle('pc-selected', isSel);
       });
 
       const allChk = document.getElementById('selectAllPcsCheckbox');
@@ -5322,16 +5330,14 @@
         }
 
         if (isSelected) {
-          border += ' ring-2 ring-sky-400 border-sky-400 !shadow-[0_0_25px_rgba(56,189,248,0.7)] !bg-[#0c1a29]/95';
+          border += ' pc-selected';
         }
 
         deskEl.className += ` ${border}`;
         const state = computerState(pc);
-        if (!isSelected) {
-          deskEl.style.borderColor = state.color;
-          deskEl.style.backgroundColor = state.color + '15';
-          deskEl.style.boxShadow = '0 0 12px ' + state.color + '30';
-        }
+        deskEl.style.borderColor = state.color;
+        deskEl.style.backgroundColor = state.color + '15';
+        deskEl.style.boxShadow = '0 0 12px ' + state.color + '30';
         deskEl.title = state.label + ': ' + state.detail;
         deskEl.setAttribute('data-status', isOffline ? 'OFFLINE' : pc.status);
 
@@ -5486,9 +5492,7 @@
       document.querySelectorAll('.floor-desk').forEach(el => {
         const dId = el.getAttribute('data-pc-id');
         const isSel = selectedPcIds.has(dId) || selectedDeskId === dId;
-        el.classList.toggle('ring-2', isSel);
-        el.classList.toggle('ring-sky-400', isSel);
-        el.classList.toggle('border-sky-400', isSel);
+        el.classList.toggle('pc-selected', isSel);
       });
       renderInspector();
 
@@ -8465,6 +8469,7 @@
         try {
           const msg = JSON.parse(event.data);
           const eventType = msg.event || msg.type;
+          if (eventType === 'SESSION_EXPIRED_WITH_BAR_DEBT') window.showSessionEndNotice?.(msg.payload || msg.data || msg);
 
           if (eventType === 'WORKSTATION_UPDATED') {
             const payload = msg.payload || msg.data || msg;
@@ -8579,7 +8584,7 @@
 
     async function checkServerUpdates() {
       try {
-        const res = await fetch('/api/updates/status');
+        const res = await fetch('/api/updates/status', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
         if (res.ok) {
           const status = await res.json();
           renderUpdateBadge(status);
@@ -8588,34 +8593,21 @@
     }
 
     function renderUpdateBadge(status) {
-      if (status?.silent) {
-        document.getElementById('headerUpdateBadge')?.classList.add('hidden');
-        document.getElementById('serverUpdateModal')?.classList.add('hidden');
-        return;
-      }
       currentServerUpdateStatus = status;
-      const badge = document.getElementById('headerUpdateBadge');
-      const text = document.getElementById('headerUpdateText');
-      if (!badge || !text) return;
-
-      const hasUpdate = (status && status.isStaged && status.stagedVersion) ||
-                        (status && status.latestVersion && status.currentVersion && status.latestVersion !== status.currentVersion);
-
-      if (hasUpdate) {
-        const targetVer = status.stagedVersion || status.latestVersion;
-        text.textContent = `Yangi versiya: v${targetVer} ⚡`;
-        badge.classList.remove('hidden');
-        badge.classList.add('flex');
-
-        // Yangi reliz chiqqanida ekranda "Yangi versiya mavjud, o'rnating" modali avtomatik ochiladi!
-        const dismissedKey = 'dismissed_update_modal_v' + targetVer;
-        if (!sessionStorage.getItem(dismissedKey)) {
-          openUpdateModal();
-        }
-      } else {
-        badge.classList.add('hidden');
-        badge.classList.remove('flex');
-      }
+      document.getElementById('headerUpdateBadge')?.classList.add('hidden');
+      const panel = document.getElementById('sidebarUpdate');
+      const button = document.getElementById('sidebarUpdateInstall');
+      if (!panel || !button) return;
+      const visible = status && (status.updateAvailable || status.isStaged || manualUpdateInFlight);
+      panel.classList.toggle('hidden', !visible);
+      if (!visible) return;
+      document.getElementById('sidebarUpdateTitle').textContent = 'Yangi versiya: v' + (status.stagedVersion || status.latestVersion || '');
+      const busy = manualUpdateInFlight || status.isPreparing || status.isApplying;
+      button.disabled = busy || !status.isStaged || status.isDownloading;
+      button.textContent = busy ? "O'rnatilmoqda..." : "Yangilanishni o'rnatish";
+      document.getElementById('sidebarUpdateStatus').textContent = busy ? 'Server yangilanmoqda, biroz kuting...' :
+        status.isDownloading ? 'Yuklanmoqda...' : status.error ? status.error :
+        status.isStaged ? "O'rnatishga tayyor" : 'Yangilanish tayyorlanmoqda...';
     }
 
     function openUpdateModal() {
@@ -8669,11 +8661,11 @@
           noticeTitle.textContent = "Barcha kompyuterlar bo'sh";
           noticeTitle.className = 'font-bold block text-emerald-400';
         }
-        if (noticeDesc) noticeDesc.textContent = "Hozir xavfsiz va to'siqsiz zero-downtime yangilash mumkin.";
+        if (noticeDesc) noticeDesc.textContent = "Server qisqa vaqt qayta ishga tushadi.";
         if (btnApply) {
           btnApply.textContent = 'Hozir yangilash va qayta ishga tushirish ➔';
           btnApply.className = 'px-4 py-2 rounded-xl text-xs font-bold text-black bg-amber-400 hover:bg-amber-300 transition shadow-[0_0_15px_rgba(245,158,11,0.4)] cursor-pointer';
-          btnApply.onclick = () => applyServerUpdate(false);
+          btnApply.onclick = () => applyServerUpdate(true);
         }
       }
     }
@@ -8697,37 +8689,34 @@
       }
     }
 
-    async function applyServerUpdate(force = false) {
-      const btn = document.getElementById('btnApplyUpdate');
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Yangilanish boshlanmoqda...';
-      }
-
+    let manualUpdateInFlight = false;
+    async function applyServerUpdate(force = true) {
+      if (manualUpdateInFlight) return;
+      const target = currentServerUpdateStatus?.stagedVersion;
+      if (!target) return;
+      manualUpdateInFlight = true;
+      renderUpdateBadge(currentServerUpdateStatus);
       try {
-        const res = await fetch('/api/updates/apply', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ force })
+        const response = await fetch('/api/updates/apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + authToken },
+          body: JSON.stringify({ force: force === true }), signal: AbortSignal.timeout(90000)
         });
-        const data = await res.json();
-        if (res.ok) {
-          showToast("🚀 " + (data.message || "Yangilanish boshlandi. Server 3-5 soniyada qayta ishga tushadi..."), "success");
-          setTimeout(() => {
-            window.location.reload();
-          }, 4000);
-        } else {
-          showToast(data.error || "Yangilashni qo'llab bo'lmadi", "error");
-          if (btn) btn.disabled = false;
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Yangilanish o'rnatilmadi.");
+        const deadline = Date.now() + 180000;
+        while (Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          try {
+            const health = await fetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+            const result = await health.json();
+            if (health.ok && result.version === target) { window.location.reload(); return; }
+          } catch {}
         }
-      } catch (err) {
-        showToast("Xatolik: " + err.message, "error");
-        if (btn) btn.disabled = false;
-      }
+        throw new Error('Server qayta ochilishi tasdiqlanmadi. Yangilanish holatini tekshiring.');
+      } catch (error) { showToast(error.message, 'error'); }
+      finally { manualUpdateInFlight = false; await checkServerUpdates(); renderUpdateBadge(currentServerUpdateStatus); }
     }
+    setInterval(checkServerUpdates, 10000);
 
     function renderStats(stats) {
       if (stats.canViewFinance && stats.totalRevenue !== null) {
@@ -8874,7 +8863,7 @@
           }
 
           if (isSelected) {
-            borderClasses = 'border-sky-400 ring-2 ring-sky-500/80 shadow-[0_0_25px_rgba(56,189,248,0.4)] bg-sky-950/30';
+            borderClasses += ' pc-selected';
           }
 
           card.id = `pc-card-${pc.id}`;
@@ -9038,11 +9027,9 @@
         }
 
         card.title = state.label + ': ' + state.detail;
-        if (!isSelected) {
-          card.style.borderColor = state.color + '66';
-          card.style.backgroundColor = state.color + '10';
-          card.style.boxShadow = '0 0 12px ' + state.color + '20';
-        }
+        card.style.borderColor = state.color + '66';
+        card.style.backgroundColor = state.color + '10';
+        card.style.boxShadow = '0 0 12px ' + state.color + '20';
         grid.appendChild(card);
       });
     }
@@ -9127,6 +9114,8 @@
     }
 
     function setStartMode(mode) {
+      priceCalculationRevision++;
+      clearTimeout(calcDebounceTimer);
       if (mode === 'postpaid') {
         if (clubSettingsData && clubSettingsData.vip_enabled === false) {
           alert('VIP Postpaid rejimi hozirda faol emas (Menejer tomonidan sozlamalarda o\'chirilgan).');
@@ -9139,6 +9128,7 @@
         }
       }
       currentStartMode = mode;
+      setStartQuotePending(false);
       const count = Math.max(1, targetSelectedPcIds.length);
 
       // Tab tugmalarini faollashtirish
@@ -9189,8 +9179,29 @@
       }
     }
 
+    async function fetchStartQuote(options) {
+      const body = JSON.parse(options.body);
+      const ids = [...targetSelectedPcIds];
+      const rows = await Promise.all(ids.map(async computerId => {
+        const response = await fetch('/api/tariffs/calculate', { ...options, body: JSON.stringify({ ...body, computerId }) });
+        const quote = await response.json();
+        if (!response.ok) throw new Error(quote.error || 'Tarif hisoblanmadi.');
+        return quote;
+      }));
+      const data = { ...rows[0], totalPrice: rows.reduce((sum, row) => sum + Number(row.price), 0),
+        perPcLabel: rows.every(row => row.price === rows[0].price) ? Number(rows[0].price).toLocaleString() + ' UZS' : 'Har bir PC tarifi bo‘yicha' };
+      return { ok: true, json: async () => data };
+    }
+    function setStartQuotePending(pending, error = false) {
+      const button = document.getElementById('btnSubmitStart');
+      if (button) button.disabled = pending;
+      if (error) document.getElementById('startModalPrice').textContent = 'Tarif hisoblanmadi. Qayta urinib ko‘ring.';
+    }
+
     // 1. Soat bo'yicha hisoblash
     function calcFromHours(val) {
+      const revision = ++priceCalculationRevision;
+      setStartQuotePending(true);
       const h = parseFloat(val) || 1;
       const mins = Math.round(h * 60);
       const pcId = targetSelectedPcIds[0];
@@ -9207,7 +9218,7 @@
       clearTimeout(calcDebounceTimer);
       calcDebounceTimer = setTimeout(async () => {
         try {
-          const res = await fetch('/api/tariffs/calculate', {
+          const res = await fetchStartQuote({
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -9222,11 +9233,13 @@
           if (res.ok) {
             const data = await res.json();
             perPc = data.price !== undefined ? data.price : perPc;
-            total = perPc * count;
-            document.getElementById('startModalPerPcPrice').textContent = `${perPc.toLocaleString()} UZS`;
+            if (revision !== priceCalculationRevision) return;
+            total = data.totalPrice;
+            document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
             document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
+            setStartQuotePending(false);
           }
-        } catch (e) {}
+        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true, true); }
       }, 150);
     }
 
@@ -9237,6 +9250,8 @@
 
     // 2. Summa bo'yicha hisoblash
     function calcFromPrice(val) {
+      const revision = ++priceCalculationRevision;
+      setStartQuotePending(true);
       const perPc = Math.max(0, parseFloat(val) || 0);
       const pcId = targetSelectedPcIds[0];
       let mins = Math.round((perPc / currentHourlyRate) * 60);
@@ -9253,7 +9268,7 @@
       clearTimeout(calcDebounceTimer);
       calcDebounceTimer = setTimeout(async () => {
         try {
-          const res = await fetch('/api/tariffs/calculate', {
+          const res = await fetchStartQuote({
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -9268,13 +9283,15 @@
           if (res.ok) {
             const data = await res.json();
             if (data.durationMinutes !== undefined) {
+              if (revision !== priceCalculationRevision) return;
               mins = data.durationMinutes;
               h = (mins / 60).toFixed(1);
               document.getElementById('priceCalculatedTime').textContent = `${mins} daqiqa (${h} soat)`;
               document.getElementById('startModalDurationSummary').textContent = `${mins} daqiqa (${h} soat)`;
+              setStartQuotePending(false);
             }
           }
-        } catch (e) {}
+        } catch (e) { if (revision === priceCalculationRevision) setStartQuotePending(true, true); }
       }, 150);
     }
 
@@ -9285,12 +9302,14 @@
 
     // 3. Tugash vaqti bo'yicha dinamik hisoblash (Server Dynamic Pricing Engine orqali)
     async function calcFromEndTime(timeVal) {
+      const revision = ++priceCalculationRevision;
+      setStartQuotePending(true);
       if (!timeVal) return;
       clearTimeout(calcDebounceTimer);
       calcDebounceTimer = setTimeout(async () => {
         try {
           const pcId = targetSelectedPcIds[0];
-          const res = await fetch('/api/tariffs/calculate', {
+          const res = await fetchStartQuote({
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -9307,18 +9326,21 @@
           if (res.ok) {
             const data = await res.json();
             const perPc = data.price || 0;
+            if (revision !== priceCalculationRevision) return;
             const mins = data.durationMinutes || 0;
             const count = Math.max(1, targetSelectedPcIds.length);
-            const total = perPc * count;
+            const total = data.totalPrice;
 
             document.getElementById('endTimeCalculatedMins').textContent = `${mins} daqiqa (${(mins/60).toFixed(1)} soat)`;
             document.getElementById('startModalDurationSummary').textContent = `${mins} daqiqa (soat ${timeVal} gacha)`;
-            document.getElementById('startModalPerPcPrice').textContent = `${perPc.toLocaleString()} UZS`;
+            document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
             document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
             document.getElementById('startModalTotalLabel').textContent = count > 1 ? `JAMI TO'LOV (${count} PC):` : `JAMI TO'LOV:`;
+            setStartQuotePending(false);
           }
         } catch (err) {
           console.error('Tariff calculate error:', err);
+          if (revision === priceCalculationRevision) setStartQuotePending(true, true);
         }
       }, 200);
     }
@@ -9386,6 +9408,9 @@
     }
 
     function calcClientHours(val) {
+      priceCalculationRevision++;
+      clearTimeout(calcDebounceTimer);
+      setStartQuotePending(false);
       const h = parseFloat(val) || 1;
       const mins = Math.round(h * 60);
       let perPc = Math.round(h * currentHourlyRate);
@@ -9412,6 +9437,7 @@
     // 5. Seansni Boshlash (Single va Multi-PC Batch qo'llab-quvvatlaydi)
     async function handleStartSession(e) {
       e.preventDefault();
+      if (document.getElementById('btnSubmitStart').disabled) return;
       const selectedPaymentEl = document.querySelector('input[name="paymentType"]:checked');
       const paymentType = selectedPaymentEl ? selectedPaymentEl.value : 'CASH';
 
@@ -10128,6 +10154,7 @@
   </script>
   <!-- SPA View Routing and Module Controller -->
   <script src="app.js"></script>
+  <script src="session-end-notices.js"></script>
   <script>
     // Ensure SPA router initializes once app.js is parsed
     if (typeof initSpaRouter === 'function') {

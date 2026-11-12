@@ -29,6 +29,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal((await api('/api/admin/computers/' + addedId, 'PUT', { macAddress: '00:00:00:00:00:00', zone: 'STANDARD' })).status, 400);
   assert.equal((await api('/api/admin/computers/' + addedId, 'PUT', { macAddress: '02-AB-CD-EF-00-07', zone: 'STANDARD' })).status, 200);
   const fixtureDb = new DatabaseSync(databasePath);
+  fixtureDb.exec('PRAGMA busy_timeout=5000');
   try { fixtureDb.prepare("UPDATE computers SET status='LOCKED' WHERE id=?").run(addedId); }
   finally { fixtureDb.close(); }
   const refreshed = await api('/api/computers');
@@ -91,6 +92,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   await api('/api/bar/items/'+id,'PUT',{buyPrice:3000});
 
   const fixture = new DatabaseSync(databasePath);
+  fixture.exec('PRAGMA busy_timeout=5000');
   const member = fixture.prepare("SELECT id,balance FROM users WHERE username='gamer1'").get();
   assert.ok(member);
   assert.equal((await api('/api/clients/topup','POST',{userId:member.id,amount:20000,paymentMethod:'CARD'})).status,200);
@@ -199,6 +201,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const afterConfirm=await api('/api/sessions/'+second.body.sessionId+'/checkout-preview');
   assert.equal(afterConfirm.body.barBill,5000);
   const debtDb=new DatabaseSync(databasePath);
+  debtDb.exec('PRAGMA busy_timeout=5000');
   debtDb.prepare("UPDATE sessions SET status='COMPLETED',ends_at=CURRENT_TIMESTAMP WHERE id=?").run(second.body.sessionId);
   debtDb.prepare("UPDATE computers SET status='LOCKED',current_session_id=NULL WHERE id=?").run(pc.id);
   assert.ok((await api('/api/reports/financial')).body.breakdown.rows.some(r=>r.category==='BAR_PENDING' && r.orderId===clientOrder.id));
@@ -206,6 +209,42 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.ok((await api('/api/bar/orders/'+clientOrder.id+'/pay','POST',{paymentMethod:'CARD'})).status>=400,'Debt payment must not repeat');
   assert.equal(debtDb.prepare('SELECT payment_status FROM bar_orders WHERE id=?').get(clientOrder.id).payment_status,'PAID');
   debtDb.close();
+  // Scheduled expiry retains a recoverable, dismissible notice and a collectible bar bill.
+  const expiring=await api('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60,paymentType:'CASH'});
+  assert.equal(expiring.status,201,JSON.stringify(expiring.body));
+  const expiryId=expiring.body.sessionId;
+  assert.equal((await api('/api/bar/orders','POST',{items:[{barItemId:id,quantity:1}],paymentMethod:'ON_PC_SESSION',computerId:pc.id,sessionId:expiryId})).status,201);
+  const expiryDb=new DatabaseSync(databasePath);expiryDb.exec('PRAGMA busy_timeout=5000');
+  expiryDb.prepare('UPDATE sessions SET started_at=?,ends_at=? WHERE id=?').run(new Date(Date.now()-3601000).toISOString(),new Date(Date.now()-1000).toISOString(),expiryId);
+  let notices=[];
+  for(let i=0;i<90;i++){
+    notices=(await api('/api/session-end-notices')).body.notices||[];
+    if(notices.some(n=>n.sessionId===expiryId))break;
+    await new Promise(r=>setTimeout(r,100));
+  }
+  const notice=notices.find(n=>n.sessionId===expiryId);assert.ok(notice);assert.equal(notice.barDebt,5000);assert.equal(notice.barSummary,'1 ta Test Cola');
+  assert.equal((await api('/api/session-end-notices/'+expiryId+'/dismiss','POST',{})).status,200);
+  assert.ok(!(await api('/api/session-end-notices')).body.notices.some(n=>n.sessionId===expiryId));
+  assert.equal(expiryDb.prepare('SELECT payment_status FROM bar_orders WHERE session_id=?').get(expiryId).payment_status,'PENDING_AT_CHECKOUT','Dismissing is not payment');
+  assert.equal((await api('/api/sessions/'+expiryId+'/checkout','POST',{paymentMethod:'CASH'})).body.amountCollected,5000);
+  expiryDb.close();
+  // Two different rooms must quote and charge their own rates, not a caller-supplied amount.
+  const batchDb=new DatabaseSync(databasePath);batchDb.exec('PRAGMA busy_timeout=5000');
+  for(const [num,rate] of [[910,7000],[911,10000]]){
+    batchDb.prepare('INSERT INTO zones(id,club_id,name) VALUES(?,1,?)').run(num,'Quote '+num);
+    batchDb.prepare("INSERT INTO tariffs(id,club_id,zone_id,name,price_per_hour,type,start_time,end_time) VALUES(?,1,?,'Quote',?,'HOURLY','10:00','17:00')").run('quote-'+num,num,rate);
+    batchDb.prepare("INSERT INTO computers(id,club_id,pc_number,name,zone_id,status) VALUES(?,1,?,?,?,'ONLINE')").run('quote-pc-'+num,num,'Quote-'+num,num);
+  }
+  for(const [num,amount] of [[910,14000],[911,20000]])assert.equal((await api('/api/tariffs/calculate','POST',{computerId:'quote-pc-'+num,durationHours:2})).body.price,amount);
+  const batch=await api('/api/sessions/batch-start','POST',{computerIds:['quote-pc-910','quote-pc-911'],mode:'hours',durationMinutes:120,amount:4900});
+  assert.equal(batch.status,201,JSON.stringify(batch.body));assert.equal(batch.body.totalAmount,34000);
+  for(const row of batch.body.results){
+    assert.equal(row.durationMinutes,120);
+    batchDb.prepare('DELETE FROM transactions WHERE session_id=?').run(row.sessionId);
+    batchDb.prepare('DELETE FROM sessions WHERE id=?').run(row.sessionId);
+    batchDb.prepare('DELETE FROM computers WHERE id=?').run(row.computerId);
+  }
+  batchDb.exec("DELETE FROM tariffs WHERE id IN ('quote-910','quote-911'); DELETE FROM zones WHERE id IN (910,911)");batchDb.close();
   assert.equal((await api('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60})).status,201);
   const proof=JSON.parse(readFileSync(path.join(path.dirname(databasePath),'data/softech_license.sig'),'utf8'));
   assert.equal((await request(cloudUrl+'/api/telemetry/heartbeat','POST',{clubId:cloudClubId,todayRevenue:999999})).status,401,'Club ID alone is not telemetry authentication');

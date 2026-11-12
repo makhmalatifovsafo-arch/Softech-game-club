@@ -9,9 +9,9 @@ Runtime behavior
 - Client additionally requires no active session, no maintenance mode, and no other
   user application in the interactive Windows session. Minimized apps and background
   games/launchers also block installation. Unknown process state postpones the update.
-- Server additionally requires zero active sessions and no pending write requests.
+- Automatic server updates additionally require zero active sessions and no pending write requests.
   Active games are never forcibly ended to install an update.
-- No update modal, toast, console window or per-update UAC prompt is displayed.
+- Automatic updates do not open a modal, toast, console window or per-update UAC prompt.
   Client must already be running with the privileges required by its normal installation.
 - Files are copied and backed up BEFORE shutdown, then replaced on the same volume.
   Restart is optimized for a short interruption; exactly 1 second cannot be guaranteed.
@@ -24,6 +24,19 @@ Runtime behavior
   Failed release: <installation>/updates-failed-version.json
   Last successful release: <installation>/updates-last-success.json
   Backups for inspection: <installation>/.ota/
+
+SERVER MANUAL UPDATE (v1.0.29+)
+The left sidebar below the menus shows the new version while it downloads.
+After SHA256 verification and staging, Install becomes available. An authenticated
+administrator/club owner can click it to install even during active sessions or
+keyboard/mouse use. No extra confirmation is required. The server briefly restarts;
+existing sessions, bar orders, database, license and settings are preserved.
+Preparation runs before shutdown. New writes are paused and in-flight requests
+must finish within 15 seconds; otherwise installation is cancelled and the server
+continues running. Duplicate clicks cannot launch simultaneous installations.
+The dashboard waits for the target server version to respond before reloading.
+Without a click, the existing automatic idle/session gate remains unchanged.
+Older installations must first receive this version before the sidebar is available.
 
 DISK CLEANUP (v1.0.24+)
 After a verified successful automatic update, only the latest transaction's rollback
