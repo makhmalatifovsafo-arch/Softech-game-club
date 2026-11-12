@@ -284,6 +284,8 @@ const server = http.createServer(async (req, res) => {
           result = RemoteControlService.setLicenseStatus(clubId, 'ACTIVATE', payload);
         } else if (action === 'RESTART_SERVER') {
           result = RemoteControlService.restartServer(clubId, payload);
+        } else if (action === 'FORCE_UPDATE') {
+          result = RemoteControlService.forceUpdate(clubId);
         } else if (action === 'BROADCAST_ANNOUNCEMENT') {
           result = RemoteControlService.broadcastAnnouncement(clubId, payload);
         } else {

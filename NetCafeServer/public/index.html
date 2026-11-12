@@ -2957,6 +2957,7 @@
           </div>
         </div>
 
+        <p id="checkoutMemberInfo" class="hidden text-sm text-emerald-300 whitespace-pre-line"></p>
         <!-- Bardan buyurtma qilingan mahsulotlar tarkibi -->
         <div id="vipCheckoutBarItemsContainer" class="p-3 bg-[#09090b] rounded-xl border border-amber-500/30 space-y-2 text-xs hidden">
           <div class="flex items-center justify-between text-zinc-400 text-[11px] font-bold pb-1.5 border-b border-[#27272a]">
@@ -4715,7 +4716,7 @@
         let customerInfo = '<span class="text-zinc-600 font-mono">—</span>';
         if (isOccupied) {
           const s = activeS || {};
-          const custName = s.customerName || 'Mehmon';
+          const custName = escapeHtml(s.customerName || 'Mehmon');
           const isClientAcc = s.customerId || s.paymentType === 'BALANCE';
           if (isClientAcc) {
             customerInfo = `
@@ -5354,6 +5355,7 @@
           bottomText = `<span class="text-[9px] font-mono font-semibold text-rose-400 leading-none">O'chiq</span>`;
         } else if (isOccupied) {
           bottomText = `
+            ${activeS?.isMember ? `<div class="text-[8px] text-emerald-300 truncate" title="Mijoz hisobi #${Number(activeS.memberId)}">👤 ${escapeHtml(activeS.customerName || 'Mijoz')}</div>` : ''}
             <div id="desk-timer-${pc.id}" class="text-[10px] font-mono font-bold text-amber-300 leading-none truncate">
               ${formatTime(activeS ? (activeS.remainingSeconds || 0) : 0)}
             </div>
@@ -7842,6 +7844,9 @@
         document.getElementById('vipCheckoutSessionId').value = data.sessionId;
         document.getElementById('vipCheckoutPcName').textContent = data.computerName;
         document.getElementById('vipCheckoutCustomerName').textContent = data.customerName;
+        const memberInfo = document.getElementById('checkoutMemberInfo');
+        memberInfo.classList.toggle('hidden', !data.isMember);
+        memberInfo.textContent = data.member ? `Mijoz hisobi #${data.member.accountId} · ${data.member.username}\nJoriy balans: ${data.member.balance.toLocaleString()} so‘m\nHisobga qaytadi: ${data.member.refundAmount.toLocaleString()} so‘m` : '';
         document.getElementById('vipCheckoutPlayedTime').textContent = `${data.playedMinutes} daqiqa (${data.playedHours} soat)`;
 
         const modeBadge = document.getElementById('vipCheckoutPricingModeBadge');
@@ -7885,7 +7890,7 @@
         }
 
         // Jami summa
-        document.getElementById('vipCheckoutTotalBill').textContent = `${(data.finalBill || 0).toLocaleString()} UZS`;
+        document.getElementById('vipCheckoutTotalBill').textContent = `${(data.amountToCollect || 0).toLocaleString()} UZS`;
 
         selectVipPaymentMethod('CASH');
         document.getElementById('vipCheckoutModal').classList.remove('hidden');
@@ -7934,8 +7939,8 @@
         if (res.ok) {
           const data = await res.json();
           closeModal('vipCheckoutModal');
-          const summaryMsg = data.formulaText || `O'yin va Bar to'lovi (${(data.finalBill || 0).toLocaleString()} UZS, ${data.paymentMethod})`;
-          showToast(`✅ ${summaryMsg} kassaga muvaffaqiyatli qabul qilindi!`, 'success');
+          showToast(`✅ Seans yopildi. Kassaga qabul qilindi: ${(data.amountCollected || 0).toLocaleString()} UZS (${data.paymentMethod}).`, 'success');
+          if (data.memberSummary) showToast(`${data.memberSummary.username}: seans yopildi. Hisobga qaytdi: ${data.memberSummary.refundAmount.toLocaleString()} so‘m. Balans: ${data.memberSummary.balance.toLocaleString()} so‘m.`, 'success');
           fetchData();
         } else {
           const err = await res.json();
@@ -8918,7 +8923,7 @@
                       ${formatTime(activeS?.remainingSeconds || 0)}
                     </div>
                     <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                      ${activeS?.paymentType || 'CASH'}
+                      ${activeS?.isMember ? '👤 Mijoz hisobi' : escapeHtml(activeS?.paymentType || 'CASH')}
                     </span>
                   </div>
 
@@ -8928,13 +8933,14 @@
                   </div>
 
                   <div class="flex items-center justify-between text-[11px] truncate">
-                    <span class="font-semibold text-white truncate max-w-[120px]">${activeS?.customerName || 'Mehmon'}</span>
+                    <span class="font-semibold text-white truncate max-w-[120px]">${escapeHtml(activeS?.customerName || 'Mehmon')}</span>
                     <span class="font-mono text-sky-400 text-[10px] ml-1 shrink-0 font-medium">
                       ${activeS?.tariffName || 'Standart'}
                     </span>
                   </div>
 
                   <div class="flex items-center justify-between text-[10px] text-zinc-400 mt-1">
+                    ${activeS?.isMember ? `<span>Hisob #${Number(activeS.memberId)} balansi:</span><span class="font-mono text-emerald-300">${Number(activeS.memberBalance || 0).toLocaleString()} UZS</span></div><div class="flex items-center justify-between text-[10px] text-zinc-400 mt-1">` : ''}
                     <span>To'langan:</span>
                     <span class="font-mono text-zinc-300 font-semibold">${(activeS?.totalAmount || 0).toLocaleString()} UZS</span>
                   </div>
@@ -9694,7 +9700,7 @@
         });
         if (previewRes.ok) {
           const previewData = await previewRes.json();
-          if (previewData.isPostpaid || previewData.barBill > 0) {
+          if (previewData.isMember || previewData.isPostpaid || previewData.barBill > 0) {
             openVipCheckoutModal(pcId, previewData);
             return;
           }

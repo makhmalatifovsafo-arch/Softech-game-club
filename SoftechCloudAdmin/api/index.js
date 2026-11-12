@@ -1,6 +1,7 @@
 import { handleMobileRoute } from '../src/services/mobileRelay.js';
 import { handleMobileDashboard } from '../src/services/mobileDashboard.js';
 import { appVersion } from '../src/services/appVersion.js';
+import { requireRemoteMaintenance } from '../src/services/maintenanceVersion.js';
 import { handleStaffSyncRoute } from '../src/services/staffAccountSync.js';
 import { CloudDashboardService } from '../src/services/cloudDashboardService.js';
 import { ManagerAccountService } from '../src/services/managerAccountService.js';
@@ -272,6 +273,15 @@ export default async function handler(req, res) {
     // 4. MASOFADAN BOSHQARISH & KILL-SWITCH (REMOTE DISPATCHER)
     // ========================================================================
     const commandMatch=pathname.match(/^\/api\/telemetry\/commands\/(\d+|ALL)$/i);
+    const commandHistory=pathname.match(/^\/api\/telemetry\/commands\/history\/(\d+)$/);
+    if(commandHistory && method==='GET') {
+      if(!getAuthUser(req))return sendJson(res,401,{error:'Ruxsat berilmagan'});
+      const client=SupabaseCloudService.getClient();
+      if(!client)return sendJson(res,503,{error:'Bulut bazasi ulanmagan.'});
+      const result=await client.from('remote_commands').select('id,club_id,command_type,status,payload,created_at,executed_at').eq('club_id',Number(commandHistory[1])).order('id',{ascending:false}).limit(100);
+      if(result.error)throw result.error;
+      return sendJson(res,200,{success:true,history:result.data||[]});
+    }
     const killSwitchMatch = pathname.match(/^\/api\/telemetry\/kill-switch\/(\d+)$/);
     if ((pathname === '/api/remote/execute' || killSwitchMatch || commandMatch) && method === 'POST') {
       const auth = getAuthUser(req);
@@ -299,16 +309,20 @@ export default async function handler(req, res) {
       }
 
       if(action==='RESET_ADMIN_PASSWORD')return sendJson(res,400,{success:false,error:'Menejer akkaunti oynasidan login va parolni belgilang.'});
-      if(!['RESTART_SERVER','BROADCAST_ANNOUNCEMENT'].includes(action))return sendJson(res,400,{success:false,error:'Buyruq turi qo‘llab-quvvatlanmaydi.'});
+      if(!['RESTART_SERVER','FORCE_UPDATE','BROADCAST_ANNOUNCEMENT'].includes(action))return sendJson(res,400,{success:false,error:'Buyruq turi qo‘llab-quvvatlanmaydi.'});
       if(action==='BROADCAST_ANNOUNCEMENT'&&!String(options.message||'').trim())return sendJson(res,400,{success:false,error:'Xabar matnini kiriting.'});
       if(clubId==='ALL'){
         if(action!=='BROADCAST_ANNOUNCEMENT')return sendJson(res,400,{error:'Bu buyruq faqat bitta klub uchun.'});
         const clubs=await SupabaseCloudService.getAllClubs();for(const c of clubs)await SupabaseCloudService.queueRemoteCommand(c.id,action,options);
         return sendJson(res,200,{success:true,messageSummary:'Xabar '+clubs.length+' klub uchun navbatga qo‘yildi.'});
       }
-      if(!await SupabaseCloudService.getClubById(clubId))return sendJson(res,404,{error:'Klub topilmadi.'});
+      const commandClub=await SupabaseCloudService.getClubById(clubId);
+      if(!commandClub)return sendJson(res,404,{error:'Klub topilmadi.'});
+      if(['RESTART_SERVER','FORCE_UPDATE'].includes(action)) {
+        try { requireRemoteMaintenance(commandClub); } catch(error) { return sendJson(res,409,{success:false,error:error.message}); }
+      }
       const queuedCmd=await SupabaseCloudService.queueRemoteCommand(clubId,action,options);
-      return sendJson(res,200,{success:true,queuedCommand:queuedCmd,message:'Buyruq navbatga qo‘yildi.'});
+      return sendJson(res,200,{success:true,commandId:queuedCmd.id,queuedCommand:queuedCmd,message:'Buyruq navbatga qo‘yildi.'});
     }
 
     // ========================================================================

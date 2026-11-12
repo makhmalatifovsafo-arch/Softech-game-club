@@ -24,7 +24,7 @@ test('signed cloud commands are bound, persistently deduplicated, deferred while
  enqueue(1,'BROADCAST_ANNOUNCEMENT',{message:'Test'});enqueue(2,'RESTART_SERVER',{delaySeconds:1,force:false});
  const club={id:7,hardware_fingerprint:'test-hwid'},license={clubId:7,hardwareFingerprint:'test-hwid'};
  let broadcasts=0,restarts=0,busy=true;
- const effects={broadcast(){broadcasts++;},restart:async options=>{assert.equal(options.delaySeconds,5);restarts++;},hasActiveSessions:()=>busy};
+ const effects={broadcast(){broadcasts++;},maintain:async (action,options)=>{assert.equal(action,'RESTART_SERVER');assert.equal(options.delaySeconds,1);restarts++;return {complete:true};},hasActiveSessions:()=>busy};
  try{
   const envelopes=await deliverCommands({db:cloud},club);
   await applyCloudCommands(local,envelopes,{...license,hardwareFingerprint:'other'},effects);assert.equal(broadcasts,0);
@@ -34,7 +34,7 @@ test('signed cloud commands are bound, persistently deduplicated, deferred while
   busy=false;await applyCloudCommands(local,envelopes,license,effects);assert.equal(restarts,1);
   await applyCloudCommands(local,envelopes,license,effects);assert.equal(restarts,1);
   assert.equal((await deliverCommands({db:cloud},club,commandResults(local))).length,0);
-  enqueue(3,'RESTART_SERVER',{force:true});await applyCloudCommands(local,await deliverCommands({db:cloud},club),license,{...effects,restart:async()=>{throw Error('simulated failure');}});
+  enqueue(3,'RESTART_SERVER',{force:true});await applyCloudCommands(local,await deliverCommands({db:cloud},club),license,{...effects,maintain:async()=>{throw Error('simulated failure');}});
   assert.equal(commandResults(local).find(x=>x.id===3).status,'FAILED');
  }finally{cloud.close();local.close();}
 });

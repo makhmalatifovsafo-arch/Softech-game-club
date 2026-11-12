@@ -590,6 +590,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
 
     private void SubmitLogin()
     {
+        if (!BtnLogin.IsEnabled) return;
         string login = NormalizeLogin(TxtPhone.Text);
         string password = _isPasswordRevealed ? TxtPasswordPlain.Text : TxtPassword.Password;
 
@@ -623,6 +624,10 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         };
 
         int minutes = int.Parse(((System.Windows.Controls.ComboBoxItem)SessionMinutes.SelectedItem).Tag.ToString()!);
+        _loginTimeout?.Stop();
+        _loginTimeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _loginTimeout.Tick += (_, _) => ShowError("Server javob bermadi. Ulanishni tekshiring va qayta urinib ko‘ring.");
+        _loginTimeout.Start();
         OnLoginRequested?.Invoke(login, password, minutes);
     }
 
@@ -633,6 +638,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     {
         Dispatcher.Invoke(() =>
         {
+            _loginTimeout?.Stop();
             TxtError.Text = message;
             BorderError.Visibility = Visibility.Visible;
             BtnLogin.IsEnabled = true;
@@ -682,15 +688,33 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         });
     }
 
+    private DispatcherTimer? _loginTimeout;
     private DispatcherTimer? _sessionBarNoticeTimer;
+    private string? _lastMemberSummary;
     private string? _lastSessionBarNotice;
+    public void ShowMemberSessionSummary(MemberSessionSummary summary)
+    {
+        if (_lastMemberSummary == summary.SessionId) return;
+        _lastMemberSummary = summary.SessionId;
+        var culture = CultureInfo.GetCultureInfo("uz-UZ");
+        string Money(double value) => value.ToString("N0", culture) + " so‘m";
+        MemberSessionSummaryText.Text = $"Hisob #{summary.AccountId} · {summary.Username}\nO‘ynalgan vaqt: {summary.PlayedMinutes:N0} daqiqa\nO‘yin xarajati: {Money(summary.GameAmount)}\nHisobga qaytdi: {Money(summary.RefundAmount)}\nQolgan balans: {Money(summary.Balance)}";
+        MemberSessionSummaryText.Visibility = Visibility.Visible;
+        SessionBarNoticeMessage.Text = summary.BarDebt > 0 ? "Bar to‘lovi kassada qabul qilinadi." : "Hisobingiz saqlandi. Keyingi safar shu login bilan kirishingiz mumkin.";
+        SessionBarNoticeAmount.Text = summary.BarDebt > 0 ? Money(summary.BarDebt) : "";
+        StartSessionNoticeTimer();
+    }
     public void ShowSessionBarNotice(string sessionId, string message, double amount)
     {
         if (_lastSessionBarNotice == sessionId || amount <= 0) return;
         _lastSessionBarNotice = sessionId;
-        _sessionBarNoticeTimer?.Stop();
         SessionBarNoticeMessage.Text = message;
         SessionBarNoticeAmount.Text = amount.ToString("N0", CultureInfo.GetCultureInfo("uz-UZ")) + " so‘m";
+        StartSessionNoticeTimer();
+    }
+    private void StartSessionNoticeTimer()
+    {
+        _sessionBarNoticeTimer?.Stop();
         SessionBarNoticeOverlay.Visibility = Visibility.Visible;
         _sessionBarNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
         _sessionBarNoticeTimer.Tick += (_, _) => HideSessionBarNotice();
@@ -700,6 +724,10 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     {
         _sessionBarNoticeTimer?.Stop();
         SessionBarNoticeOverlay.Visibility = Visibility.Collapsed;
+        MemberSessionSummaryText.Text = "";
+        MemberSessionSummaryText.Visibility = Visibility.Collapsed;
+        SessionBarNoticeMessage.Text = "";
+        SessionBarNoticeAmount.Text = "";
     }
 
     public void ResetFields()
@@ -707,6 +735,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         Dispatcher.Invoke(() =>
         {
             HideSessionBarNotice();
+            _loginTimeout?.Stop();
             TxtPhone.Clear();
             TxtPassword.Clear();
             TxtPasswordPlain.Clear();

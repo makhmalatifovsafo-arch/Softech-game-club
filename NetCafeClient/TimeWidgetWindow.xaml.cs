@@ -16,10 +16,17 @@ public partial class TimeWidgetWindow : Window
     public event Action? OnLogoutRequested;
     public event Action? OnSessionExpired;
 
+    public void SetLogoutPending(bool pending)
+    {
+        BtnLogout.IsEnabled = !pending;
+        BtnLogout.Content = pending ? "Yopilmoqda..." : "Seansni yakunlash";
+    }
+
     private void SetRemainingTime(int seconds)
     {
         _remainingSeconds = seconds;
         _expiresAtTimestamp = seconds < 0 ? null : Stopwatch.GetTimestamp() + (long)seconds * Stopwatch.Frequency;
+        BtnLogout.Visibility = seconds < 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public TimeWidgetWindow()
@@ -51,7 +58,6 @@ public partial class TimeWidgetWindow : Window
             TxtBalance.Text = $"💳 {balance:N0} UZS";
             TxtBalance.Visibility = Visibility.Visible;
             TxtTariff.Text = "Mijoz Balansi";
-            BtnLogout.Visibility = Visibility.Visible;
 
             UpdateDisplay();
             _timer.Start();
@@ -71,7 +77,6 @@ public partial class TimeWidgetWindow : Window
             TxtMemberName.Text = $"👤 {customerName}";
             TxtBalance.Visibility = Visibility.Collapsed;
             TxtTariff.Text = tariffName;
-            BtnLogout.Visibility = Visibility.Visible;
 
             UpdateDisplay();
             _timer.Start();

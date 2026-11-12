@@ -574,6 +574,7 @@ window.executeRemoteCommand = async function(commandType) {
       body: JSON.stringify({ commandType, payload: { timestamp: Date.now() } })
     });
     const data=await res.json();if(!res.ok||!data.success)throw Error(data.error||'Buyruq qabul qilinmadi.');
+    window.trackRemoteCommand?.(clubId,data.commandId || data.queuedCommand?.id);
     showToast(data.message || 'Buyruq navbatga qo‘yildi.');
   } catch (err) {
     showToast(err.message || 'Buyruq yuborilmadi.');

@@ -1,7 +1,8 @@
-import { settleMemberUsage } from './memberBilling.js';
+import { settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { db } from '../db.js';
 import { ClientManager } from './clientManager.js';
 import { getSessionBarDebt } from './sessionBarDebt.js';
+import { isPostpaidSession } from './sessionMode.js';
 
 export class SessionScheduler {
   static timer = null;
@@ -39,6 +40,8 @@ export class SessionScheduler {
       `).all();
 
       for (const session of activeSessions) {
+        // Postpaid is open-ended: only cashier checkout may settle and close it.
+        if (isPostpaidSession(session)) continue;
         // Agar mijoz balansidan jonli yechiladigan rejim bo'lsa (CLIENT_BALANCE_LIVE:userId)
         if (session.notes && session.notes.startsWith('CLIENT_BALANCE_LIVE:')) {
           const clientId = parseInt(session.notes.split(':')[1], 10);
@@ -80,23 +83,29 @@ export class SessionScheduler {
   }
 
   static expireSession(session) {
-    let notice, pendingBarTotal;
+    return this.finishSession(session);
+  }
+
+  static finishSession(session, { reason = 'TIME_EXPIRED', now = new Date() } = {}) {
+    let notice, pendingBarTotal, memberSummary;
     db.exec('BEGIN IMMEDIATE');
     try {
     session = db.prepare(`SELECT s.*, c.pc_number, c.name AS computer_name FROM sessions s
       JOIN computers c ON c.id=s.computer_id AND c.club_id=s.club_id WHERE s.id=? AND s.status='ACTIVE'`).get(session.id);
-    if (!session) { db.exec('ROLLBACK'); return; }
-    settleMemberUsage(session.id,new Date(),true,true);
-    console.log(`🛑 [SessionScheduler] Sessiya #${session.id} (PC #${session.pc_number}) vaqti tugadi! Bloklanmoqda...`);
+    if (!session || isPostpaidSession(session)) { db.exec('ROLLBACK'); return; }
+    if (reason === 'LOGOUT' && Date.parse(session.ends_at) <= now.getTime()) reason = 'TIME_EXPIRED';
+    settleMemberUsage(session.id,now,true,true);
+    console.log(`[SessionScheduler] Session ${session.id} closed: ${reason}`);
 
     // Ushbu seansga tegishli to'lanmagan bar buyurtmalari mavjudligini tekshirish
     const debt = getSessionBarDebt(db, session, session.pc_number);
     pendingBarTotal = debt.total;
     for (const order of debt.orders) if (!order.session_id)
       db.prepare('UPDATE bar_orders SET session_id=? WHERE id=? AND club_id=? AND session_id IS NULL').run(session.id, order.id, session.club_id);
-    const durationMinutes = Math.max(0, Math.round((Date.parse(session.ends_at) - Date.parse(session.started_at)) / 60000));
+    const endedAt = reason === 'LOGOUT' ? now.toISOString() : session.ends_at;
+    const durationMinutes = Math.max(0, Math.round((Date.parse(endedAt) - Date.parse(session.started_at)) / 60000));
     notice = { sessionId: session.id, computerId: session.computer_id, computerName: session.computer_name,
-      pcNumber: session.pc_number, customerName: session.customer_name || 'Mehmon', durationMinutes,
+      pcNumber: session.pc_number, customerName: session.customer_name || 'Mehmon', durationMinutes, reason,
       barDebt: debt.total, barItems: debt.items, barSummary: debt.summary,
       message: `Siz ${debt.summary || 'bar mahsulotlari'} olgansiz. ${debt.total.toLocaleString('uz-UZ')} so‘m pulni kassaga berishni unutmang.` };
     if (debt.total > 0) db.prepare('INSERT OR IGNORE INTO session_end_notices(session_id,club_id,payload_json) VALUES(?,?,?)')
@@ -104,15 +113,16 @@ export class SessionScheduler {
 
     db.prepare(`
       UPDATE sessions 
-      SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP 
+      SET status = 'COMPLETED', ends_at = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(session.id);
+    `).run(endedAt, session.id);
 
     db.prepare(`
       UPDATE computers 
       SET status = 'LOCKED', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
     `).run(session.computer_id);
+    memberSummary = getMemberSessionSummary(session.id, pendingBarTotal);
     db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
 
@@ -122,10 +132,11 @@ export class SessionScheduler {
 
     ClientManager.send(session.computer_id, 'STOP_SESSION', {
       sessionId: session.id,
-      reason: 'TIME_EXPIRED',
+      reason,
       forceKillApps: true,
       pendingBarDebt: pendingBarTotal,
       barNotice: pendingBarTotal > 0 ? notice : null,
+      memberSummary,
       message: lockMessage,
     });
 

@@ -23,6 +23,7 @@ export class ServerUpdater {
   static applying = false;
   static preparing = false;
   static evaluating = false;
+  static remoteMaintenance = false;
   static minimumIdleSeconds = 10;
   static idleSeconds = -1;
   static nextApplyAttempt = 0;
@@ -49,7 +50,8 @@ export class ServerUpdater {
     this.idleTimer = setInterval(() => this.evaluateIdleUpdate(), 1000);
   }
 
-  static async checkForUpdates() {
+  static async checkForUpdates({ remote = false } = {}) {
+    if (this.remoteMaintenance && !remote) return this.getStatus();
     if (this.state.isChecking || this.state.isDownloading || this.applying || this.preparing) return this.getStatus();
     this.state.isChecking = true;
     this.state.lastChecked = new Date().toISOString();
@@ -139,25 +141,26 @@ export class ServerUpdater {
   }
 
   static async evaluateIdleUpdate() {
-    if (!this.state.isStaged || this.applying || this.preparing || this.evaluating || Date.now() < this.nextApplyAttempt) return;
+    if (this.remoteMaintenance || !this.state.isStaged || this.applying || this.preparing || this.evaluating || Date.now() < this.nextApplyAttempt) return;
     this.evaluating = true;
     try { await this.applyUpdate(); }
     catch (error) { this.state.error = error.message; this.nextApplyAttempt = Date.now() + 60000; }
     finally { this.evaluating = false; }
   }
 
-  static async applyUpdate({ force = false } = {}) {
+  static async applyUpdate({ force = false, restartOnly = false } = {}) {
     const manual = force === true;
-    if (this.applying || this.preparing || !this.state.isStaged || this.state.isDownloading)
+    if (this.applying || this.preparing || (!restartOnly && !this.state.isStaged) || this.state.isDownloading)
       return { success: false, error: 'Yangilanish hali tayyor emas yoki allaqachon o‘rnatilmoqda.' };
     this.preparing = true; // Claim before awaiting: duplicate clicks cannot spawn two helpers.
     const handover = path.join(this.stagingDir, 'handover-' + crypto.randomUUID());
     const helperPath = path.join(handover, 'SoftechUpdater.exe');
-    const source = this.state.source;
+    const source = restartOnly ? ROOT_DIR : this.state.source;
+    const policy = () => ({ ...this.policy(), staged:restartOnly || this.state.isStaged });
     let committed = false;
     try {
       if (!manual) this.idleSeconds = await this.probeIdle();
-      if (!canApplyUpdate({ ...this.policy(), manual, ...(manual ? { pendingWrites: 0 } : {}) }))
+      if (!canApplyUpdate({ ...policy(), manual, ...(manual ? { pendingWrites: 0 } : {}) }))
         return { success: false, error: 'Waiting for idle input, no active sessions and no pending writes.' };
       this.state.error = null;
       fs.mkdirSync(handover);
@@ -166,7 +169,7 @@ export class ServerUpdater {
       const cockpitExe = process.env.SOFTECH_COCKPIT_EXE;
       const useCockpit = Number.isInteger(cockpitPid) && cockpitPid > 0 && cockpitExe && fs.existsSync(cockpitExe);
       const plan = {
-        Source: source, Target: ROOT_DIR, Version: this.state.stagedVersion, Kind: 'server',
+        Source: source, Target: ROOT_DIR, Version: restartOnly ? this.currentVersion : this.state.stagedVersion, Kind: 'server', RestartOnly:restartOnly,
         ParentPids: useCockpit ? [process.pid, cockpitPid] : [process.pid],
         RestartExecutable: useCockpit ? cockpitExe : process.execPath,
         RestartArguments: useCockpit ? [] : ['src/server.js'],
@@ -187,13 +190,13 @@ export class ServerUpdater {
         await sleep(100);
       }
       if (!manual) this.idleSeconds = await this.probeIdle();
-      if (!manual && !canApplyUpdate({ ...this.policy(), applying: false }))
+      if (!manual && !canApplyUpdate({ ...policy(), applying: false }))
         throw new Error('Cashier activity resumed; update postponed.');
       // Reject new writes, then drain requests already in flight before shutdown.
       this.applying = true;
       const drainDeadline = Date.now() + 15000;
       while (this.pendingWrites > 0 && Date.now() < drainDeadline) await sleep(50);
-      if (!canApplyUpdate({ ...this.policy(), applying: false, manual }))
+      if (!canApplyUpdate({ ...policy(), applying: false, manual }))
         throw new Error('Amaldagi yozuvlar tugamadi. Yangilash keyinga qoldirildi.');
       fs.writeFileSync(plan.CommitFile, plan.Version);
       if (useCockpit) fs.writeFileSync(path.join(this.updatesDir, 'cockpit-exit.json'),

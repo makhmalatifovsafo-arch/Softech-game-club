@@ -646,7 +646,8 @@
                         <Border.RenderTransform><RotateTransform Angle="-8" CenterX="55" CenterY="55" /></Border.RenderTransform>
                         <TextBlock Text="🥤" FontFamily="Segoe UI Emoji" FontSize="58" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
-                    <TextBlock Text="Vaqtingiz tugadi" Foreground="White" FontSize="32" FontWeight="Bold" TextAlignment="Center" />
+                    <TextBlock Text="Seans yakunlandi" Foreground="White" FontSize="32" FontWeight="Bold" TextAlignment="Center" />
+                    <TextBlock x:Name="MemberSessionSummaryText" Visibility="Collapsed" Foreground="#A7F3D0" FontSize="20" TextWrapping="Wrap" TextAlignment="Center" Margin="0,16,0,0" />
                     <TextBlock x:Name="SessionBarNoticeMessage" Foreground="#E2E8F0" FontSize="23" TextWrapping="Wrap" TextAlignment="Center" Margin="0,20,0,12" />
                     <TextBlock x:Name="SessionBarNoticeAmount" Foreground="#FBBF24" FontSize="40" FontWeight="Bold" TextAlignment="Center" />
                     <TextBlock Text="Rahmat! Eslatma 8 soniyadan keyin yopiladi." Foreground="#94A3B8" FontSize="14" TextAlignment="Center" Margin="0,20,0,0" />

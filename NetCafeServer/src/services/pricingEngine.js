@@ -80,137 +80,51 @@ export function resolveZoneIdForComputer(computerId, clubId = 1) {
 /**
  * Berilgan sana/vaqt, VIP holat va Zone ID ga mos keladigan tarifni olish (Zone-scoped)
  */
-export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zoneId = null) {
-  const dObj = parseOrCurrentDate(momentDate);
-  const dayOfWeek = getIsoDayOfWeek(dObj);
-  const minuteOfDay = getMinuteOfDay(dObj);
-
-  // 1. Agar zoneId mavjud bo'lsa, xonaga tegishli dinamik tariflarni tekshirish
-  if (zoneId) {
-    const zoneTariffs = db.prepare(`
-      SELECT * FROM tariffs
-      WHERE zone_id = ? AND club_id = ? AND is_active = 1 AND type = 'HOURLY'
-      ORDER BY id ASC
-    `).all(zoneId, clubId || 1);
-
-    for (const t of zoneTariffs) {
-      let days = [1, 2, 3, 4, 5, 6, 7];
-      try {
-        if (t.days_of_week) {
-          days = typeof t.days_of_week === 'string' ? JSON.parse(t.days_of_week) : t.days_of_week;
-        }
-      } catch {}
-
-      if (!Array.isArray(days) || !days.includes(dayOfWeek)) continue;
-
-      const startMins = timeStrToMinutes(t.start_time || '00:00');
-      const endMins = timeStrToMinutes(t.end_time || '23:59');
-
-      let matches = false;
-      if (startMins <= endMins) {
-        matches = (minuteOfDay >= startMins && minuteOfDay < endMins);
-      } else {
-        matches = (minuteOfDay >= startMins || minuteOfDay < endMins);
-      }
-
-      if (matches) {
-        return {
-          tariffId: t.id,
-          scheduleId: t.id,
-          name: t.name,
-          pricePerHour: Number(t.price_per_hour),
-          isVip: Boolean(t.is_vip_postpaid_allowed),
-          isVipPostpaidAllowed: Boolean(t.is_vip_postpaid_allowed),
-          zoneId: Number(zoneId)
-        };
-      }
-    }
-
-    // Agar vaqt oralig'i to'liq mos kelmasa, xonaning 1-faol tarifini zaxira sifatida ishlatamiz
-    if (zoneTariffs.length > 0) {
-      const fallback = nearestApplicableRate(zoneTariffs, dayOfWeek, minuteOfDay);
-      if (fallback) {
-      return {
-        tariffId: fallback.id,
-        scheduleId: fallback.id,
-        name: fallback.name,
-        pricePerHour: Number(fallback.price_per_hour),
-        isVip: Boolean(fallback.is_vip_postpaid_allowed),
-        isVipPostpaidAllowed: Boolean(fallback.is_vip_postpaid_allowed),
-        zoneId: Number(zoneId)
-      };
-      }
-    }
-  }
-
-  // 2. Agar zoneId berilmagan bo'lsa yoki xona tariflari bo'lmasa, umumiy club jadvallarini tekshirish
-  const schedules = db.prepare(`
-    SELECT * FROM tariff_schedules
-    WHERE club_id = ?
-    ORDER BY priority DESC, id DESC
-  `).all(clubId || 1);
-
-  for (const s of schedules) {
-    if (s.is_vip && !isVip) continue;
-
-    let days = [];
-    try {
-      days = typeof s.days_of_week === 'string' ? JSON.parse(s.days_of_week) : s.days_of_week;
-    } catch {
-      days = [1, 2, 3, 4, 5, 6, 7];
-    }
-    if (!Array.isArray(days) || !days.includes(dayOfWeek)) {
-      continue;
-    }
-
-    const startMins = timeStrToMinutes(s.start_time);
-    const endMins = timeStrToMinutes(s.end_time);
-
-    let matches = false;
-    if (startMins <= endMins) {
-      matches = (minuteOfDay >= startMins && minuteOfDay < endMins);
-    } else {
-      matches = (minuteOfDay >= startMins || minuteOfDay < endMins);
-    }
-
-    if (matches) {
-      return {
-        tariffId: null,
-        scheduleId: s.id,
-        name: s.name,
-        pricePerHour: Number(s.price_per_hour),
-        isVip: Boolean(s.is_vip),
-        isVipPostpaidAllowed: true,
-        zoneId: null
-      };
-    }
-  }
-
-  // An uncovered time span keeps the most recent configured daily rate.
-  // Fixed-price/night packages must never become an implicit zero hourly rate.
-  const scheduledFallback = nearestApplicableRate(schedules.filter(s => !s.is_vip || isVip), dayOfWeek, minuteOfDay);
-  if (scheduledFallback) return { tariffId: null, scheduleId: scheduledFallback.id, name: scheduledFallback.name,
-    pricePerHour: Number(scheduledFallback.price_per_hour), isVip: Boolean(scheduledFallback.is_vip), isVipPostpaidAllowed: true, zoneId: null };
-  const defaultTariff = db.prepare("SELECT id, name, price_per_hour FROM tariffs WHERE (zone_id IS NULL OR zone_id = 0) AND club_id = ? AND is_active = 1 AND type='HOURLY' ORDER BY id LIMIT 1").get(clubId || 1);
-
-  return {
-    tariffId: defaultTariff?.id || 'trf_standard_1h',
-    scheduleId: null,
-    name: defaultTariff?.name || 'Standart soatlik',
-    pricePerHour: defaultTariff ? Number(defaultTariff.price_per_hour) : 10000,
-    isVip: false,
-    isVipPostpaidAllowed: true,
-    zoneId: null
-  };
+// Equal endpoints mean a full day. An overnight rule belongs to its starting day.
+function matchesRate(rate, date) {
+  let days;
+  try { days = typeof rate.days_of_week === 'string' ? JSON.parse(rate.days_of_week) : rate.days_of_week; }
+  catch { return false; }
+  days ??= [1,2,3,4,5,6,7];
+  if (!Array.isArray(days) || !Number.isFinite(Number(rate.price_per_hour)) || Number(rate.price_per_hour) <= 0) return false;
+  const start = timeStrToMinutes(rate.start_time || '00:00');
+  const end = timeStrToMinutes(rate.end_time || '00:00');
+  const minute = getMinuteOfDay(date), day = getIsoDayOfWeek(date);
+  if (start === end) return days.includes(day);
+  if (start < end) return days.includes(day) && minute >= start && minute < end;
+  return (minute >= start && days.includes(day)) || (minute < end && days.includes(day === 1 ? 7 : day - 1));
 }
 
-function nearestApplicableRate(rates, day, minute) {
-  return rates.filter(rate => {
-    try { const days = typeof rate.days_of_week === 'string' ? JSON.parse(rate.days_of_week) : rate.days_of_week;
-      return (!days || days.includes(day)) && Number.isFinite(Number(rate.price_per_hour));
-    } catch { return false; }
-  }).sort((a, b) => ((minute - timeStrToMinutes(a.start_time) + 1440) % 1440) -
-    ((minute - timeStrToMinutes(b.start_time) + 1440) % 1440))[0];
+export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zoneId = null) {
+  const date = parseOrCurrentDate(momentDate);
+  const missing = { configured:false, tariffId:null, scheduleId:null, name:'Tarif belgilanmagan',
+    pricePerHour:null, isVip:false, isVipPostpaidAllowed:false, zoneId:zoneId ? Number(zoneId) : null };
+  if (zoneId) {
+    const rates = db.prepare("SELECT * FROM tariffs WHERE zone_id=? AND club_id=? AND is_active=1 AND type='HOURLY' ORDER BY id ASC").all(zoneId,clubId || 1);
+    const rate = rates.find(rate => matchesRate(rate,date));
+    if (rate) return { configured:true, tariffId:rate.id, scheduleId:rate.id, name:rate.name,
+      pricePerHour:Number(rate.price_per_hour), isVip:Boolean(rate.is_vip_postpaid_allowed),
+      isVipPostpaidAllowed:Boolean(rate.is_vip_postpaid_allowed), zoneId:Number(zoneId) };
+    // Explicit room rules define the room's coverage; gaps never inherit another price.
+    if (rates.length) return missing;
+  }
+  const rates = db.prepare('SELECT * FROM tariff_schedules WHERE club_id=? ORDER BY priority DESC,id DESC').all(clubId || 1);
+  const rate = rates.find(rate => (!rate.is_vip || isVip) && matchesRate(rate,date));
+  if (!rate) return missing;
+  return { configured:true, tariffId:null, scheduleId:rate.id, name:rate.name, pricePerHour:Number(rate.price_per_hour),
+    isVip:Boolean(rate.is_vip), isVipPostpaidAllowed:true, zoneId:null };
+}
+
+export function requireRateForMoment(momentDate, isVip = false, clubId = 1, zoneId = null) {
+  const rate = getActiveRateForMoment(momentDate,isVip,clubId,zoneId);
+  if (!rate.configured) {
+    const date = parseOrCurrentDate(momentDate);
+    const stamp = date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0')+' '+String(date.getHours()).padStart(2,'0')+':'+String(date.getMinutes()).padStart(2,'0');
+    const error = new Error(stamp + ' uchun tarif belgilanmagan. ' + (zoneId ? 'Xona tariflariga yoki Sozlamalar → Dinamik tariflarga' : 'Sozlamalar → Dinamik tariflarga') + ' tarif kiriting.');
+    error.code = 'TARIFF_NOT_CONFIGURED';
+    throw error;
+  }
+  return rate;
 }
 
 /**
@@ -235,7 +149,7 @@ export function calculateIntervalPrice(startDateInput, endDateInput, isVip = fal
 
   let currentMoment = new Date(startEpoch);
   for (let m = 0; m < totalMinutes; m++) {
-    const rateInfo = getActiveRateForMoment(currentMoment, isVip, clubId, zoneId);
+    const rateInfo = requireRateForMoment(currentMoment, isVip, clubId, zoneId);
     const minuteRate = rateInfo.pricePerHour / 60;
     totalAmount += minuteRate;
 
@@ -302,11 +216,11 @@ export function calculateTimeFromAmount(startDateInput, targetAmount, isVip = fa
   const breakdownMap = new Map();
 
   // Maksimal 72 soat (4320 daqiqa) xavfsizlik cheklovi
-  while (accumulated < maxBudget && minutes < 4320) {
-    const rateInfo = getActiveRateForMoment(currentMoment, isVip, clubId, zoneId);
+  while (maxBudget - accumulated > 1e-7 && minutes < 4320) {
+    const rateInfo = requireRateForMoment(currentMoment, isVip, clubId, zoneId);
     const minuteRate = rateInfo.pricePerHour / 60;
 
-    if (accumulated + minuteRate > maxBudget && minutes > 0) {
+    if (accumulated + minuteRate > maxBudget + 1e-7) {
       break;
     }
 

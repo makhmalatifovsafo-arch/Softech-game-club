@@ -119,6 +119,7 @@ public partial class App : WpfApplication
         // ---- 8. LockWindow login va QR hodisalari ----
         _lockWindow.OnLoginRequested += (username, password, minutes) =>
         {
+            if (!_wsService.IsConnected) { _lockWindow.ShowError("Server bilan aloqa yo‘q. Ulanishni tekshiring va qayta kiring."); return; }
             _ = _wsService.SendMemberLoginAsync(username, password, minutes);
         };
 
@@ -128,9 +129,15 @@ public partial class App : WpfApplication
         };
 
         // ---- 9. TimeWidget logout hodisalari ----
-        _timeWidget.OnLogoutRequested += () =>
+        _timeWidget.OnLogoutRequested += async () =>
         {
-            _ = _wsService.SendLogoutAsync();
+            _timeWidget.SetLogoutPending(true);
+            try
+            {
+                if (!await _wsService.SendLogoutAsync())
+                    System.Windows.MessageBox.Show("Server seans yopilganini tasdiqlamadi. Qayta urinib ko‘ring yoki kassirga murojaat qiling.", "Seansni yakunlash");
+            }
+            finally { _timeWidget.SetLogoutPending(false); }
         };
         _timeWidget.OnSessionExpired += () => Dispatcher.Invoke(() =>
         {
@@ -229,6 +236,8 @@ public partial class App : WpfApplication
 
         _wsService.OnSessionBarNotice += (sessionId, message, amount) =>
             Dispatcher.Invoke(() => _lockWindow?.ShowSessionBarNotice(sessionId, message, amount));
+        _wsService.OnMemberSessionEnded += summary =>
+            Dispatcher.Invoke(() => _lockWindow?.ShowMemberSessionSummary(summary));
 
         _wsService.OnPowerCommand += action =>
         {

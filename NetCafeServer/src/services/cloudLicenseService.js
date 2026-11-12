@@ -1,6 +1,7 @@
 import { commandResults, applyCloudCommands } from './cloudCommands.js';
 import { cloudFetch } from './cloudIpv4.js';
-import { execFile } from 'node:child_process';
+import { ServerUpdater } from './updater.js';
+import { runRemoteMaintenance } from './remoteMaintenance.js';
 import { applyManagerAccount, getManagerRevision, applyAdministratorAccount, getAdministratorRevision } from './localOwnerSetup.js';
 import { createStaffAccountSync } from './staffAccountSync.js';
 import { BarLedgerService } from './barLedgerService.js';
@@ -342,7 +343,7 @@ export class CloudLicenseService {
     try {
       const report=BarLedgerService.getDailyFinancialReport({clubId:1});
       const pcs=db.prepare("SELECT c.*,s.ends_at FROM computers c LEFT JOIN sessions s ON s.id=c.current_session_id WHERE c.club_id=1").all();
-      const payload={commandResults:commandResults(db),administratorRevision:getAdministratorRevision(db,LicenseManager.licenseData.clubId),managerRevision:getManagerRevision(db,LicenseManager.licenseData.clubId),clubId:LicenseManager.licenseData.clubId,signedLicense:LicenseManager.getSignedLicense(),
+      const payload={commandResults:commandResults(db,{currentVersion:ServerUpdater.currentVersion}),administratorRevision:getAdministratorRevision(db,LicenseManager.licenseData.clubId),managerRevision:getManagerRevision(db,LicenseManager.licenseData.clubId),clubId:LicenseManager.licenseData.clubId,signedLicense:LicenseManager.getSignedLicense(),
         appVersion:JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../package.json'),'utf8')).version,
         reportDate:report.from,todayRevenue:report.summary.cashReceipts,barRevenue:report.breakdown.receipts.BAR.CASH+report.breakdown.receipts.BAR.CARD,
         totalSessionsCount:db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE club_id=1 AND date(started_at,'localtime')=?").get(report.from).n,
@@ -354,14 +355,14 @@ export class CloudLicenseService {
         body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)});
       if(!response.ok)throw new Error('HTTP '+response.status);
       const result=await response.json();
-      await applyCloudCommands(db,result.signedCommands,LicenseManager.licenseData,{
+      this.commandTask ??= applyCloudCommands(db,result.signedCommands,LicenseManager.licenseData,{
         broadcast:message=>ClientManager.broadcast('CLOUD_ANNOUNCEMENT',message),
         hasActiveSessions:()=>Boolean(db.prepare("SELECT id FROM sessions WHERE status='ACTIVE' LIMIT 1").get()),
-        restart:({delaySeconds,force})=>new Promise((resolve,reject)=>{
-          if(process.env.NODE_ENV==='test'||process.platform!=='win32')return reject(Error('Restart is disabled in this test/platform.'));
-          execFile('shutdown.exe',['/r','/t',String(delaySeconds),...(force?['/f']:[])],{windowsHide:true},error=>error?reject(error):resolve());
-        })
-      });
+        maintain:(action,options,callbacks)=>{
+          if(process.env.NODE_ENV==='test'||process.platform!=='win32')throw Error('Masofaviy o‘rnatish test/platformada o‘chirilgan.');
+          return runRemoteMaintenance(action,options,{...callbacks,updater:ServerUpdater});
+        }
+      }).catch(error=>console.warn('[Cloud command]',error.message)).finally(()=>{this.commandTask=null;});
       if(['BLOCKED','SUSPENDED','SUSPENDED_PAYMENT','LOCKED_BY_ADMIN'].includes(result.clubStatus)) this.executeLockdown('REMOTE_BLOCKED',result.message);
       // Each account is independent: a manager collision must not prevent cashier delivery.
       for(const [envelope,apply] of [[result.managerAccount,applyManagerAccount],[result.administratorAccount,applyAdministratorAccount]]){

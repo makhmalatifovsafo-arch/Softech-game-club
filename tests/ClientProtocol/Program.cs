@@ -62,7 +62,12 @@ class ClientProtocolAudit
   if((bool)granted.GetValue(loginWindow)!)throw new Exception("Stale authentication granted access to reopened modal");
   loginWindow.ResetFields();File.WriteAllText(configPath,fixtureConfig);
   Console.WriteLine("PASS offline emergency UI, incorrect password, retry cooldown and stale-auth rejection");
+  var summary=new MemberSessionSummary("notice-test","member-test",42,30,3500,3500,46500,22000);
+  loginWindow.ShowMemberSessionSummary(summary);
+  var summaryText=(System.Windows.Controls.TextBlock)loginWindow.FindName("MemberSessionSummaryText");
+  if(!summaryText.Text.Contains("member-test")||!summaryText.Text.Contains("42")||summaryText.Visibility!=Visibility.Visible)throw new Exception("Member receipt missing account identity");
   loginWindow.ShowSessionBarNotice("notice-test", "Siz 1 ta Cola, 2 ta Fanta olgansiz.", 22000);
+  if(!summaryText.Text.Contains("member-test"))throw new Exception("Bar notice replaced account receipt");
   var noticeOverlay=(System.Windows.Controls.Grid)loginWindow.FindName("SessionBarNoticeOverlay");
   if(noticeOverlay.Visibility!=Visibility.Visible)throw new Exception("Bar notice did not appear");
   var noticeFrame=new System.Windows.Threading.DispatcherFrame();
@@ -75,8 +80,12 @@ class ClientProtocolAudit
   };
   noticeCheck.Start();System.Windows.Threading.Dispatcher.PushFrame(noticeFrame);noticeCheck.Stop();
   if(!checkedBefore||noticeOverlay.Visibility!=Visibility.Collapsed)throw new Exception("Bar notice must close after eight seconds");
+  if(summaryText.Text!=""||summaryText.Visibility!=Visibility.Collapsed)throw new Exception("Account receipt was retained after dismissal");
   loginWindow.ShowSessionBarNotice("notice-test", "Duplicate", 22000);
   if(noticeOverlay.Visibility!=Visibility.Collapsed)throw new Exception("Duplicate stop reopened bar notice");
+  loginWindow.ShowMemberSessionSummary(summary with {SessionId="member-only",BarDebt=0});
+  if(noticeOverlay.Visibility!=Visibility.Visible)throw new Exception("Account receipt without bar order missing");
+  loginWindow.ResetFields();if(summaryText.Text!="")throw new Exception("New login retained previous account receipt");
   Console.WriteLine("PASS client bar reminder displays for eight seconds, dismisses only the reminder and ignores duplicate packets");
   var widget=new TimeWidgetWindow();int expirations=0;widget.OnSessionExpired+=()=>expirations++;
   var tick=typeof(TimeWidgetWindow).GetMethod("Timer_Tick",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
@@ -84,13 +93,19 @@ class ClientProtocolAudit
   if(expirations!=1)throw new Exception("Local prepaid expiry must fire once even without a server STOP");
   widget.UpdateTime(-1);tick.Invoke(widget,new object[]{null,EventArgs.Empty});
   if(expirations!=1)throw new Exception("Open-ended session was incorrectly expired");
+  var logoutButton=(System.Windows.Controls.Button)widget.FindName("BtnLogout");
+  if(logoutButton.Visibility!=Visibility.Collapsed)throw new Exception("VIP must be closed by cashier");
+  widget.UpdateTime(3600);
+  if(logoutButton.Visibility!=Visibility.Visible)throw new Exception("Member/prepaid logout must remain available");
   Console.WriteLine("PASS local prepaid expiry and unlimited-session timer");
   app.Dispatcher.InvokeAsync(async ()=>{
    var service=new WebSocketClientService();var done=new TaskCompletionSource();
-   int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false;
+   int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false,memberReceipt=false;
+   Task<bool>? logoutCheck=null;
+   service.OnMemberSessionEnded+=receipt=>memberReceipt=receipt.Username=="member-test"&&receipt.Balance==46500;
    service.OnSessionBarNotice+=(id,message,amount)=>barNotice=id=="paid-session"&&message.Contains("Cola")&&amount==10000;
    service.OnConnectionStatusChanged+=online=>{if(online)connections++;};
-   service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;};
+   service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;logoutCheck=service.SendLogoutAsync();};
    service.OnUpdateTime+=seconds=>time=seconds==600;
    service.OnStopSession+=reason=>stopped=reason=="test-end";
    service.OnLockScreen+=()=>locked=true;
@@ -99,6 +114,7 @@ class ClientProtocolAudit
    service.OnEmergencyLockdown+=(reason,message)=>{if(reason=="audit-ban")done.TrySetResult();};
    try{
     service.Start();await done.Task.WaitAsync(TimeSpan.FromSeconds(25));
+    if(logoutCheck==null||!await logoutCheck||!memberReceipt)throw new Exception("Logout acknowledgement or member receipt failed");
     if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power||!barNotice)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power},bar={barNotice}");
     Console.WriteLine("PASS native client WebSocket handshake, fragmented messages, zero-balance session, time/config/lock/stop/power dispatch, disconnect and reconnect");
    }catch(Exception error){Console.Error.WriteLine(error.Message);Environment.ExitCode=1;}

@@ -103,6 +103,9 @@ public class WebSocketClientService
 
     // ---- Properties ----
     public bool   IsConnected     => _client?.State == WebSocketState.Open;
+    public event Action<MemberSessionSummary>? OnMemberSessionEnded;
+    private TaskCompletionSource<bool>? _logoutResponse;
+    private string? _activeSessionId;
     public int    PcNumber        => _config.NumericPcNumber;
     public string PcNumberString  => _config.PcNumber;
     public string WorkstationName => _config.PcNumber;
@@ -464,6 +467,7 @@ public class WebSocketClientService
                     // UI transition strictly inside Dispatcher.Invoke
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
+                        _activeSessionId = sessionId;
                         OnStartSession?.Invoke(sessionId, remaining, tariff, customer, clientBal);
                     });
                     break;
@@ -487,6 +491,7 @@ public class WebSocketClientService
 
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
+                        _activeSessionId = sessionId;
                         OnMemberLoginSuccess?.Invoke(sessionId, balance, remaining, username);
                     });
                     break;
@@ -507,7 +512,7 @@ public class WebSocketClientService
                 // ---- Balans Yangilanishi ----
                 case "CLIENT_BALANCE_UPDATE":
                 {
-                    if (data.TryGetProperty("balance", out var b) && b.ValueKind == JsonValueKind.Number)
+                    if ((data.TryGetProperty("currentBalance", out var b) || data.TryGetProperty("balance", out b)) && b.ValueKind == JsonValueKind.Number)
                     {
                         double bal = b.GetDouble();
                         System.Windows.Application.Current?.Dispatcher.Invoke(() =>
@@ -540,6 +545,10 @@ public class WebSocketClientService
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
                         OnStopSession?.Invoke(reason);
+                        _activeSessionId = null;
+                        _logoutResponse?.TrySetResult(true);
+                        if (data.TryGetProperty("memberSummary", out var summaryValue) && MemberSessionSummary.Parse(summaryValue) is { } summary)
+                            OnMemberSessionEnded?.Invoke(summary);
                         if (data.TryGetProperty("barNotice", out var notice) && notice.ValueKind == JsonValueKind.Object &&
                             notice.TryGetProperty("barDebt", out var debt) && debt.ValueKind == JsonValueKind.Number && debt.TryGetDouble(out var amount) && double.IsFinite(amount) && amount > 0 &&
                             notice.TryGetProperty("sessionId", out var session) && session.ValueKind == JsonValueKind.String &&
@@ -610,6 +619,7 @@ public class WebSocketClientService
 
                         System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                         {
+                            _activeSessionId = sId;
                             OnStartSession?.Invoke(sId, rem, tr, cust, bal);
                         });
                     }
@@ -643,17 +653,26 @@ public class WebSocketClientService
         await SendRawAsync(msg);
     }
 
-    public async Task SendLogoutAsync()
+    public async Task<bool> SendLogoutAsync()
     {
+        if (!IsConnected || _logoutResponse != null) return false;
+        var response = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _logoutResponse = response;
         var msg = new
         {
             type = "CLIENT_MEMBER_LOGOUT",
             @event = "CLIENT_MEMBER_LOGOUT",
             pcNumber = _config.PcNumber,
-            payload = new { pcNumber = _config.PcNumber },
+            payload = new { pcNumber = _config.PcNumber, sessionId = _activeSessionId },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
-        await SendRawAsync(msg);
+        try
+        {
+            if (!await SendRawAsync(msg)) return false;
+            return await response.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (TimeoutException) { return false; }
+        finally { _logoutResponse = null; }
     }
 
     public async Task SendQrRefreshRequestAsync()
@@ -721,25 +740,27 @@ public class WebSocketClientService
         finally { _barOrderResponse = null; }
     }
 
-    public async Task SendRawAsync(object data)
+    public async Task<bool> SendRawAsync(object data)
     {
         var socket = _client;
-        if (socket == null || socket.State != WebSocketState.Open) return;
+        if (socket == null || socket.State != WebSocketState.Open) return false;
         bool acquired = false;
 
         try
         {
             await _sendLock.WaitAsync(_cts.Token);
             acquired = true;
-            if (!ReferenceEquals(socket, _client) || socket.State != WebSocketState.Open) return;
+            if (!ReferenceEquals(socket, _client) || socket.State != WebSocketState.Open) return false;
             string json = JsonSerializer.Serialize(data);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+            return true;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[WS] Send xato: {ex.Message}");
             try { socket.Abort(); } catch { }
+            return false;
         }
         finally
         {

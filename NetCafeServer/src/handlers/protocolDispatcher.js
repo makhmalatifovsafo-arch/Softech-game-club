@@ -1,4 +1,5 @@
-import { startMemberSession, settleMemberUsage, isMemberSession } from '../services/memberBilling.js';
+import { startMemberSession, isMemberSession } from '../services/memberBilling.js';
+import { SessionScheduler } from '../services/sessionScheduler.js';
 import { createClientBarOrder } from '../services/clientBarOrders.js';
 import { db } from '../db.js';
 import { ClientManager } from '../services/clientManager.js';
@@ -260,29 +261,8 @@ export class ProtocolDispatcher {
 
     const activeSession = db.prepare("SELECT * FROM sessions WHERE computer_id = ? AND status = 'ACTIVE'").get(pcId);
     if (activeSession) {
-      const now = new Date();
-      db.exec('BEGIN IMMEDIATE');
-      try {
-      settleMemberUsage(activeSession.id, now, true, true);
-      db.prepare(`
-        UPDATE sessions 
-        SET status = 'COMPLETED', ends_at = ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE id = ?
-      `).run(now.toISOString(), activeSession.id);
-
-      db.prepare(`
-        UPDATE computers 
-        SET status = 'ONLINE', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP 
-        WHERE id = ?
-      `).run(pcId);
-
-      db.exec('COMMIT');
-      } catch(error) {db.exec('ROLLBACK');throw error;}
-      ClientManager.send(pcId, 'STOP_SESSION', { reason: 'LOGOUT', message: 'Seans yakunlandi.' });
-      ClientManager.send(pcId, 'LOCK_SCREEN', { reason: 'LOGOUT', message: 'Mijoz tizimdan chiqdi.' });
-
-      ClientManager.broadcast('ADMIN_DATA_UPDATED', { timestamp: Date.now() });
-      console.log(`🛑 [ClientLogout] PC #${pcId} da seans (${activeSession.id}) yakunlandi.`);
+      if (payload?.sessionId && payload.sessionId !== activeSession.id) return;
+      SessionScheduler.finishSession(activeSession, { reason: 'LOGOUT' });
     }
   }
 

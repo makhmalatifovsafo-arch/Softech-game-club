@@ -32,6 +32,7 @@ import {
   calculateTimeFromAmount,
   calculateFromDurationHours,
   getActiveRateForMoment,
+  requireRateForMoment,
   resolveZoneIdForComputer
 } from './services/pricingEngine.js';
 import { sendWakeOnLan } from './services/wolService.js';
@@ -1033,10 +1034,7 @@ function handleRequest(req, res) {
         `);
 
         // Standart boshlang'ich 2 ta oraliq agar foydalanuvchi oraliqlar bermagan bo'lsa
-        const intervalsToSave = Array.isArray(tariffs) && tariffs.length > 0 ? tariffs : [
-          { name: 'Kunduzgi', start_time: '10:00', end_time: '18:00', price_per_hour: 12000, days_of_week: [1,2,3,4,5,6,7], is_vip_postpaid_allowed: 1 },
-          { name: 'Kechki / Tun', start_time: '18:00', end_time: '10:00', price_per_hour: 18000, days_of_week: [1,2,3,4,5,6,7], is_vip_postpaid_allowed: 1 }
-        ];
+        const intervalsToSave = Array.isArray(tariffs) ? tariffs : [];
 
         let createdZoneId;
         const createdTariffs = [];
@@ -1491,7 +1489,8 @@ function handleRequest(req, res) {
       SELECT 
         c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status, c.last_heartbeat,
         COALESCE(c.zone_id, g.zone_id) as zone_id,
-        s.id as session_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
+        s.id as session_id, s.user_id as member_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
+        (SELECT balance FROM users WHERE id=s.user_id AND club_id=s.club_id) as member_balance,
         (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as payment_type,
         t.name as tariff_name,
         (SELECT COALESCE(SUM(bo.total_amount), 0) FROM bar_orders bo WHERE bo.session_id = s.id AND bo.payment_status = 'PENDING_AT_CHECKOUT') as bar_pending_amount,
@@ -1508,7 +1507,8 @@ function handleRequest(req, res) {
       SELECT 
         c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status, c.last_heartbeat,
         COALESCE(c.zone_id, g.zone_id) as zone_id,
-        s.id as session_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
+        s.id as session_id, s.user_id as member_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
+        (SELECT balance FROM users WHERE id=s.user_id AND club_id=s.club_id) as member_balance,
         (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as payment_type,
         t.name as tariff_name,
         (SELECT COALESCE(SUM(bo.total_amount), 0) FROM bar_orders bo WHERE bo.session_id = s.id AND bo.payment_status = 'PENDING_AT_CHECKOUT') as bar_pending_amount,
@@ -1624,6 +1624,9 @@ function handleRequest(req, res) {
           barPendingAmount: barPending,
           totalWithBar: gameAmount + barPending,
           paymentType: isMember ? 'BALANCE' : (pc.payment_type || (isPostpaid ? 'POSTPAID' : 'CASH')),
+          isMember,
+          memberId: isMember ? pc.member_id : null,
+          memberBalance: isMember ? Number(pc.member_balance || 0) : null,
           isPostpaid,
           remainingSeconds
         } : null
@@ -1881,7 +1884,7 @@ function handleRequest(req, res) {
         let finalEndsAt;
         const startedAt = new Date();
 
-        const activeRate = getActiveRateForMoment(startedAt, false, clubId, pcZoneId);
+        const activeRate = requireRateForMoment(startedAt, false, clubId, pcZoneId);
 
         const isPostpaidReq = Boolean(mode === 'postpaid' || mode === 'VIP' || mode === 'vip' || isPostpaid || paymentType === 'POSTPAID');
         if (isPostpaidReq) {
@@ -1917,6 +1920,8 @@ function handleRequest(req, res) {
             finalEndsAt = new Date(startedAt.getTime() + finalDuration * 60 * 1000);
           }
         }
+
+        if (!isPostpaidReq) calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
 
         // Standart soatlik tarif
         const defaultTariff = db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
@@ -2260,7 +2265,7 @@ function handleRequest(req, res) {
           addAmt = addAmount !== undefined ? parseFloat(addAmount) : calc.totalAmount;
         } else if (addAmount !== undefined && addAmount !== null) {
           addAmt = parseFloat(addAmount);
-          const calc = calculateTimeFromAmount(new Date(currentEnd), addAmt, false, sessionRow.club_id || clubId || 1);
+          const calc = calculateTimeFromAmount(new Date(currentEnd), addAmt, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(compId, sessionRow.club_id || clubId || 1));
           addMins = calc.totalMinutes;
         } else if (additionalMinutes !== undefined && additionalMinutes !== null) {
           addMins = parseInt(additionalMinutes, 10);
@@ -2272,6 +2277,8 @@ function handleRequest(req, res) {
           addAmt = sessionRow.price_per_hour || 10000;
         }
 
+        const extensionQuote = calculateFromDurationHours(new Date(currentEnd), addMins / 60, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(compId, sessionRow.club_id || clubId || 1));
+        addAmt = extensionQuote.totalAmount;
         const newEnd = new Date(currentEnd + addMins * 60 * 1000);
 
         if (!Number.isInteger(addMins) || addMins<=0 || addMins>1440 || !Number.isFinite(addAmt) || addAmt<0)
@@ -2640,7 +2647,7 @@ function handleRequest(req, res) {
           if (!pc) throw new Error('Kompyuter topilmadi.');
           if (db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id)) throw new Error('Kompyuter band.');
           const zoneId = resolveZoneIdForComputer(pc.id,clubId);
-          const rate = getActiveRateForMoment(startedAt,false,clubId,zoneId);
+          const rate = requireRateForMoment(startedAt,false,clubId,zoneId);
           if (isPostpaid && rate.isVipPostpaidAllowed === false) throw new Error('Xonada Postpaid taqiqlangan.');
           let calc;
           if (isPostpaid) calc = {totalMinutes:1440,totalAmount:0,endTime:new Date(startedAt.getTime()+86400000).toISOString()};

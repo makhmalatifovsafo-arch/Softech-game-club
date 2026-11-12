@@ -68,7 +68,7 @@
             <DockPanel Grid.Row="2">
                 <TextBlock x:Name="TxtTariff" Text="Mijoz Balansi" FontSize="10" Foreground="#71717A" VerticalAlignment="Center" DockPanel.Dock="Left"/>
                 <Button x:Name="BtnLogout"
-                        Content="✕ Chiqish (Qulf)"
+                        Content="Seansni yakunlash"
                         FontSize="10"
                         FontWeight="Bold"
                         Foreground="White"

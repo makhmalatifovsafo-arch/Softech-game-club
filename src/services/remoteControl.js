@@ -1,3 +1,4 @@
+import { requireRemoteMaintenance } from './maintenanceVersion.js';
 /**
  * Softech Super Admin — Remote Action Dispatcher Service
  * Location: SoftechCloudAdmin/src/services/remoteControl.js
@@ -113,15 +114,16 @@ export class RemoteControlService {
    * Server qotib qolganda yoki yangilanganda majburiy qayta yuklash buyrug'ini yuborish.
    */
   static restartServer(clubId, options = {}) {
-    const club = db.prepare('SELECT id, name FROM clubs WHERE id = ?').get(clubId);
+    const club = db.prepare('SELECT id, name, server_version FROM clubs WHERE id = ?').get(clubId);
     if (!club) {
       throw new Error(`Filial topilmadi (ID: ${clubId})`);
     }
 
+    requireRemoteMaintenance(club);
     const payload = {
       action: 'RESTART_SERVER',
-      force: options.force !== false,
-      delaySeconds: parseInt(options.delaySeconds || 5, 10),
+      force: options.force === true,
+      delaySeconds: Math.max(0,Math.min(300,Number(options.delaySeconds) || 0)),
       reason: options.reason || "Super Admin tomonidan markaziy buyruq orqali qayta yuklash",
       issuedAt: new Date().toISOString(),
       timestamp: Date.now()
@@ -145,6 +147,14 @@ export class RemoteControlService {
    * Kassir ekraniga to'g'ridan-to'g'ri xabar chiqarish.
    * Agar clubId === 'ALL' bo'lsa, barcha faol klublarga ommaviy tarqatadi.
    */
+  static forceUpdate(clubId) {
+    const club=db.prepare('SELECT id,name,server_version FROM clubs WHERE id=?').get(clubId);
+    if(!club)throw Error('Filial topilmadi.');
+    requireRemoteMaintenance(club);
+    const command=TelemetryService.queueRemoteCommand(clubId,'FORCE_UPDATE',{force:true});
+    return {success:true,commandId:command.id,clubId,action:'FORCE_UPDATE',message:'Yangilash buyrug‘i navbatga qo‘yildi.'};
+  }
+
   static broadcastAnnouncement(clubId, { title, message, priority = 'HIGH', durationSeconds = 30 } = {}) {
     if (!message || String(message).trim().length === 0) {
       throw new Error("Xabarnoma matni kiritilishi shart.");

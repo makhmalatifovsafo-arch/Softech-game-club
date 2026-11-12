@@ -68,6 +68,20 @@ test('manual install commits with active sessions and drains writes before shutd
   assert.equal(f.spawns, 1);
   assert.equal(f.timers.length, 1);
 });
+
+test('restart-only handover drains writes without requiring or installing a staged release', async () => {
+  const f=fixture({pendingWrites:2});f.updater.currentVersion='1.0.34';f.updater.state.isStaged=false;f.updater.state.stagedVersion=null;
+  assert.equal((await f.updater.applyUpdate({force:true,restartOnly:true})).success,true);
+  assert.equal(f.plan.RestartOnly,true);assert.equal(f.plan.Version,'1.0.34');
+  assert.equal(f.updater.pendingWrites,0);assert.equal(f.spawns,1);
+  assert.equal(f.files.get(f.plan.CommitFile),'1.0.34');
+});
+
+test('periodic checks and idle installer cannot race a remote maintenance operation', async () => {
+  const f=fixture();f.updater.remoteMaintenance=true;
+  await f.updater.checkForUpdates();await f.updater.evaluateIdleUpdate();
+  assert.equal(f.spawns,0);assert.equal(f.updater.state.isChecking,undefined);
+});
 test('automatic update still waits for sessions and cashier input; idle update works', async () => {
   for (const options of [{}, { activeSessions: 0, idleSeconds: 0 }, { activeSessions: 0, idleSeconds: 30, pendingWrites: 1 }]) {
     const f = fixture(options);

@@ -33,7 +33,7 @@ public static class Program
             if (args.Length != 2 || args[0] != "--plan") return 2;
             var plan = JsonSerializer.Deserialize<UpdatePlan>(File.ReadAllText(args[1]), Json)
                 ?? throw new InvalidDataException("Missing update plan.");
-            return await Apply(plan);
+            return plan.RestartOnly ? await RestartOnly(plan) : await Apply(plan);
         }
         catch (Exception ex)
         {
@@ -211,6 +211,41 @@ public static class Program
             // snapshots. An interrupted/failed rollback keeps recovery evidence.
             if (!committed || restored)
                 UpdateCleanup.DeleteOwnedTree(target, ".ota/" + Path.GetFileName(transaction), Log);
+            foreach (string file in new[] { plan.ReadyFile, plan.CommitFile, plan.CancelFile })
+                try { if (File.Exists(file)) File.Delete(file); } catch { }
+        }
+    }
+
+    private static async Task<int> RestartOnly(UpdatePlan plan)
+    {
+        string target = Path.GetFullPath(plan.Target);
+        if (plan.Kind != "server" || !Directory.Exists(target) || plan.ParentPids.Length == 0 || plan.ParentPids.Any(pid => pid <= 0))
+            throw new InvalidDataException("Invalid restart plan.");
+        string relativeExe = Path.GetRelativePath(target, plan.RestartExecutable);
+        if (!File.Exists(PackageManifest.ChildPath(target, relativeExe))) throw new FileNotFoundException("Restart application missing.");
+        Directory.CreateDirectory(Path.Combine(target, ".ota"));
+        using var transactionLock = new FileStream(Path.Combine(target, ".ota", "update.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        try
+        {
+            File.WriteAllText(plan.ReadyFile, "ready");
+            var deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(plan.TimeoutSeconds, 10, 180));
+            while (!File.Exists(plan.CommitFile))
+            {
+                if (File.Exists(plan.CancelFile) || DateTime.UtcNow > deadline) return 3;
+                await Task.Delay(50);
+            }
+            foreach (int pid in plan.ParentPids.Distinct())
+            {
+                try { using var parent = Process.GetProcessById(pid); await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+                catch (ArgumentException) { }
+            }
+            using var restarted = Launch(plan);
+            if (restarted == null) throw new IOException("Server could not restart.");
+            return 0;
+        }
+        catch (Exception error) { File.WriteAllText(plan.ReadyFile + ".error", error.Message); return 4; }
+        finally
+        {
             foreach (string file in new[] { plan.ReadyFile, plan.CommitFile, plan.CancelFile })
                 try { if (File.Exists(file)) File.Delete(file); } catch { }
         }

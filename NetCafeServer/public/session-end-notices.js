@@ -24,7 +24,9 @@
       <p data-error style="color:#fda4af;margin-top:10px"></p>`;
     const minutes = Number(notice.durationMinutes || 0);
     const duration = minutes % 60 === 0 ? `${minutes / 60} soatlik` : `${minutes} daqiqalik`;
-    card.querySelector('[data-title]').textContent = `${notice.computerName || 'PC-' + notice.pcNumber} kompyuterining ${duration} vaqti tugadi`;
+    card.querySelector('[data-title]').textContent = notice.reason === 'LOGOUT'
+      ? `${notice.computerName || 'PC-' + notice.pcNumber}: ${notice.customerName || 'Mijoz'} seansni yakunladi`
+      : `${notice.computerName || 'PC-' + notice.pcNumber} kompyuterining ${duration} vaqti tugadi`;
     card.querySelector('[data-items]').textContent = notice.barSummary || (notice.barItems || []).map(i => `${i.quantity} ta ${i.itemName}`).join(', ');
     card.querySelector('[data-amount]').textContent = Number(notice.barDebt).toLocaleString('uz-UZ') + ' so‘m';
     card.querySelector('[data-close]').onclick = async event => {

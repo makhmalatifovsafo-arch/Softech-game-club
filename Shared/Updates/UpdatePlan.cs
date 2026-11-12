@@ -12,6 +12,7 @@ public sealed class UpdatePlan
     public string Target { get; set; } = "";
     public string Version { get; set; } = "";
     public string Kind { get; set; } = "";
+    public bool RestartOnly { get; set; }
     public int[] ParentPids { get; set; } = Array.Empty<int>();
     public string RestartExecutable { get; set; } = "";
     public string[] RestartArguments { get; set; } = Array.Empty<string>();

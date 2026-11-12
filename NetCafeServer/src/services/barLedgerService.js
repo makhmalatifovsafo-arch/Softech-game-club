@@ -1,8 +1,9 @@
-import { isMemberSession, settleMemberUsage } from './memberBilling.js';
+import { isMemberSession, isPrepaidMember, prepaidRefund, settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
 import { db, getClubSettings } from '../db.js';
 import { calculateIntervalPrice, resolveZoneIdForComputer } from './pricingEngine.js';
 import { getSessionBarDebt } from './sessionBarDebt.js';
+import { isPostpaidSession } from './sessionMode.js';
 import { ClientManager } from './clientManager.js';
 import { logAuditEvent } from './auditService.js';
 
@@ -47,7 +48,9 @@ export class BarLedgerService {
     const now = session.status === 'COMPLETED' ? Date.parse(session.ends_at) : Date.now();
     const playedMinutes = Math.max(1, Math.ceil((now - startedAt) / 60000));
     const playedHours = Number((playedMinutes / 60).toFixed(1));
-    const isPostpaid = !isMemberSession(session) && /^(BATCH_)?(POSTPAID|VIP)$/.test(session.notes || '');
+    const isPostpaid = !isMemberSession(session) && isPostpaidSession(session);
+    const member = isMemberSession(session) ? db.prepare('SELECT id,username,balance FROM users WHERE id=? AND club_id=?').get(session.user_id,session.club_id) : null;
+    const refund = isPrepaidMember(session) && session.status === 'ACTIVE' ? prepaidRefund(session,new Date(now)) : null;
 
     // 1. O'yin vaqti narxi hisob-kitobi
     let gameBill = 0;
@@ -65,6 +68,7 @@ export class BarLedgerService {
       // Prepaid seans: agar oldindan to'langan bo'lsa
       gameBill = Number(session.paid_amount || session.total_amount || 0);
     }
+    if (refund) gameBill = refund.usedAmount;
 
     // 2. Ushbu seansga/stolda biriktirilgan tasdiqlangan va to'lanmagan bar buyurtmalari
     const computerRef = session.resolved_pc_id || pc?.id || session.computer_id;
@@ -128,6 +132,8 @@ export class BarLedgerService {
       playedMinutes,
       playedHours,
       isPostpaid,
+      isMember: Boolean(member),
+      member: member ? { accountId:member.id, username:member.username, balance:Number(member.balance), refundAmount:refund?.amount || 0 } : null,
       tariffName: session.tariff_name || (isPostpaid ? 'VIP Postpaid' : 'Standart'),
       gameBill,
       barBill,
@@ -207,6 +213,7 @@ export class BarLedgerService {
         WHERE id = ? AND club_id = ? AND current_session_id = ?
       `).run(preview.computerId, targetClubId, preview.sessionId);
 
+      const memberSummary = getMemberSessionSummary(preview.sessionId);
       db.exec('COMMIT;');
 
       // 5. Kiosk agentiga seans tugaganligi va ekranni qulflash haqida signal yuborish
@@ -214,6 +221,7 @@ export class BarLedgerService {
       ClientManager.send(preview.computerId, 'STOP_SESSION', {
         sessionId: preview.sessionId,
         reason: 'CHECKOUT_COMPLETED',
+        memberSummary,
         forceKillApps: true,
         message: 'Seans muvaffaqiyatli yakunlandi. Tashrifingiz uchun rahmat!'
       });
@@ -249,6 +257,7 @@ export class BarLedgerService {
         finalBill: preview.finalBill,
         amountCollected: preview.amountToCollect,
         refundAmount: settlement?.refundAmount || 0,
+        memberSummary,
         formulaText: preview.formulaText,
         barSummaryText: preview.barSummaryText,
         paymentMethod: validPayMethod

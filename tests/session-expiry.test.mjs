@@ -14,6 +14,9 @@ function run(body) {
     import {SessionScheduler} from './src/services/sessionScheduler.js';
     import {ClientManager} from './src/services/clientManager.js';
     import {BarLedgerService} from './src/services/barLedgerService.js';
+    import {ProtocolDispatcher} from './src/handlers/protocolDispatcher.js';
+    import {startMemberSession} from './src/services/memberBilling.js';
+    import {hashPassword} from './src/auth.js';
     try { ${body} } finally {db.close();}`);
   const result=spawnSync(process.execPath,['case.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test'},windowsHide:true,encoding:'utf8',timeout:20000});
   assert.equal(result.status,0,result.stdout+'\n'+result.stderr);
@@ -32,6 +35,64 @@ test('two hours at 7000 remains 14000 across an uncovered 17:00 boundary; packag
   db.prepare("INSERT INTO tariff_schedules(club_id,name,days_of_week,start_time,end_time,price_per_hour) VALUES(1,'Only day','[1,2,3,4,5,6,7]','10:00','17:00',7000)").run();
   assert.equal(calculateFromDurationHours(new Date('2026-11-12T16:36:00'),2,false,1).totalAmount,14000);
   assert.throws(()=>calculateFromDurationHours(new Date(),Infinity));
+`));
+
+test('VIP remains open until cashier checkout and closes without bar-reminder windows',()=>run(`
+  db.prepare("INSERT INTO computers(id,club_id,pc_number,name,current_session_id,status) VALUES('vip-pc',1,8,'VIP-8','vip','OCCUPIED')").run();
+  db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,started_at,ends_at,paid_amount,status,notes) VALUES('vip',1,'vip-pc','trf_standard_1h',?,?,0,'ACTIVE','POSTPAID')")
+    .run(new Date(Date.now()-3600000).toISOString(),new Date(Date.now()-1000).toISOString());
+  db.prepare("INSERT INTO bar_orders(club_id,order_number,computer_id,session_id,total_amount,payment_status) VALUES(1,'VIP-COLA',8,'vip',10000,'PENDING_AT_CHECKOUT')").run();
+  const sent=[],broadcast=[];ClientManager.send=(pc,type,payload)=>sent.push({pc,type,payload});ClientManager.broadcast=(type,payload)=>broadcast.push({type,payload});
+  const socket={};ClientManager.socketToPcId.set(socket,'vip-pc');
+  SessionScheduler.checkActiveSessions();SessionScheduler.expireSession({id:'vip'});
+  ProtocolDispatcher.handleClientLogout(socket,{});
+  assert.equal(db.prepare("SELECT status FROM sessions WHERE id='vip'").get().status,'ACTIVE');
+  assert.equal(sent.length,0,'VIP must not receive timed expiry or client-logout STOP');
+  const preview=BarLedgerService.getSessionCheckoutPreview('vip',1);
+  assert.ok(preview.gameBill>0);assert.equal(preview.barBill,10000);
+  const receipt=BarLedgerService.executeSessionCheckout({target:'vip',clubId:1,paymentMethod:'CASH'});
+  assert.equal(receipt.amountCollected,preview.gameBill+10000);
+  assert.equal(db.prepare("SELECT status FROM sessions WHERE id='vip'").get().status,'COMPLETED');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM session_end_notices').get().n,0);
+  assert.ok(sent.some(m=>m.type==='STOP_SESSION'));assert.ok(sent.some(m=>m.type==='LOCK_SCREEN'));
+  assert.ok(sent.every(m=>!m.payload.barNotice));
+  assert.ok(broadcast.every(m=>m.type!=='SESSION_EXPIRED_WITH_BAR_DEBT'));
+`));
+
+test('account login then client logout notifies both screens once, refunds game balance and leaves bar debt collectible',()=>run(`
+  db.exec("DELETE FROM tariff_schedules; UPDATE tariffs SET price_per_hour=7000 WHERE id='trf_standard_1h'");
+  db.prepare("INSERT INTO users(club_id,username,password_hash,role,permissions,balance) VALUES(1,'member-notice',?,'client','[]',50000)").run(hashPassword('fixture-password'));
+  const uid=db.prepare("SELECT id FROM users WHERE username='member-notice'").get().id;
+  db.prepare("INSERT INTO computers(id,club_id,pc_number,name,status) VALUES('member-pc',1,9,'PC-9','ONLINE')").run();
+  const opened=startMemberSession('member-pc','member-notice','fixture-password',60);
+  const sid=opened.sessionId;
+  db.prepare('UPDATE sessions SET started_at=?,ends_at=? WHERE id=?').run(new Date(Date.now()-1800000).toISOString(),new Date(Date.now()+1800000).toISOString(),sid);
+  const order=db.prepare("INSERT INTO bar_orders(club_id,order_number,computer_id,session_id,total_amount,payment_status) VALUES(1,'MEMBER-COLA',9,?,10000,'PENDING_AT_CHECKOUT')").run(sid).lastInsertRowid;
+  db.prepare("INSERT INTO bar_order_items(order_id,bar_item_id,item_name,quantity,unit_price,total_price) VALUES(?,1,'Cola',1,10000,10000)").run(order);
+  const sent=[],broadcast=[];ClientManager.send=(pc,type,payload)=>sent.push({pc,type,payload});ClientManager.broadcast=(type,payload)=>broadcast.push({type,payload});
+  const socket={};ClientManager.socketToPcId.set(socket,'member-pc');
+  ProtocolDispatcher.handleMessage(socket,JSON.stringify({type:'CLIENT_MEMBER_LOGOUT',payload:{pcNumber:'PC-9'}}));
+  const notice=sent.find(m=>m.type==='STOP_SESSION').payload.barNotice;
+  assert.equal(notice.reason,'LOGOUT');assert.equal(notice.barDebt,10000);assert.equal(notice.barSummary,'1 ta Cola');
+  assert.equal(notice.customerName,'member-notice');assert.equal(notice.durationMinutes,30);
+  assert.equal(broadcast.filter(m=>m.type==='SESSION_EXPIRED_WITH_BAR_DEBT').length,1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM session_end_notices WHERE session_id=?').get(sid).n,1);
+  const refund=db.prepare("SELECT SUM(amount) AS amount FROM client_transactions WHERE session_id=? AND type='REFUND'").get(sid).amount;
+  assert.ok(refund>3400&&refund<=3500);const balance=db.prepare('SELECT balance FROM users WHERE id=?').get(uid).balance;
+  const summary=sent.find(m=>m.type==='STOP_SESSION').payload.memberSummary;
+  assert.equal(summary.balance,balance);assert.equal(summary.refundAmount,refund);assert.equal(summary.username,'member-notice');assert.equal(summary.barDebt,10000);
+  assert.equal(summary.gameAmount,7000-refund);assert.equal(summary.playedMinutes,30);assert.equal(summary.password,undefined);
+  ProtocolDispatcher.handleClientLogout(socket,{});
+  assert.equal(sent.filter(m=>m.type==='STOP_SESSION').length,1);assert.equal(db.prepare('SELECT balance FROM users WHERE id=?').get(uid).balance,balance);
+  assert.equal(BarLedgerService.executeSessionCheckout({target:sid,clubId:1}).amountCollected,10000);
+  assert.equal(db.prepare('SELECT balance FROM users WHERE id=?').get(uid).balance,balance,'Cash bar collection must not deduct the member game balance again');
+  const second=startMemberSession('member-pc','member-notice','fixture-password',60);
+  ProtocolDispatcher.handleClientLogout(socket,{sessionId:sid});
+  assert.equal(db.prepare('SELECT status FROM sessions WHERE id=?').get(second.sessionId).status,'ACTIVE','Stale logout must not close the new session');
+  db.prepare("INSERT INTO bar_orders(club_id,order_number,computer_id,session_id,total_amount,payment_status) VALUES(1,'ALREADY-PAID',9,?,10000,'PAID')").run(second.sessionId);
+  sent.length=0;ProtocolDispatcher.handleClientLogout(socket,{});
+  assert.equal(sent.find(m=>m.type==='STOP_SESSION').payload.barNotice,null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM session_end_notices WHERE session_id=?').get(second.sessionId).n,0);
 `));
 test('expiry persists exact unpaid Cola/Fanta notice; later collection never bills game twice or stops a replacement session',()=>run(`
   const end=new Date(Date.now()-1000).toISOString(),start=new Date(Date.parse(end)-3600000).toISOString();

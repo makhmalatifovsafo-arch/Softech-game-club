@@ -136,7 +136,7 @@ function renderRestartDialog() {
       <div class="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-start gap-2">
         <span class="text-base leading-none">🔄</span>
         <p class="leading-relaxed">
-          Server qotib qolganda yoki profilaktikadan so'ng masofadan qayta yuklash buyrug'ini yuboradi. Barcha mijoz kompyuterlari ulanishni 5 soniya ichida qayta tiklaydi.
+          Eng yangi release tekshiriladi. Yangisi bo‘lsa o‘rnatilib, server dasturi qayta ochiladi. Yuklash va o‘rnatish tugagach clientlar qayta ulanadi.
         </p>
       </div>
 
@@ -163,8 +163,8 @@ function renderRestartDialog() {
       <label class="flex items-center gap-2.5 p-3 rounded-xl bg-zinc-900 border border-zinc-800 cursor-pointer select-none">
         <input id="checkRestartForce" type="checkbox" checked class="w-4 h-4 rounded text-sky-500 bg-zinc-800 border-zinc-700 focus:ring-sky-500" />
         <div class="text-xs">
-          <span class="text-white font-semibold block">Majburiy to'xtatish (Force Kill)</span>
-          <span class="text-[10px] text-zinc-400 block">Jarayon osilib qolgan bo'lsa darhol o'chirib qayta yoqadi</span>
+          <span class="text-white font-semibold block">Faol seanslar tugashini kutmaslik</span>
+          <span class="text-[10px] text-zinc-400 block">Saqlash amallari tugatiladi, so‘ng dastur qayta ochiladi</span>
         </div>
       </label>
 
@@ -500,6 +500,7 @@ window.handleLicenseSubmit = async function(e) {
     const data = await res.json();
     if (data.success) {
       showRemoteToast(`✓ ${data.message}`);
+      window.trackRemoteCommand?.(clubId,data.commandId || data.queuedCommand?.id);
       closeRemoteCommandModal();
       if (typeof window.refreshDashboardData === 'function') window.refreshDashboardData();
       if (typeof window.refreshClubsDirectory === 'function') window.refreshClubsDirectory();
@@ -539,6 +540,7 @@ window.handleRestartSubmit = async function(e) {
     const data = await res.json();
     if (data.success) {
       showRemoteToast(`✓ ${data.message}`);
+      window.trackRemoteCommand?.(clubId,data.commandId || data.queuedCommand?.id);
       closeRemoteCommandModal();
     } else {
       showRemoteToast(`Xatolik: ${data.error}`);

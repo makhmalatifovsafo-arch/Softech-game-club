@@ -130,11 +130,13 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const otherPc=list.find(x=>x.id!==pc.id);
   if(otherPc) assert.ok((await api('/api/clients/login-session','POST',{computerId:otherPc.id,username:'gamer1',password:'gamer123',durationMinutes:60})).status>=400,'One member cannot play on two PCs at once');
   const past=new Date(Date.now()-120000).toISOString();
+  const agreedRates=JSON.parse(fixture.prepare('SELECT prepaid_rate_plan FROM sessions WHERE id=?').get(liveId).prepaid_rate_plan);
+  const expectedTwoMinutes=Math.round(agreedRates[0]+agreedRates[1]);
   fixture.prepare('UPDATE sessions SET started_at=?,billing_last_at=? WHERE id=?').run(past,past,liveId);
   const liveClosed=await api('/api/sessions/stop','POST',{computerId:pc.id,paymentType:'CASH'});
   assert.equal(liveClosed.status,200,JSON.stringify(liveClosed.body));
   const billed=fixture.prepare('SELECT total_amount FROM sessions WHERE id=?').get(liveId).total_amount;
-  assert.ok(billed>=gameAmount/30 && billed<gameAmount/30+5,'Two minutes charged, not the whole balance: '+billed);
+  assert.ok(billed>=expectedTwoMinutes && billed<expectedTwoMinutes+5,'Two minutes at the agreed member tariff, not the whole balance: '+billed);
   const remaining=fixture.prepare('SELECT balance FROM users WHERE id=?').get(member.id).balance;
   assert.equal(remaining,balanceBefore-billed);
   assert.equal(liveClosed.body.refundAmount,memberLogin.body.amount-billed);
@@ -228,6 +230,40 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal(expiryDb.prepare('SELECT payment_status FROM bar_orders WHERE session_id=?').get(expiryId).payment_status,'PENDING_AT_CHECKOUT','Dismissing is not payment');
   assert.equal((await api('/api/sessions/'+expiryId+'/checkout','POST',{paymentMethod:'CASH'})).body.amountCollected,5000);
   expiryDb.close();
+  // A newly created cashier account must work through the actual kiosk WebSocket.
+  const createdMember=await api('/api/admin/users','POST',{username:'fresh-member',password:'fresh-password',role:'client',balance:0});
+  assert.equal(createdMember.status,201,JSON.stringify(createdMember.body));
+  const memberId=createdMember.body.user.id;
+  function kioskMessage(type, action) {
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{socket.off('message',listener);reject(new Error('Missing kiosk '+type));},4000);
+      const listener=raw=>{const message=JSON.parse(raw);if(message.type===type){clearTimeout(timer);socket.off('message',listener);resolve(message.payload);}};
+      socket.on('message',listener);action();
+    });
+  }
+  const signIn=password=>socket.send(JSON.stringify({type:'CLIENT_MEMBER_LOGIN',payload:{username:'fresh-member',password,durationMinutes:60}}));
+  assert.match((await kioskMessage('MEMBER_LOGIN_FAILED',()=>signIn('wrong-password'))).error,/Login/);
+  assert.match((await kioskMessage('MEMBER_LOGIN_FAILED',()=>signIn('fresh-password'))).error,/balans/);
+  assert.equal((await api('/api/clients/topup','POST',{userId:memberId,amount:50000,paymentMethod:'CASH'})).status,200);
+  const freshSession=await kioskMessage('MEMBER_LOGIN_SUCCESS',()=>signIn('fresh-password'));
+  const freshPc=(await api('/api/computers')).body.find(p=>p.id===pc.id);
+  assert.equal(freshPc.activeSession.isMember,true);assert.equal(freshPc.activeSession.memberId,memberId);
+  assert.equal(freshPc.activeSession.customerName,'fresh-member');assert.equal(freshPc.activeSession.memberBalance,freshSession.balance);
+  assert.match((await kioskMessage('MEMBER_LOGIN_FAILED',()=>signIn('fresh-password'))).error,/allaqachon/);
+  const selfStop=await kioskMessage('STOP_SESSION',()=>socket.send(JSON.stringify({type:'CLIENT_MEMBER_LOGOUT',payload:{sessionId:freshSession.sessionId}})));
+  assert.equal(selfStop.memberSummary.username,'fresh-member');assert.equal(selfStop.memberSummary.accountId,memberId);
+  assert.ok(selfStop.memberSummary.balance>=freshSession.balance);assert.equal(selfStop.barNotice,null);
+  assert.equal((await api('/api/computers')).body.find(p=>p.id===pc.id).activeSession,null);
+  const nextSession=await kioskMessage('MEMBER_LOGIN_SUCCESS',()=>signIn('fresh-password'));
+  const memberPreview=(await api('/api/sessions/'+nextSession.sessionId+'/checkout-preview')).body;
+  assert.equal(memberPreview.isMember,true);assert.equal(memberPreview.amountToCollect,0);assert.ok(memberPreview.member.refundAmount>0);
+  let closeResponse;
+  const adminStop=await kioskMessage('STOP_SESSION',()=>{closeResponse=api('/api/sessions/stop','POST',{sessionId:nextSession.sessionId});});
+  const closedMember=await closeResponse;assert.equal(closedMember.status,200);
+  assert.deepEqual(adminStop.memberSummary,closedMember.body.memberSummary);
+  assert.equal(closedMember.body.amountCollected,0);assert.equal(adminStop.barNotice,undefined);
+  assert.equal((await api('/api/computers')).body.find(p=>p.id===pc.id).activeSession,null);
+  assert.ok((await api('/api/sessions/stop','POST',{sessionId:nextSession.sessionId})).status>=400,'Repeated close must not refund twice');
   // Two different rooms must quote and charge their own rates, not a caller-supplied amount.
   const batchDb=new DatabaseSync(databasePath);batchDb.exec('PRAGMA busy_timeout=5000');
   for(const [num,rate] of [[910,7000],[911,10000]]){
@@ -247,6 +283,21 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   batchDb.exec("DELETE FROM tariffs WHERE id IN ('quote-910','quote-911'); DELETE FROM zones WHERE id IN (910,911)");batchDb.close();
   assert.equal((await api('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60})).status,201);
   const proof=JSON.parse(readFileSync(path.join(path.dirname(databasePath),'data/softech_license.sig'),'utf8'));
+  const commandIds=[];
+  for(const commandType of ['FORCE_UPDATE','RESTART_SERVER']) {
+    const route=cloudUrl+'/api/telemetry/commands/'+cloudClubId;
+    assert.equal((await request(route,'POST',{commandType})).status,401);
+    const queued=await request(route,'POST',{commandType,payload:{force:true}},cloudToken);
+    assert.equal(queued.status,200,JSON.stringify(queued.body));assert.ok(queued.body.commandId);commandIds.push(queued.body.commandId);
+  }
+  const commandDelivery=await request(cloudUrl+'/api/telemetry/heartbeat','POST',{clubId:cloudClubId,signedLicense:proof});
+  assert.equal(commandDelivery.status,200);
+  for(const id of commandIds)assert.ok(commandDelivery.body.signedCommands.some(c=>c.payload.id===id&&c.signature));
+  // Simulate a failed installation acknowledgement; no real PC is restarted by this HTTP test.
+  await request(cloudUrl+'/api/telemetry/heartbeat','POST',{clubId:cloudClubId,signedLicense:proof,commandResults:commandIds.map(id=>({id,status:'FAILED',message:'Isolated fixture: install denied'}))});
+  const commandHistory=await request(cloudUrl+'/api/telemetry/commands/history/'+cloudClubId,'GET',undefined,cloudToken);
+  assert.equal(commandHistory.status,200);
+  for(const id of commandIds){const row=commandHistory.body.history.find(r=>r.id===id);assert.equal(row.status,'FAILED');assert.match(row.payload.result.message,/Isolated fixture/);}
   assert.equal((await request(cloudUrl+'/api/telemetry/heartbeat','POST',{clubId:cloudClubId,todayRevenue:999999})).status,401,'Club ID alone is not telemetry authentication');
   const telemetry=await request(cloudUrl+'/api/telemetry/heartbeat','POST',{clubId:cloudClubId,signedLicense:proof,todayRevenue:12345,barRevenue:2345,onlinePcsCount:1,occupiedPcsCount:1});
   assert.equal(telemetry.status,200,JSON.stringify(telemetry.body));

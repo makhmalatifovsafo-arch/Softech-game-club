@@ -602,13 +602,13 @@ function seedInitialData() {
 
   // 5. Dinamik tarif jadvallari (Tariff Schedules)
   const schedCountRow = db.prepare('SELECT COUNT(*) as count FROM tariff_schedules').get();
-  if (!schedCountRow || Number(schedCountRow.count) === 0) {
+  if (demo && !tariffExists && (!schedCountRow || Number(schedCountRow.count) === 0)) {
     db.prepare(`
       INSERT INTO tariff_schedules (club_id, name, days_of_week, start_time, end_time, price_per_hour, is_vip, priority)
       VALUES 
         (1, 'Kunduzgi tarif (Ish kunlari)', '[1,2,3,4,5]', '09:00', '18:00', 8000.0, 0, 1),
         (1, 'Kechki / Tun tarifi (Ish kunlari)', '[1,2,3,4,5]', '18:00', '09:00', 12000.0, 0, 2),
-        (1, 'Dam olish kunlari tarifi', '[6,7]', '00:00', '23:59', 15000.0, 0, 3);
+        (1, 'Dam olish kunlari tarifi', '[6,7]', '00:00', '00:00', 15000.0, 0, 3);
     `).run();
     console.log('📅 [Database] Dinamik tarif jadvali qoidalari (club_id=1) kiritildi.');
   }

@@ -24,6 +24,12 @@ try{
   fail=false;await page.getByLabel('Eslatmani yopish').click();await page.locator('[role=alertdialog]').waitFor({state:'detached'});
   await page.reload();await page.clock.fastForward(11000);assert.equal(await page.locator('[role=alertdialog]').count(),0);
   console.log('PASS cashier notice: exact items, no timeout, duplicates, safe text, durable dismissal and retry');
+  await page.evaluate(n=>showSessionEndNotice({...n,sessionId:'member',reason:'LOGOUT',customerName:'gamer1'}),notice);
+  assert.match(await page.locator('[data-title]').innerText(),/PC-7: gamer1 seansni yakunladi/);
+  assert.match(await page.locator('[data-items]').innerText(),/1 ta Cola, 2 ta Fanta/);
+  await page.clock.fastForward(20000);
+  assert.equal(await page.locator('[role=alertdialog]').isVisible(),true);
+  console.log('PASS member logout notice: account name, products and no automatic dismissal');
 
   const html=fs.readFileSync('NetCafeServer/public/index.html','utf8');
   const quoteHelper=html.slice(html.indexOf('    async function fetchStartQuote('),html.indexOf('    // 1. Soat'));

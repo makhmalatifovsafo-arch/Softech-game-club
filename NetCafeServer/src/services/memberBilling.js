@@ -1,10 +1,22 @@
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { verifyPassword } from '../auth.js';
-import { getActiveRateForMoment, calculateTimeFromAmount, resolveZoneIdForComputer } from './pricingEngine.js';
+import { requireRateForMoment, calculateTimeFromAmount, resolveZoneIdForComputer } from './pricingEngine.js';
 export const isLiveMember = session => Boolean(session?.notes?.startsWith('CLIENT_BALANCE_LIVE:'));
 export const isPrepaidMember = session => Boolean(session?.notes?.startsWith('CLIENT_BALANCE_PREPAID:'));
 export const isMemberSession = session => isLiveMember(session) || isPrepaidMember(session);
+
+// Read after settlement, inside the closing transaction. Never include credentials.
+export function getMemberSessionSummary(sessionId, barDebt = 0) {
+  const session = db.prepare(`SELECT s.*, u.username, u.balance FROM sessions s
+    JOIN users u ON u.id=s.user_id AND u.club_id=s.club_id WHERE s.id=?`).get(sessionId);
+  if (!isMemberSession(session)) return null;
+  const refunded = db.prepare("SELECT COALESCE(SUM(amount),0) AS amount FROM client_transactions WHERE session_id=? AND type='REFUND'").get(sessionId);
+  return { sessionId, username:session.username, accountId:session.user_id,
+    playedMinutes:Math.max(0,Math.round((Date.parse(session.ends_at)-Date.parse(session.started_at))/60000)),
+    gameAmount:Number(session.paid_amount), refundAmount:Number(refunded.amount),
+    balance:Number(session.balance), barDebt:Number(barDebt) };
+}
 
 // Freeze the agreed minute prices so a later tariff edit cannot change a refund.
 export function quoteMemberMinutes(pcId, minutes, now = new Date()) {
@@ -13,11 +25,11 @@ export function quoteMemberMinutes(pcId, minutes, now = new Date()) {
   const pc = db.prepare('SELECT * FROM computers WHERE id=?').get(pcId);
   if (!pc) throw new Error('Kompyuter topilmadi.');
   const zone = resolveZoneIdForComputer(pc.id, pc.club_id);
-  const rates = Array.from({length:minutes}, (_, i) => Number(getActiveRateForMoment(
+  const rates = Array.from({length:minutes}, (_, i) => Number(requireRateForMoment(
     new Date(now.getTime() + i * 60000), false, pc.club_id, zone).pricePerHour) / 60);
   if (rates.some(rate => !Number.isFinite(rate) || rate < 0)) throw new Error('Tarif noto‘g‘ri.');
   return { pc, rates, amount:Math.round(rates.reduce((a,b)=>a+b,0)),
-    rate:getActiveRateForMoment(now,false,pc.club_id,zone) };
+    rate:requireRateForMoment(now,false,pc.club_id,zone) };
 }
 export function startMemberSession(pcId, username, password, durationMinutes) {
   const now = new Date();
@@ -89,7 +101,7 @@ export function settleMemberUsage(sessionId, now=new Date(), final=false, inTran
   const zone=resolveZoneIdForComputer(session.computer_id,session.club_id);
   while(cursor<end) {
     const next=Math.min(end,(Math.floor(cursor/60000)+1)*60000);
-    cost+=getActiveRateForMoment(new Date(cursor),false,session.club_id,zone).pricePerHour*(next-cursor)/3600000;
+    cost+=requireRateForMoment(new Date(cursor),false,session.club_id,zone).pricePerHour*(next-cursor)/3600000;
     cursor=next;
   }
   const due=Math.max(0,final?Math.round(cost):Math.floor(cost+1e-8));
