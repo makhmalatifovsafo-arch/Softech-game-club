@@ -189,6 +189,9 @@ function renderRestartDialog() {
           <span>🔄</span>
           <span>Serverni Qayta Ishga Tushirish</span>
         </button>
+        <button type="button" onclick="handleRestartSubmit(event, 'FORCE_UPDATE')" class="mt-2 w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs">
+          Eng yangi versiyaga majburiy yangilash
+        </button>
       </div>
     </form>
   `;
@@ -503,8 +506,9 @@ window.handleLicenseSubmit = async function(e) {
   }
 };
 
-window.handleRestartSubmit = async function(e) {
+window.handleRestartSubmit = async function(e, commandType = 'RESTART_SERVER') {
   e.preventDefault();
+  if (!['RESTART_SERVER', 'FORCE_UPDATE'].includes(commandType)) return;
   triggerHaptic([30, 50]);
 
   const clubId = remoteControlState.activeClubId;
@@ -523,7 +527,7 @@ window.handleRestartSubmit = async function(e) {
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
-        action: 'RESTART_SERVER',
+        action: commandType,
         payload: { delaySeconds, force, reason }
       })
     });

@@ -1,4 +1,7 @@
 2026-11-12: 1.1.0 unified tariffs, verified accounting and Windows updates
+- Super Admin club controls use one shared dialog: the dashboard no longer
+  replaces the message/license tabs with an obsolete command menu. Force update
+  remains available in the Server tab. Verified through the real page/module graph.
 - Fix license-unlock screens appearing empty: reload computers and bar automatically
   after activation; never treat blocked/failed API responses as an empty catalog.
   License block/restart/unlock tests preserve PCs, stock, layouts and tariffs.

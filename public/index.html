@@ -210,36 +210,8 @@
     </div>
   </main>
 
-  <!-- Remote Command Modal -->
-  <div id="remoteCommandModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-    <div class="glass-card w-full max-w-sm rounded-3xl p-5 space-y-4 border-sky-500/30 glow-cyan">
-      <div class="flex items-center justify-between">
-        <div>
-          <h3 class="text-sm font-bold text-white">Masofaviy Buyruq Yuborish</h3>
-          <p id="commandModalClubTitle" class="text-xs text-sky-400 font-mono mt-0.5">Filial nomi</p>
-        </div>
-        <button onclick="closeRemoteCommandModal()" class="text-zinc-400 hover:text-white p-1">✕</button>
-      </div>
-      <div class="space-y-2">
-        <button onclick="executeRemoteCommand('FORCE_UPDATE')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-sky-500/20 text-left text-xs font-semibold text-white flex items-center justify-between active:scale-98 transition">
-          <span class="flex items-center gap-2"><span>🚀</span><span>Eng yangi versiyaga majburiy yangilash</span></span>
-          <span class="text-sky-400 font-mono">➔</span>
-        </button>
-        <button onclick="executeRemoteCommand('RESTART_SERVER')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-amber-500/20 text-left text-xs font-semibold text-white flex items-center justify-between active:scale-98 transition">
-          <span class="flex items-center gap-2"><span>🔄</span><span>Serverni Qayta Ishga Tushirish</span></span>
-          <span class="text-amber-400 font-mono">➔</span>
-        </button>
-        <button onclick="executeRemoteCommand('RESET_ADMIN_PASSWORD')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-rose-500/20 text-left text-xs font-semibold text-white flex items-center justify-between active:scale-98 transition">
-          <span class="flex items-center gap-2"><span>🔑</span><span>Admin Parolini Tiklash</span></span>
-          <span class="text-rose-400 font-mono">➔</span>
-        </button>
-        <button onclick="executeRemoteCommand('LOCK_CLUB_LICENSE')" class="w-full py-2.5 px-4 rounded-xl glass-card hover:bg-zinc-800 text-left text-xs font-semibold text-zinc-400 flex items-center justify-between active:scale-98 transition">
-          <span class="flex items-center gap-2"><span>🔒</span><span>Litsenziyani Bloklash (Qarz)</span></span>
-          <span class="text-zinc-500 font-mono">➔</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  <!-- Shared remote controls are rendered by views/remoteControlModal.js. -->
+  <div id="remoteCommandModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/80 backdrop-blur-sm"></div>
 
   <!-- ======================================================================== -->
   <!-- 3. FLOATING GLASS BOTTOM NAVIGATION (Thumbs-friendly) -->

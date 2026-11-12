@@ -23,8 +23,7 @@ const state = {
   clubs: [],
   pendingActivations: [],
   user: null,
-  isRefreshing: false,
-  selectedClubForCommand: null
+  isRefreshing: false
 };
 
 // ============================================================================
@@ -536,50 +535,8 @@ window.setDashboardFilter = function(filterId) {
   }
 };
 
-window.openRemoteCommandModal = function(clubId, clubName) {
-  triggerHaptic(15);
-  state.selectedClubForCommand = { id: clubId, name: clubName };
-
-  const modal = document.getElementById('remoteCommandModal');
-  const targetTitle = document.getElementById('commandModalClubTitle');
-  if (modal && targetTitle) {
-    targetTitle.textContent = clubName;
-    modal.classList.remove('hidden');
-  }
-};
-
-window.closeRemoteCommandModal = function() {
-  const modal = document.getElementById('remoteCommandModal');
-  if (modal) modal.classList.add('hidden');
-  state.selectedClubForCommand = null;
-};
-
-window.executeRemoteCommand = async function(commandType) {
-  if (!state.selectedClubForCommand) return;
-  const clubId = state.selectedClubForCommand.id;
-  const clubName = state.selectedClubForCommand.name;
-
-  triggerHaptic([30, 50]);
-  showToast(`🚀 [${commandType}] buyrug'i ${clubName} ga yuborilmoqda...`);
-  closeRemoteCommandModal();
-
-  try {
-    const token = localStorage.getItem('softech_access_token');
-    const res = await fetch(`/api/telemetry/commands/${clubId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ commandType, payload: { timestamp: Date.now() } })
-    });
-    const data=await res.json();if(!res.ok||!data.success)throw Error(data.error||'Buyruq qabul qilinmadi.');
-    window.trackRemoteCommand?.(clubId,data.commandId || data.queuedCommand?.id);
-    showToast(data.message || 'Buyruq navbatga qo‘yildi.');
-  } catch (err) {
-    showToast(err.message || 'Buyruq yuborilmadi.');
-  }
-};
+// remoteControlModal.js owns the shared opener, closer and all command forms.
+// Do not replace its handlers after ES module imports have been evaluated.
 
 window.handleLogout = function() {
   triggerHaptic(20);

@@ -21,6 +21,10 @@ Corrected during this audit
 - Duplicate desktop page headings from the preceding change are included.
 
 Completed checks
+- Follow-up Super Admin controls: removed dashboard handlers that overwrote the
+  shared modal after ES module imports. Actual root and mirrored pages were tested
+  in Edge at 390px/1280px: club list -> controls -> message -> selected-club API;
+  reopening another club and license/restart/force-update controls also passed.
 - Follow-up license recovery: two regression tests reproduce the old UI failure and
   pass after the fix. Edge checks recovery without restarting the app and retained
   catalog state while blocked. No database reset or data migration is involved.
