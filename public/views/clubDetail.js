@@ -277,7 +277,7 @@ function renderKassaBreakdown(kassa) {
         </div>
       </div>
 
-      <p class="text-[11px] text-zinc-400">${kassa.capturedAt ? 'Sinxronlangan: '+new Date(kassa.capturedAt).toLocaleString() : 'Batafsil hisobot hali sinxronlanmagan. Serverni yangilang va internetga ulang.'}</p>
+      <p class="text-[11px] text-zinc-400">${kassa.capturedAt ? 'Sinxronlangan: '+new Date(kassa.capturedAt).toLocaleString('uz-UZ', { hourCycle: 'h23' }) : 'Batafsil hisobot hali sinxronlanmagan. Serverni yangilang va internetga ulang.'}</p>
       <!-- Financial Split Cards Grid -->
       <div class="grid grid-cols-3 gap-2.5">
         <!-- 1. Seanslar Tushumi -->

@@ -13,6 +13,10 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
     assert.equal(room.status,201,JSON.stringify(room.body));
     const expensive=await api('/api/zones','POST',{name:'Postpaid expensive destination',tariffs:[{name:'Room 20000',price_per_hour:20000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7],is_vip_postpaid_allowed:true}]});
     assert.equal(expensive.status,201);
+    const item=await api('/api/bar/items','POST',{name:'VIP billing regression drink',category:'DRINKS',buyPrice:2000,sellPrice:6000,stockQuantity:20});
+    assert.equal(item.status,201,JSON.stringify(item.body));
+    const barItemId=item.body.item?.id || item.body.id;
+    assert.ok(barItemId,JSON.stringify(item.body));
     const pcs=[];
     for (const pcNumber of [971,972]) {
       const added=await api('/api/admin/computers','POST',{name:'Postpaid-'+pcNumber,pcNumber});
@@ -36,20 +40,39 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
       assert.equal(preview.body.pricingMode,mode);
       assert.equal(preview.body.customPrice,mode==='CUSTOM'?9000:null);
       assert.ok(Math.abs(preview.body.gameBill-live.totalAmount)<20,'List and checkout must use the same rate');
+      const addBar=async pc=>{
+        const sale=await api('/api/bar/orders','POST',{items:[{barItemId,quantity:1}],computerId:pc,sessionId:id,paymentMethod:'ON_PC_SESSION',paymentStatus:'PENDING_AT_CHECKOUT'});
+        assert.equal(sale.status,201,JSON.stringify(sale.body));
+      };
+      await addBar(pcs[0]);
+      assert.match(db.prepare('SELECT notes FROM sessions WHERE id=?').get(id).notes,/POSTPAID.*BAR:/);
+      const withBar=(await api('/api/computers')).body.find(p=>p.id===pcs[0]).activeSession;
+      assert.equal(withBar.isPostpaid,true,'A real bar order must not erase VIP mode');
+      assert.ok(withBar.totalAmount>=rate/2 && withBar.totalAmount<rate/2+20);
+      assert.equal(withBar.barPendingAmount,6000);assert.equal(withBar.totalWithBar,withBar.totalAmount+6000);
+      const barPreview=await api('/api/sessions/'+id+'/checkout-preview');
+      assert.equal(barPreview.status,200);assert.equal(barPreview.body.isPostpaid,true);
+      assert.equal(barPreview.body.barBill,6000);assert.ok(barPreview.body.gameBill>=rate/2);
+      assert.equal(barPreview.body.amountToCollect,barPreview.body.gameBill+6000);
       // A real transfer appends a suffix; generic /stop must still collect a postpaid payment.
       const transfer=await api('/api/sessions/transfer','POST',{fromComputerId:pcs[0],toComputerId:pcs[1]});
       assert.equal(transfer.status,200,JSON.stringify(transfer.body));
       const moved=(await api('/api/computers')).body.find(p=>p.id===pcs[1]).activeSession;
       assert.equal(moved.isPostpaid,true);assert.ok(moved.totalAmount>=rate/2);
       assert.ok(moved.totalAmount<rate/2+20,'Historical debt must not be doubled by the new room rate');
+      await addBar(pcs[1]);
+      const withSecondBar=(await api('/api/computers')).body.find(p=>p.id===pcs[1]).activeSession;
+      assert.equal(withSecondBar.isPostpaid,true);assert.equal(withSecondBar.barPendingAmount,12000);
+      assert.ok(withSecondBar.totalAmount>=rate/2);
       const stop=await api('/api/sessions/stop','POST',{sessionId:id,paymentType:'CASH'});
       assert.equal(stop.status,200,JSON.stringify(stop.body));
+      assert.equal(stop.body.barBill,12000);assert.equal(stop.body.amountCollected,stop.body.gameBill+12000);
       const receipts=db.prepare("SELECT amount FROM transactions WHERE session_id=? AND transaction_type='POSTPAID_SETTLEMENT'").all(id);
       assert.equal(receipts.length,1,'Transferred VIP must create exactly one game payment');
       assert.equal(receipts[0].amount,stop.body.gameBill);assert.ok(receipts[0].amount>=rate/2 && receipts[0].amount<rate/2+20);
       assert.equal(db.prepare('SELECT total_amount FROM sessions WHERE id=?').get(id).total_amount,receipts[0].amount);
       assert.notEqual((await api('/api/sessions/stop','POST',{sessionId:id})).status,200,'A settled bill must not charge twice');
-      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE session_id=?').get(id).n,1);
+      assert.equal(db.prepare('SELECT SUM(amount) AS total FROM transactions WHERE session_id=?').get(id).total,stop.body.gameBill+12000,'Game and bar are collected exactly once');
     }
     // Legacy group VIP markers must have the same display and missing-tariff behavior.
     await api('/api/settings','PUT',{vip_pricing_mode:'SCHEDULE'});
@@ -66,7 +89,7 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
     db.prepare("UPDATE tariffs SET days_of_week='[1,2,3,4,5,6,7]' WHERE zone_id=?").run(room.body.zone.id);
     assert.equal((await api('/api/sessions/'+id+'/checkout','POST',{paymentMethod:'CASH'})).status,200);
     for (const price of [0,-1,'invalid']) assert.equal((await api('/api/settings','PUT',{vip_custom_price:price})).status,400);
-    console.log('PASS VIP live amount, room/custom rates, transfer settlement, group VIP, missing rates and duplicate-payment protection');
+    console.log('PASS VIP live amount, real bar orders before/after transfer, room/custom rates, exact game/bar settlement, group VIP and duplicate-payment protection');
   } finally {
     db.close();await api('/api/settings','PUT',previous);
   }

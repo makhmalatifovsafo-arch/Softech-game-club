@@ -1944,7 +1944,7 @@
           </div>
           <div>
             <label class="block text-[11px] uppercase tracking-wider font-semibold text-zinc-400 mb-1.5">Boshlanish Vaqti</label>
-            <input type="time" id="bookingStartTime" onchange="updateBookingModalEndTime(); checkBookingModalConflict();" required value="18:00"
+            <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" id="bookingStartTime" onchange="updateBookingModalEndTime(); checkBookingModalConflict();" required value="18:00"
                    class="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-sky-500 font-mono">
           </div>
         </div>
@@ -2212,9 +2212,9 @@
               <div>
                 <label class="block text-[11px] text-[#71717a] mb-1">Oraliq (Boshlanish - Tugash)</label>
                 <div class="flex items-center gap-1.5">
-                  <input type="time" id="schedStart" value="10:00" required class="w-1/2 bg-[#141418] border border-[#27272a] rounded-lg px-2 py-1.5 text-xs text-white">
+                  <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" id="schedStart" value="10:00" required class="w-1/2 bg-[#141418] border border-[#27272a] rounded-lg px-2 py-1.5 text-xs text-white">
                   <span class="text-zinc-500">-</span>
-                  <input type="time" id="schedEnd" value="17:00" required class="w-1/2 bg-[#141418] border border-[#27272a] rounded-lg px-2 py-1.5 text-xs text-white">
+                  <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" id="schedEnd" value="17:00" required class="w-1/2 bg-[#141418] border border-[#27272a] rounded-lg px-2 py-1.5 text-xs text-white">
                 </div>
               </div>
               <div>
@@ -2604,7 +2604,7 @@
             <span class="text-[11px] text-sky-400 font-mono font-bold" id="endTimeCalculatedMins">Oraliq hisoblanmoqda...</span>
           </div>
           <div class="relative">
-            <input type="time" id="inputTargetEndTime" oninput="calcFromEndTime(this.value)"
+            <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" id="inputTargetEndTime" oninput="calcFromEndTime(this.value)"
                    class="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-lg font-mono font-bold text-white focus:outline-none focus:border-sky-500">
           </div>
           <div class="text-[11px] text-zinc-500">
@@ -6026,11 +6026,11 @@
         </div>
         <div class="col-span-2">
           <label class="text-[10px] text-zinc-500 block mb-0.5">Boshlanish</label>
-          <input type="time" value="${escapeHtml(startTime)}" class="ztr-start w-full bg-black/60 border border-zinc-700 rounded-lg px-1.5 py-1 text-white font-mono text-xs focus:border-sky-500 outline-none text-center">
+          <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" value="${escapeHtml(startTime)}" class="ztr-start w-full bg-black/60 border border-zinc-700 rounded-lg px-1.5 py-1 text-white font-mono text-xs focus:border-sky-500 outline-none text-center">
         </div>
         <div class="col-span-2">
           <label class="text-[10px] text-zinc-500 block mb-0.5">Tugash</label>
-          <input type="time" value="${escapeHtml(endTime)}" class="ztr-end w-full bg-black/60 border border-zinc-700 rounded-lg px-1.5 py-1 text-white font-mono text-xs focus:border-sky-500 outline-none text-center">
+          <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" value="${escapeHtml(endTime)}" class="ztr-end w-full bg-black/60 border border-zinc-700 rounded-lg px-1.5 py-1 text-white font-mono text-xs focus:border-sky-500 outline-none text-center">
         </div>
         <div class="col-span-4">
           <label class="text-[10px] text-zinc-500 block mb-0.5">Soatlik Narx (UZS)</label>

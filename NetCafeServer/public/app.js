@@ -2490,7 +2490,7 @@ function renderBarRecentOrders() {
   }
 
   container.innerHTML = barOrders.map(ord => {
-    const timeStr = ord.createdAt ? new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+    const timeStr = ord.createdAt ? new Date(ord.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '--:--';
     const itemsSummary = (ord.items || []).map(i => `${escapeHtml(i.item_name)} (${i.quantity} dona)`).join(', ') || 'Mahsulot';
     
     let destBadge = '';
