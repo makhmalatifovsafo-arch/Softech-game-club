@@ -53,9 +53,19 @@ export class CloudActivationService {
       club = await this.byHwid(hwid);
       if (!club) throw activationError('Litsenziya so\'rovi saqlanmadi.', 503);
     }
-    if (club.status !== 'PENDING') return { success: true, status: ['ACTIVE','TRIAL'].includes(club.status) ? 'APPROVED' : 'REJECTED', message: 'So\'rov holati mavjud.' };
+    const active = ['ACTIVE','TRIAL'].includes(club.status) && Date.parse(club.license_expires_at) > Date.now();
+    if (club.status !== 'PENDING' && !active && body.requestRenewal === true) {
+      // An explicit renewal only queues review; PENDING cannot issue a license.
+      // Keep the existing identity, credentials, capacity and block reason intact.
+      let query = this.client().from('clubs').update({status:'PENDING',updated_at:new Date().toISOString()})
+        .eq('id',club.id).eq('status',club.status).eq('hardware_fingerprint',hwid);
+      query = club.license_expires_at == null ? query.is('license_expires_at',null) : query.eq('license_expires_at',club.license_expires_at);
+      club = await this.result(query.select().maybeSingle());
+      if (!club) throw activationError('Litsenziya holati o‘zgardi. Qayta tekshiring.',409);
+    }
+    if (club.status !== 'PENDING') return { success: true, status: active ? 'APPROVED' : 'REJECTED', message: 'So\'rov holati mavjud.' };
     const notification = await TelegramBotService.sendMessage(
-      '<b>YANGI SERVER LITSENZIYA SO\'ROVI</b>\nKlub: ' + escapeHtml(club.name) + '\nHWID: <code>' + escapeHtml(hwid) + '</code>\nPC: ' + club.total_workstations,
+      '<b>' + (body.requestRenewal === true ? 'LITSENZIYANI QAYTA FAOLLASHTIRISH SO‘ROVI' : 'YANGI SERVER LITSENZIYA SO‘ROVI') + '</b>\nKlub: ' + escapeHtml(club.name) + '\nHWID: <code>' + escapeHtml(hwid) + '</code>\nPC: ' + club.total_workstations,
       { replyMarkup: { inline_keyboard: [[{ text: 'Tasdiqlash', callback_data: 'approve_' + club.id }, { text: 'Rad etish', callback_data: 'reject_' + club.id }]] } });
     return { success: true, status: 'PENDING', requestId: club.id, notification,
       message: notification.success ? 'So\'rov saqlandi va Telegramga yuborildi.' : 'So\'rov saqlandi. Telegramga yuborilmadi; super admin panelidan tasdiqlash mumkin.' };
@@ -69,7 +79,7 @@ export class CloudActivationService {
     const club = await this.result(client.from('clubs').select('*').eq('id', id).maybeSingle());
     if (!club) throw activationError('So\'rov topilmadi.', 404);
     if (club.status !== 'PENDING') throw activationError('So\'rov allaqachon ko\'rib chiqilgan.', 409);
-    const updated = await this.result(client.from('clubs').update({ status: 'ACTIVE',
+    const updated = await this.result(client.from('clubs').update({ status: 'ACTIVE', block_reason:null,
       license_expires_at: new Date(Date.now() + positiveInteger(days, 30, 3650) * 86400000).toISOString(),
       total_workstations: positiveInteger(maxPcs, club.total_workstations), updated_at: new Date().toISOString()
     }).eq('id', id).eq('status', 'PENDING').select().maybeSingle());

@@ -345,6 +345,18 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 #mainContainer #view-bar > div:first-child > div:last-child > div:not(.relative) button { min-height: 30px; height: 30px; }
 #barCatalogCardsView > div > div:last-child { display: grid; grid-template-columns: minmax(0,1fr); }
 #barCatalogCardsView > div > div:last-child button { width: 100%; justify-content: center; }
+/* Classic PC cards size themselves to the available panel, including sidebar/zoom. */
+#pcGrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+#pcGrid > div { min-width: 0; overflow-wrap: anywhere; }
+.pc-grid-card .pc-card-header { display: flex; flex-direction: column; gap: 8px; }
+.pc-grid-card .flex { min-width: 0; flex-wrap: wrap; gap: 6px; }
+.pc-grid-card .flex > * { min-width: 0; max-width: 100%; }
+.pc-grid-card .pc-card-identity > span:first-child { flex-shrink: 0; }
+.pc-grid-card .pc-card-identity > span:nth-child(2) { flex: 1 1 130px; }
+.pc-grid-card .pc-card-identity > span:nth-child(2) > span { overflow-wrap: anywhere; }
+.pc-grid-card .softech-timer { font-size: clamp(18px, 2vw, 24px); }
+.pc-grid-card [data-session-bill] { overflow-wrap: anywhere; }
+.pc-grid-card > div:last-child button { min-height: 32px; flex-shrink: 0; }
 .report-date-toolbar > div:first-child { height: 40px; }
 .report-date-toolbar > div:first-child button { height: 30px; white-space: nowrap; }
 .report-date-toolbar > div:last-child > div { height: 40px; padding-block: 3px; }

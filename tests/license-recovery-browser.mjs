@@ -12,10 +12,11 @@ const guard=fs.readFileSync('NetCafeServer/public/licenseGuard.js','utf8');
 const browser=await chromium.launch({channel:'msedge',headless:true});
 try {
   const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  let state='LOCKED_BY_ADMIN';let catalogCalls=0;
+  let state='LOCKED_BY_ADMIN';let catalogCalls=0,renewals=0;
   await page.route('http://license.test/**',async route=>{
     const url=new URL(route.request().url());
     if(url.pathname==='/api/license/status')return route.fulfill({json:{state,clubName:'Saved Club',hwid:'TEST',lockMessage:'Test block'}});
+    if(url.pathname==='/api/license/request-activation') {renewals++;return route.fulfill({json:{success:true,status:'PENDING',message:'Telegram request sent; approval required'}});}
     if(url.pathname.startsWith('/api/')){
       catalogCalls++;
       if(state!=='ACTIVE')return route.fulfill({status:403,json:{error:'LICENSE_BLOCKED'}});
@@ -40,6 +41,9 @@ try {
   await page.locator('#softechLicenseLockOverlay').waitFor({state:'visible'});
   // An app opened during a ban starts with empty memory, but unlock must load its saved data.
   assert.equal(await page.locator('#pcs').innerText(),'');
+  await page.locator('#btnSendActivationReq').click();
+  await page.getByText('✅ Telegram request sent; approval required',{exact:true}).waitFor();
+  assert.equal(renewals,1);assert.equal(await page.locator('#softechLicenseLockOverlay').isVisible(),true);
   state='ACTIVE';await page.evaluate(()=>window.checkLicenseNow());
   await page.getByText('Saved PC',{exact:true}).waitFor();await page.getByText('Saved Cola: 19',{exact:true}).waitFor();
   const callsAfterRecovery=catalogCalls;

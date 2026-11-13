@@ -118,6 +118,7 @@ export class LicenseManager {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clubName,
+          requestRenewal: ['LOCKED_BY_ADMIN','EXPIRED'].includes(this.state),
           hardwareFingerprint: hwid,
           totalPcs: 16,
           serverVersion: installedVersion()

@@ -4347,7 +4347,10 @@
           return;
         }
         if (pc.activeSession && pc.activeSession.remainingSeconds > 0) {
-          pc.activeSession.remainingSeconds--;
+          const end = Date.parse(pc.activeSession.endsAt);
+          pc.activeSession.remainingSeconds = Number.isFinite(end)
+            ? Math.max(0, Math.ceil((end - Date.now()) / 1000))
+            : Math.max(0, pc.activeSession.remainingSeconds - 1);
           const timeStr = formatTime(pc.activeSession.remainingSeconds);
           const isExpiring = pc.activeSession.remainingSeconds <= 300;
 
@@ -4800,12 +4803,12 @@
         // To'lov / Summa
         let paymentInfo = '<span class="text-zinc-600 font-mono">—</span>';
         if (isOccupied) {
-          const s = pc.activeSession;
-          const amt = Number(s.totalAmount || s.amount || 0);
+          const s = activeS || {};
           const pMethod = s.paymentType === 'BALANCE' ? 'Akkaunt' : (s.paymentType === 'CARD' ? 'Karta' : (s.paymentType === 'POSTPAID' ? 'Kassada' : 'Naqd'));
           paymentInfo = `
             <div data-session-bill="${pc.id}" title="${escapeHtml(s.billingError || '')}" class="text-xs font-bold text-emerald-400 font-mono">${sessionBillLabel(s)}</div>
             <span class="text-[10px] text-zinc-500 font-mono">${pMethod}</span>
+            ${Number(s.barPendingAmount || pc.barPendingAmount || 0) > 0 ? `<div class="text-[10px] text-amber-400">Bar qarzi: ${Number(s.barPendingAmount || pc.barPendingAmount).toLocaleString()} UZS</div>` : ''}
           `;
         }
 
@@ -5373,6 +5376,9 @@
 
         if (isOffline || state.key === 'MAINTENANCE') bottomText = `<span class="text-[9px] font-semibold leading-none" style="color:${state.color}">${state.label}</span>`;
         let headerRightContent = `<span class="w-2 h-2 rounded-full ${statusDotClass} shrink-0" style="background:${state.color};box-shadow:0 0 6px ${state.color}"></span>`;
+        if (Number(activeS?.barPendingAmount || pc.barPendingAmount || 0) > 0) {
+          headerRightContent = `<span data-session-bar="${pc.id}" title="Bar qarzi: ${Number(activeS?.barPendingAmount || pc.barPendingAmount).toLocaleString()} UZS" class="text-[10px] text-amber-300 shrink-0">&#128722;</span>` + headerRightContent;
+        }
         if (isMainLayoutEdit) {
           headerRightContent = `
             <div class="flex items-center gap-1">
@@ -8784,7 +8790,7 @@
           card.id = `pc-card-${pc.id}`;
           card.setAttribute('data-pc-id', pc.id);
           card.setAttribute('data-pc-index', idx);
-          card.className = `softech-panel rounded-2xl p-4 flex flex-col justify-between group transition-all relative cursor-pointer select-none ${borderClasses}`;
+          card.className = `pc-grid-card softech-panel rounded-2xl p-4 flex flex-col justify-between group transition-all relative cursor-pointer select-none ${borderClasses}`;
 
           card.onclick = (e) => {
             handleCardClick(pc.id, idx, e);
@@ -8806,14 +8812,14 @@
 
           card.innerHTML = `
             <!-- Yuqori qism: Tanlov, Nom, Zona va Holat -->
-            <div class="flex items-center justify-between pointer-events-none">
-              <div class="flex items-center gap-2">
+            <div class="pc-card-header pointer-events-none">
+              <div class="pc-card-identity flex items-center gap-2">
                 <span class="w-4 h-4 rounded-md border ${isSelected ? 'bg-sky-500 border-sky-400 text-black flex items-center justify-center font-bold text-[10px]' : 'border-[#27272a] bg-[#09090b] group-hover:border-[#3f3f46]'} transition">
                   ${isSelected ? '✓' : ''}
                 </span>
                 <span class="font-sans font-bold text-sm tracking-tight text-[var(--text-main)] group-hover:text-white transition flex items-center gap-1.5">
-                  <span>${pc.name}</span>
-                  ${pc.roomName ? `<span class="text-xs font-medium text-sky-400 font-sans tracking-normal">• ${pc.roomName}</span>` : ''}
+                  <span>${escapeHtml(pc.name)}</span>
+                  ${pc.roomName ? `<span class="text-xs font-medium text-sky-400 font-sans tracking-normal">• ${escapeHtml(pc.roomName)}</span>` : ''}
                 </span>
                 ${zoneBadgeHtml}
                 ${pc.upcomingBooking ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse" title="Bron qilingan: ${escapeHtml(pc.upcomingBooking.customerName)}">📅 ${escapeHtml(pc.upcomingBooking.startTime)}</span>` : ''}
@@ -8829,11 +8835,11 @@
               ${isOccupied ? `
                 <div>
                   <div class="flex items-baseline justify-between">
-                    <div id="timer-${pc.id}" class="softech-timer text-2xl font-bold tracking-tight ${(activeS?.remainingSeconds || 0) <= 300 ? 'text-amber-400 animate-pulse' : 'text-amber-400'}">
+                    <div id="timer-${pc.id}" class="softech-timer text-2xl font-bold tracking-tight ${!activeS?.isPostpaid && (activeS?.remainingSeconds || 0) <= 300 ? 'text-amber-400 animate-pulse' : 'text-amber-400'}">
                       ${activeS?.isPostpaid ? postpaidTimeLabel(activeS) : formatTime(activeS?.remainingSeconds || 0)}
                     </div>
                     <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                      ${activeS?.isMember ? '👤 Mijoz hisobi' : escapeHtml(activeS?.paymentType || 'CASH')}
+                      ${activeS?.isPostpaid ? 'VIP Postpaid' : activeS?.isMember ? '👤 Mijoz hisobi' : escapeHtml(activeS?.paymentType || 'CASH')}
                     </span>
                   </div>
 
@@ -8845,13 +8851,13 @@
                   <div class="flex items-center justify-between text-[11px] truncate">
                     <span class="font-semibold text-white truncate max-w-[120px]">${escapeHtml(activeS?.customerName || 'Mehmon')}</span>
                     <span class="font-mono text-sky-400 text-[10px] ml-1 shrink-0 font-medium">
-                      ${activeS?.tariffName || 'Standart'}
+                      ${escapeHtml(activeS?.tariffName || 'Standart')}
                     </span>
                   </div>
 
                   <div class="flex items-center justify-between text-[10px] text-zinc-400 mt-1">
                     ${activeS?.isMember ? `<span>Hisob #${Number(activeS.memberId)} balansi:</span><span class="font-mono text-emerald-300">${Number(activeS.memberBalance || 0).toLocaleString()} UZS</span></div><div class="flex items-center justify-between text-[10px] text-zinc-400 mt-1">` : ''}
-                    <span>To'langan:</span>
+                    <span>${activeS?.isPostpaid ? 'Hisoblangan:' : "To'langan:"}</span>
                     <span data-session-bill="${pc.id}" title="${escapeHtml(activeS?.billingError || '')}" class="font-mono text-zinc-300 font-semibold">${sessionBillLabel(activeS)}</span>
                   </div>
                   ${((activeS?.barPendingAmount || 0) > 0 || (pc.barPendingAmount || 0) > 0) ? `

@@ -99,6 +99,41 @@ try{
 
  assert.equal((await api('/api/telemetry/commands/1','POST',{action:'LOCK_CLUB_LICENSE',payload:{reason:'Test lock'}})).status,200);
  assert.equal((await db.query('SELECT status FROM clubs WHERE id=1')).rows[0].status,'BLOCKED');
+ const {CloudActivationService}=await import('../src/services/cloudActivationService.js');
+ const {TelegramBotService}=await import('../src/services/telegramBot.js');
+ const originalSend=TelegramBotService.sendMessage,originalFetch=globalThis.fetch;
+ const previousChat=TelegramBotService.adminChatId;const notifications=[];
+ TelegramBotService.sendMessage=async(text,options)=>{notifications.push({text,options});return {success:true};};
+ TelegramBotService.adminChatId='renewal-admin';
+ globalThis.fetch=async()=>new Response('{"ok":true}');
+ try {
+  const before=(await db.query('SELECT * FROM clubs WHERE id=1')).rows[0];
+  const body={hardwareFingerprint:before.hardware_fingerprint,clubName:'Do not rename',totalPcs:1};
+  assert.equal((await CloudActivationService.createActivationRequest(body)).status,'REJECTED');
+  assert.equal(notifications.length,0,'Automatic activation cannot requeue a ban');
+  for(const state of ['BLOCKED','SUSPENDED_PAYMENT','ACTIVE']) {
+   await db.query("UPDATE clubs SET status=$1,license_expires_at=now()-interval '1 day' WHERE id=1",[state]);
+   const queued=await api('/api/telemetry/activation-request','POST',{...body,requestRenewal:true},false);
+   assert.equal(queued.status,200,JSON.stringify(queued));assert.equal(queued.body.status,'PENDING');
+   assert.match(notifications.at(-1).text,/QAYTA/);
+   assert.equal((await CloudActivationService.getActivationStatus(body.hardwareFingerprint)).status,'PENDING');
+   const pending=(await db.query('SELECT * FROM clubs WHERE id=1')).rows[0];
+   for(const key of ['name','api_secret_token','total_workstations'])assert.equal(pending[key],before[key]);
+   assert.throws(()=>signClubLicense(pending,pending.hardware_fingerprint),/faol emas/);
+   const callback={callback_query:{id:'renew-test',data:'approve_1',message:{chat:{id:'renewal-admin'}}}};
+   await TelegramBotService.handleWebhookUpdate({...callback,callback_query:{...callback.callback_query,message:{chat:{id:'outsider'}}}},CloudActivationService);
+   assert.equal((await CloudActivationService.getActivationStatus(body.hardwareFingerprint)).status,'PENDING');
+   await TelegramBotService.handleWebhookUpdate(callback,CloudActivationService);
+   assert.equal((await CloudActivationService.getActivationStatus(body.hardwareFingerprint)).status,'APPROVED');
+   assert.equal((await db.query('SELECT block_reason FROM clubs WHERE id=1')).rows[0].block_reason,null);
+   await assert.rejects(()=>CloudActivationService.approveActivation(1),e=>e.statusCode===409);
+  }
+  await db.query("UPDATE clubs SET status='BLOCKED' WHERE id=1");
+  await CloudActivationService.createActivationRequest({...body,requestRenewal:true});
+  await CloudActivationService.rejectActivation(1);
+  assert.equal((await CloudActivationService.getActivationStatus(body.hardwareFingerprint)).status,'REJECTED');
+  console.log('PASS blocked/expired renewal stays locked until authorized Telegram approval, preserves club identity and supports rejection');
+ }finally{TelegramBotService.sendMessage=originalSend;TelegramBotService.adminChatId=previousChat;globalThis.fetch=originalFetch;}
  assert.equal((await api('/api/telemetry/commands/1','POST',{action:'UNLOCK_CLUB_LICENSE',payload:{extensionDays:7}})).status,200);
  console.log('PASS Vercel API + real PostgreSQL adapter: billing, tariff, duplicate payment, analytics, telemetry, staff delivery, remote aliases, ban/unban and safe bulk-delete rejection');
 }catch(error){console.error(error.message);process.exitCode=1;}finally{await db.close();}

@@ -92,8 +92,10 @@ export class ActivationService {
 
     validateHwid(hardwareFingerprint);
     totalPcs = positiveInteger(totalPcs, 16);
-    clubId = null; // Public requests cannot select an existing club.
-    const finalClubName = clubName || `Game Club (${hardwareFingerprint.slice(-4)})`;
+    const boundClub = db.prepare('SELECT * FROM clubs WHERE hardware_fingerprint = ?').get(hardwareFingerprint);
+    clubId = boundClub?.id || null; // Only the hardware binding may select an existing club.
+    const finalClubName = boundClub?.name || clubName || `Game Club (${hardwareFingerprint.slice(-4)})`;
+    if (boundClub) totalPcs = boundClub.total_workstations;
 
     // Mavjud PENDING so'rov bormi tekshirish
     const existing = db.prepare(`

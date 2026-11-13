@@ -1,4 +1,8 @@
 2026-11-13: 1.1.3
+- Responsive classic PC cards; consistent session clocks after background delays;
+  bar debt is visible in table rows and map indicators as well as classic cards.
+- Blocked and expired servers can request Telegram reactivation; only approval restores access,
+  retaining the existing club identity, credentials and workstation limit.
 - Correct VIP Postpaid live billing and preserve accrued charges when moving a session.
 - Convert prepaid remaining value to the destination tariff, with a reviewed time comparison.
 - Preserve transfer refunds and bar debt; reject occupied targets and roll back failed transfers.

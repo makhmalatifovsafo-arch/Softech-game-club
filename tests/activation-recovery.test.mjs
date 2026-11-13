@@ -44,6 +44,10 @@ test('fresh activation recovers after network failure, throttles retries and res
     now+=60000;await L.checkApprovalStatus();assert.equal(posts,2,'PENDING must not resend Telegram requests');
     status='NONE';L.state='LOCKED_BY_ADMIN';
     await L.checkApprovalStatus();assert.equal(posts,2,'A ban must not become a new activation');
+    await L.requestActivation('Recovery Club');
+    assert.equal(lastBody.requestRenewal,true,'An explicit blocked-screen request must ask for renewal');
+    assert.equal(L.state,'LOCKED_BY_ADMIN','Submitting a renewal cannot unlock the server');
+    posts=2;status='NONE';
     L.state='ACTIVE';L.licenseData={clubId:1};let reason;
     L.enforceLockdown=value=>{reason=value;};
     await L.checkApprovalStatus();assert.equal(reason,'CLUB_REMOVED');assert.equal(posts,2);

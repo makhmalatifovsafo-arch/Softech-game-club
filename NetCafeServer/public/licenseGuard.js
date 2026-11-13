@@ -239,6 +239,13 @@
         </div>
         ` : ''}
 
+        ${!isMismatch && !isClock ? `
+        <button id="btnSendActivationReq" onclick="window.requestServerActivation()"
+          style="width:100%;padding:14px;margin-bottom:12px;border-radius:14px;border:1px solid #38bdf8;background:rgba(56,189,248,.15);color:#38bdf8;font-weight:800;cursor:pointer;">
+          Litsenziyani qayta so‘rash (Telegram)
+        </button>
+        <p id="activationStatusText" style="font-size:12px;color:#fbbf24;line-height:1.5">So‘rov yuborilgach, Super Admin tasdig‘i kutiladi.</p>
+        ` : ''}
         <div style="display: flex; flex-direction: column; gap: 10px;">
           <a href="tel:+998952220644" style="display: block; text-decoration: none; padding: 14px; border-radius: 14px; background: #f43f5e; color: #fff; font-weight: 800; font-size: 13px; text-align: center; box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4);">
             📞 Ta'minotchi: +998 95 222 06 44 / +998 99 563 45 16
@@ -315,6 +322,8 @@
   // ===================================================================
   window.requestServerActivation = async function () {
     const btn = document.getElementById('btnSendActivationReq');
+    if (btn?.disabled) return;
+    const originalLabel = btn?.textContent;
     const statusText = document.getElementById('activationStatusText');
     const resultEl = document.getElementById('cloudRequestResult');
     const clubNameInput = document.getElementById('clubNameInput');
@@ -358,7 +367,7 @@
         resultEl.textContent = "❌ Xatolik: " + err.message;
       }
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '🚀 So\'rov Yuborish (Telegram)'; }
+      if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
     }
   };
 
