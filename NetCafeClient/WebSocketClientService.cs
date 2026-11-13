@@ -108,6 +108,27 @@ public class WebSocketClientService
     public event Action<MemberSessionSummary>? OnMemberSessionEnded;
     private TaskCompletionSource<bool>? _logoutResponse;
     private string? _activeSessionId;
+    private TaskCompletionSource<JsonElement>? _accountResponse;
+    private string? _accountRequestId;
+    public async Task<JsonElement> UpdateAccountAsync(string username, string? password, string currentPassword)
+    {
+        if (!CanSelfClose || !IsConnected || _accountResponse != null) throw new InvalidOperationException("Serverga ulangan faol mijoz seansi kerak.");
+        var response = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _accountResponse = response;
+        _accountRequestId = Guid.NewGuid().ToString("N");
+        try
+        {
+            var payload = new System.Collections.Generic.Dictionary<string, object?> {
+                ["requestId"] = _accountRequestId, ["sessionId"] = _activeSessionId,
+                ["username"] = username, ["currentPassword"] = currentPassword
+            };
+            if (password != null) payload["password"] = password;
+            if (!await SendRawAsync(new { type = "CLIENT_ACCOUNT_UPDATE", payload })) throw new InvalidOperationException("Server bilan aloqa uzildi.");
+            return await response.Task.WaitAsync(TimeSpan.FromSeconds(12));
+        }
+        finally { _accountResponse = null; _accountRequestId = null; }
+    }
+
     public int    PcNumber        => _config.NumericPcNumber;
     public string PcNumberString  => _config.PcNumber;
     public string WorkstationName => _config.PcNumber;
@@ -432,6 +453,10 @@ public class WebSocketClientService
                 }
 
                 // ---- Ekran Qulflash ----
+                case "CLIENT_ACCOUNT_RESULT":
+                    if (data.TryGetProperty("requestId", out var accountRequest) && accountRequest.GetString() == _accountRequestId)
+                        _accountResponse?.TrySetResult(data.Clone());
+                    break;
                 case "LOCK_SCREEN":
                 case "LOCK":
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>

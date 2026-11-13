@@ -17,6 +17,23 @@ public partial class TimeWidgetWindow : Window
     private long _infoTimestamp;
     private bool _serverConnected = true;
 
+    public Func<string, string?, string, System.Threading.Tasks.Task<System.Text.Json.JsonElement>>? UpdateAccount;
+    private string _memberUsername = "";
+    private Views.AccountSettingsWindow? _accountWindow;
+    private void BtnAccount_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_canSelfClose || UpdateAccount == null) return;
+        if (_accountWindow != null) { _accountWindow.Activate(); return; }
+        var dialog = new Views.AccountSettingsWindow(_memberUsername, UpdateAccount);
+        _accountWindow = dialog;
+        dialog.Owner = this;
+        dialog.Saved += username => {
+            if (!ReferenceEquals(_accountWindow, dialog) || !_canSelfClose) return;
+            _memberUsername = username; TxtMemberName.Text = username;
+        };
+        dialog.Closed += (_, _) => { if (ReferenceEquals(_accountWindow, dialog)) _accountWindow = null; };
+        dialog.Show();
+    }
     public event Action? OnLogoutRequested;
     public event Action? OnSessionExpired;
 
@@ -57,6 +74,8 @@ public partial class TimeWidgetWindow : Window
         Dispatcher.Invoke(() =>
         {
             _canSelfClose = true;
+            _memberUsername = username;
+            BtnAccount.Visibility = Visibility.Visible;
             _sessionInfo = null;
             TxtSessionInterval.Text = "";
             TxtBillingStatus.Text = "";
@@ -81,6 +100,8 @@ public partial class TimeWidgetWindow : Window
         Dispatcher.Invoke(() =>
         {
             _canSelfClose = false;
+            BtnAccount.Visibility = Visibility.Collapsed;
+            _accountWindow?.Close();
             _sessionInfo = null;
             TxtSessionInterval.Text = "";
             TxtBillingStatus.Text = "Seansni kassir yakunlaydi.";
@@ -121,6 +142,8 @@ public partial class TimeWidgetWindow : Window
             _expiresAtTimestamp = null;
             _sessionInfo = null;
             _canSelfClose = false;
+            BtnAccount.Visibility = Visibility.Collapsed;
+            _accountWindow?.Close();
             BtnLogout.Visibility = Visibility.Collapsed;
             Hide();
         });
@@ -149,6 +172,8 @@ public partial class TimeWidgetWindow : Window
             _sessionInfo = info;
             _infoTimestamp = Stopwatch.GetTimestamp();
             _canSelfClose = info.CanSelfClose && !info.IsPostpaid;
+            BtnAccount.Visibility = _canSelfClose ? Visibility.Visible : Visibility.Collapsed;
+            if (!_canSelfClose) _accountWindow?.Close();
             BtnLogout.Visibility = _canSelfClose ? Visibility.Visible : Visibility.Collapsed;
             UpdateDisplay();
         });

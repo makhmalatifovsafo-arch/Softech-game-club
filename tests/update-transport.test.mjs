@@ -1,12 +1,20 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
+import { pathToFileURL } from 'node:url';
 import { fetchUpdateManifest, downloadUpdateFile } from '../NetCafeServer/src/services/updateTransport.js';
-import { ServerUpdater } from '../NetCafeServer/src/services/updater.js';
+// updater imports db.js. Never open the installed server database: a clean
+// checkout may contain its recovery marker but intentionally has no SQLite file.
+fs.mkdirSync('.test-output', {recursive:true});
+const fixture=fs.mkdtempSync(path.resolve('.test-output/update-status-'));
+fs.cpSync('NetCafeServer/src',path.join(fixture,'src'),{recursive:true});
+const { ServerUpdater } = await import(pathToFileURL(path.join(fixture,'src/services/updater.js')).href);
+const { db } = await import(pathToFileURL(path.join(fixture,'src/db.js')).href);
+after(()=>db.close());
 
 test('updater follows GitHub-style redirects with safe DNS and streams large ZIPs; failures recover', async () => {
   fs.mkdirSync('.test-output',{recursive:true});

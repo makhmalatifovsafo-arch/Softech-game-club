@@ -8138,10 +8138,11 @@
               tr.className = 'hover:bg-[#141418] transition';
               tr.innerHTML = `
                 <td class="p-3 font-mono font-bold text-white text-xs">${c.id}</td>
-                <td class="p-3 font-semibold text-white text-xs">${c.username}</td>
-                <td class="p-3 font-mono text-zinc-400 text-xs">${c.phone_number || '-'}</td>
+                <td class="p-3 font-semibold text-white text-xs">${escapeHtml(c.username)}</td>
+                <td class="p-3 font-mono text-zinc-400 text-xs">${escapeHtml(c.phoneNumber || c.phone_number || '-')}</td>
                 <td class="p-3 font-mono font-bold text-emerald-400 text-xs">${(c.balance || 0).toLocaleString()} UZS</td>
                 <td class="p-3 text-right">
+                  <button onclick="editCustomerCredentials(${c.id})" class="text-xs px-2 py-1 mr-2 rounded bg-sky-500/20 text-sky-300">Login / parol</button>
                   <button onclick="quickSelectTopupUser(${c.id})" class="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold transition">
                     + To'ldirish
                   </button>
@@ -8154,6 +8155,43 @@
       } catch (err) {
         console.error('Clients load error:', err);
       }
+    }
+
+    function editCustomerCredentials(userId) {
+      const customer=clientsData.find(c=>Number(c.id)===Number(userId));
+      if (!customer) return;
+      const dialog=document.createElement('dialog');
+      dialog.className='bg-zinc-900 text-white rounded-2xl p-6 border border-zinc-700';
+      dialog.style.cssText='width:min(420px,92vw)';
+      dialog.innerHTML=`<form><h3 class="font-bold text-xl mb-3">Mijoz: Login / parol</h3>
+        <p class="text-sm text-zinc-400 mb-4">Hisob raqami: <span data-id></span>. Balans va tarix saqlanadi.</p>
+        <label class="block mb-3">Login<input name="username" required minlength="3" maxlength="32" class="block w-full bg-zinc-800 p-2 rounded mt-1" autocomplete="off"></label>
+        <label class="block mb-3">Yangi parol<input name="password" type="password" minlength="4" maxlength="128" class="block w-full bg-zinc-800 p-2 rounded mt-1" autocomplete="new-password"></label>
+        <label class="block mb-3">Parolni takrorlang<input name="confirm" type="password" maxlength="128" class="block w-full bg-zinc-800 p-2 rounded mt-1" autocomplete="new-password"></label>
+        <p class="text-xs text-zinc-400">Parolni almashtirmaslik uchun parol maydonlarini bo'sh qoldiring.</p>
+        <p data-status class="text-sm text-amber-300 my-3" role="status"></p>
+        <div class="flex gap-3"><button type="button" data-cancel class="p-2 rounded bg-zinc-700">Bekor qilish</button><button type="submit" class="p-2 rounded bg-sky-700">Saqlash</button></div></form>`;
+      document.body.append(dialog);
+      const form=dialog.querySelector('form'),status=dialog.querySelector('[data-status]');
+      form.elements.username.value=customer.username;
+      dialog.querySelector('[data-id]').textContent=String(customer.id);
+      dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
+      dialog.onclose=()=>dialog.remove();
+      form.onsubmit=async event=>{
+        event.preventDefault();
+        if(form.elements.password.value!==form.elements.confirm.value){status.textContent='Parollar bir xil emas.';return;}
+        const submit=form.querySelector('[type=submit]');submit.disabled=true;status.textContent='Saqlanmoqda...';
+        try {
+          const body={username:form.elements.username.value.trim()};
+          if(form.elements.password.value)body.password=form.elements.password.value;
+          const response=await fetch('/api/clients/'+customer.id+'/credentials',{method:'PUT',headers:{Authorization:'Bearer '+authToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
+          const result=await response.json();if(!response.ok)throw Error(result.error||'Saqlanmadi.');
+          form.elements.password.value='';form.elements.confirm.value='';
+          status.textContent='Saqlandi. Mijoz keyingi safar yangi ma’lumotlar bilan kiradi.';
+          await loadClientsManagement();
+        } catch(error){status.textContent=error.message;} finally{submit.disabled=false;}
+      };
+      dialog.showModal();
     }
 
     function quickSelectTopupUser(userId) {
@@ -8418,6 +8456,7 @@
           if(eventType==='CLOUD_ANNOUNCEMENT')window.SoftechMessages?.refresh();
           if (eventType === 'ADMIN_DATA_UPDATED') {
             fetchData();
+            if ((msg.payload || msg).customerId) loadClientsManagement();
             if (typeof currentAppView !== 'undefined' && currentAppView === 'history' && typeof loadAuditHistory === 'function') {
               loadAuditHistory(false);
             }

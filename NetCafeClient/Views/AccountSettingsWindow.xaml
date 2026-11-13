@@ -1,0 +1,17 @@
+<Window x:Class="NetCafeClient.Views.AccountSettingsWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Mening hisobim — Login / parol" Width="400" SizeToContent="Height"
+ ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Background="#18181B" Foreground="White" Topmost="True">
+ <StackPanel Margin="24">
+  <TextBlock Text="Login va parol" FontSize="22" FontWeight="Bold" Margin="0,0,0,12"/>
+  <TextBlock Text="Hisob raqami, balans va seansingiz saqlanadi." TextWrapping="Wrap" Foreground="#A1A1AA" Margin="0,0,0,16"/>
+  <TextBlock Text="Login (3–32 belgi)"/><TextBox x:Name="Login" MaxLength="32" Padding="8" Margin="0,5,0,12"/>
+  <TextBlock Text="Amaldagi parol"/><PasswordBox x:Name="Current" MaxLength="128" Padding="8" Margin="0,5,0,12"/>
+  <TextBlock Text="Yangi parol (kamida 4 belgi)"/><PasswordBox x:Name="Password" MaxLength="128" Padding="8" Margin="0,5,0,12"/>
+  <TextBlock Text="Yangi parolni takrorlang"/><PasswordBox x:Name="Confirm" MaxLength="128" Padding="8" Margin="0,5,0,12"/>
+  <TextBlock Text="Faqat loginni almashtirish uchun yangi parolni bo‘sh qoldiring." TextWrapping="Wrap" Foreground="#A1A1AA"/>
+  <TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,12" Foreground="#FBBF24"/>
+  <Button x:Name="Save" Content="Saqlash" Padding="12" Click="Save_Click"/>
+ </StackPanel>
+</Window>

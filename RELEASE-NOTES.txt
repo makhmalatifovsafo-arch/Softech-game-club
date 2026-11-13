@@ -1,4 +1,7 @@
-2026-11-13: 1.1.4
+2026-11-13: 1.1.5
+- Isolate updater transport tests from the installed database, including clean CI checkouts.
+- Customers can change their login/password from an authenticated client session;
+  staff can reset customer credentials from Customers / Top-up without changing balances.
 - Fix VIP Postpaid game charges becoming zero after adding bar orders; preserve
   the billing mode through repeated orders and transfers, including final checkout.
 - Use explicit 24-hour time fields and timestamps instead of locale-dependent AM/PM.

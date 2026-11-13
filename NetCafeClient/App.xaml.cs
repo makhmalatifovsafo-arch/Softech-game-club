@@ -129,6 +129,7 @@ public partial class App : WpfApplication
         };
 
         // ---- 9. TimeWidget logout hodisalari ----
+        _timeWidget.UpdateAccount = _wsService.UpdateAccountAsync;
         _timeWidget.OnLogoutRequested += async () =>
         {
             if (!_wsService.CanSelfClose) return;

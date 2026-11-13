@@ -1,3 +1,4 @@
+import { updateCustomerCredentials } from '../services/customerCredentials.js';
 import { clientSessionState } from '../services/clientSessionState.js';
 import { canClientCloseSession } from '../services/sessionMode.js';
 import { startMemberSession, isMemberSession } from '../services/memberBilling.js';
@@ -43,6 +44,20 @@ export class ProtocolDispatcher {
       case 'CLIENT_LOGIN_REQUEST':
         this.handleClientLoginRequest(socket, message.payload || message);
         break;
+
+      case 'CLIENT_ACCOUNT_UPDATE': {
+        const payload=message.payload||message;
+        const requestId=typeof payload.requestId==='string'?payload.requestId.slice(0,64):'';
+        try {
+          if (!LicenseManager.isOperational()) throw new Error('Litsenziya faol emas.');
+          const computerId=ClientManager.socketToPcId.get(socket);
+          if (!computerId) throw new Error('Kompyuter ulanmagan.');
+          const result=updateCustomerCredentials({computerId,sessionId:payload.sessionId,username:payload.username,password:payload.password,currentPassword:payload.currentPassword,selfService:true});
+          socket.send(JSON.stringify({type:'CLIENT_ACCOUNT_RESULT',payload:{...result,requestId}}));
+          ClientManager.broadcast('ADMIN_DATA_UPDATED',{timestamp:Date.now(),customerId:result.userId});
+        } catch(error) {socket.send(JSON.stringify({type:'CLIENT_ACCOUNT_RESULT',payload:{requestId,success:false,error:error.status?error.message:'Hisobni yangilab bo‘lmaydi.'}}));}
+        break;
+      }
 
       case 'CLIENT_MEMBER_LOGOUT':
       case 'CLIENT_STOP_SESSION':

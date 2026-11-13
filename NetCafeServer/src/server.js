@@ -1,3 +1,4 @@
+import { updateCustomerCredentials } from './services/customerCredentials.js';
 import { transferSession, previewSessionTransfer } from './services/sessionTransfer.js';
 import { frozenPriceSegments } from './services/prepaidTransferPlan.js';
 import { prepaidQuote } from './services/prepaidQuote.js';
@@ -2690,6 +2691,18 @@ function handleRequest(req, res) {
   // ==========================================================================
   // CLIENT PREPAID BALANCE & TOPUP ENDPOINTS
   // ==========================================================================
+
+  if (/^\/api\/clients\/\d+\/credentials$/.test(url.pathname) && req.method === 'PUT') {
+    if (!authenticate(req,res,{roles:['superadmin','club_owner','administrator'],permission:'customers:view'})) return;
+    readBody(req,body=>{
+      try {
+        const result=updateCustomerCredentials({clubId:req.user.clubId||1,userId:Number(url.pathname.split('/')[3]),username:body.username,password:body.password});
+        ClientManager.broadcast('ADMIN_DATA_UPDATED',{timestamp:Date.now(),customerId:result.userId});
+        sendJson(res,200,result);
+      } catch(error) {sendJson(res,error.status||500,{error:error.status?error.message:'Hisobni saqlashda xatolik.'});}
+    });
+    return;
+  }
 
   // POST /api/clients/topup — Kassir mijoz balansiga naqd/click orqali pul kiritishi (Tenant scoped)
   if (url.pathname === '/api/clients/topup' && req.method === 'POST') {
