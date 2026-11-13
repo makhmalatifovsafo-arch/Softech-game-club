@@ -24,13 +24,16 @@ test('amount preview uses the returned price and duration instead of the old int
   const source=html.slice(html.indexOf('    function calcFromPrice'),html.indexOf('    function setPricePreset'));
   const elements=new Map();let callback;
   const document={getElementById:id=>{if(!elements.has(id))elements.set(id,{});return elements.get(id);}};
-  const context=vm.createContext({document,authToken:'fixture',priceCalculationRevision:0,targetSelectedPcIds:['a'],currentHourlyRate:7000,
+  const context=vm.createContext({document,authToken:'fixture',priceCalculationRevision:0,targetSelectedPcIds:['a'],currentHourlyRate:12000,
     calcDebounceTimer:null,clearTimeout(){},setTimeout(fn){callback=fn;},setStartQuotePending(){},
-    fetchStartQuote:async()=>({ok:true,json:async()=>({durationMinutes:85.714,totalPrice:10000,perPcLabel:'10 000 UZS',durationLabel:'85 daqiqa 43 soniya'})})});
+    fetchStartQuote:async()=>({ok:true,json:async()=>({currentRate:7000,currentRateName:'Updated schedule',durationMinutes:85.714,totalPrice:10000,perPcLabel:'10 000 UZS',durationLabel:'85 daqiqa 43 soniya'})})});
+  vm.runInContext(html.slice(html.indexOf('    function applyStartQuoteRate'),html.indexOf('    function setStartQuotePending')),context);
   vm.runInContext(source,context);vm.runInContext('calcFromPrice(10000)',context);await callback();
   assert.equal(document.getElementById('priceCalculatedTime').textContent,'85 daqiqa 43 soniya');
   assert.equal(document.getElementById('startModalPerPcPrice').textContent,'10 000 UZS');
   assert.match(document.getElementById('startModalPrice').textContent,/10.*000 UZS/);
+  assert.equal(context.currentHourlyRate,7000);
+  assert.match(document.getElementById('startModalTariffRate').textContent,/7.*000.*Updated schedule/);
 });
 
 test('until-time submission keeps the quoted date and never rolls an expired quote into tomorrow',async()=>{

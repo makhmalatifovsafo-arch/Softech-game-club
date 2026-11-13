@@ -109,7 +109,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/telemetry/summary' && req.method === 'GET') {
     if (!requireSuperAdminAuth(req, res)) return;
     const summary = TelemetryService.getGlobalMetricsSummary();
-    return sendJson(res, 200, { success: true, summary });
+    return sendJson(res, 200, { success: true, summary, clubs: TelemetryService.getAllClubsWithLiveMetrics() });
   }
 
   if (pathname === '/api/telemetry/clubs' && req.method === 'GET') {

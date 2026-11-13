@@ -38,13 +38,12 @@ export class MobileDashboard {
   if(typeof token!=='string'||!/^mbl_[a-f0-9]{64}$/.test(token))throw fail('Qayta login qiling.',401);
   const session=this.db?this.db.prepare('SELECT * FROM mobile_dashboard_sessions WHERE token_hash=?').get(hash(token)):await this.query(this.client?.from('mobile_dashboard_sessions').select('*').eq('token_hash',hash(token)).maybeSingle());
   if(!session||!(Date.parse(session.expires_at)>Date.now()))throw fail('Sessiya tugagan. Qayta login qiling.',401);
-  const club=await this.club(Number(session.club_id));
-  const account=await new ManagerAccountService({...this.storage,role:session.role}).latest(Number(session.club_id));
+  const [club,account]=await Promise.all([this.club(Number(session.club_id)),new ManagerAccountService({...this.storage,role:session.role}).latest(Number(session.club_id))]);
   if(!account||Number(account.id)!==Number(session.revision)||account.payload.username!==session.username)throw fail('Akkaunt yangilangan. Qayta login qiling.',401);
   return {session,club};
  }
- async sessionInfo(session,club){
-  const meta=await this.row(Number(club.id),'metadata');
+ async sessionInfo(session,club,metadata){
+  const meta=metadata===undefined?await this.row(Number(club.id),'metadata'):metadata;
   const staff=meta?.payload.staff?.find(s=>s.role===session.role&&s.username===session.username&&Number(s.revision)===Number(session.revision));
   const user={username:session.username,role:session.role==='manager'?'club_owner':'administrator',permissions:session.role==='manager'?['*']:(staff?.permissions||['session:manage'])};
   const payload={kind:'MOBILE_STAFF_SESSION',clubId:Number(club.id),hardwareFingerprint:club.hardware_fingerprint,username:session.username,role:session.role,revision:Number(session.revision),expiresAt:new Date(Date.now()+120000).toISOString()};
@@ -89,7 +88,7 @@ export class MobileDashboard {
   } else {const row=await this.row(id,resource);if(!row)throw fail('Bu bo‘lim hali sinxronlanmagan. Server dasturini yangilang va internetga ulang.',409);data=row.payload;capturedAt=row.captured_at;}
   if(resource==='cash'&&session.role==='administrator')data={success:true,hasOpenShift:!!data.shift,shift:data.shift?{id:data.shift.id,openedAt:data.shift.openedAt}:null};
   const recent=metadata&&Date.parse(metadata.captured_at)>Date.now()-90000;
-  return {data,meta:{source:'cloud',capturedAt,serverOnline:!!recent,serverDate:metadata?.payload.serverDate,missingDates},...await this.sessionInfo(session,club)};
+  return {data,meta:{source:'cloud',capturedAt,serverOnline:!!recent,serverDate:metadata?.payload.serverDate,missingDates},...await this.sessionInfo(session,club,metadata)};
  }
 }
 export function combineDailyReports(reports,from,to){

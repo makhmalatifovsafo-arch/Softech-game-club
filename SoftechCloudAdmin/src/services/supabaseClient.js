@@ -106,7 +106,7 @@ export class SupabaseCloudService {
   // 2. KLUBLAR VA TELEMETRIYA (CLUBS & METRICS)
   // ==========================================================================
 
-  static async getAllClubs() {
+  static async getAllClubs(sharedMetrics) {
     const client = this.getClient();
     if(!client)throw Object.assign(Error('Bulut bazasi sozlanmagan.'),{statusCode:503});
 
@@ -119,7 +119,7 @@ export class SupabaseCloudService {
       if (error) throw error;
 
       const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
-      const metrics=await new CloudDashboardService(client).dailyMetrics(date);
+      const metrics=await (sharedMetrics || new CloudDashboardService(client).dailyMetrics(date));
       return await Promise.all((data || []).map(async club => {
         const { count, error: countError } = await client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', club.id);
         if (countError) throw countError;

@@ -15,6 +15,26 @@ export async function checkPrepaidFlow({localUrl,token,databasePath}) {
       const added=await api('/api/admin/computers','POST',{name:'Prepaid-'+i,pcNumber:973+i});assert.equal(added.status,201);
       pcs.push(added.body.computer.id);db.prepare('UPDATE computers SET zone_id=? WHERE id=?').run(room.body.zone.id,pcs[i]);
     }
+    // Settings edits the existing room tariff by ID, not the unrelated global schedule.
+    const roomTariff=db.prepare("SELECT * FROM tariffs WHERE zone_id=? AND type='HOURLY'").get(rooms[0]);
+    db.prepare('UPDATE tariffs SET price_per_hour=12000 WHERE id=?').run(roomTariff.id);
+    const oldSession=await api('/api/sessions/start','POST',{computerId:pcs[0],mode:'hours',durationMinutes:60,paymentType:'CASH'});
+    assert.equal(oldSession.status,201);assert.equal(oldSession.body.amount,12000);
+    const oldRow=db.prepare('SELECT * FROM sessions WHERE id=?').get(oldSession.body.sessionId);
+    const update=await api('/api/admin/tariffs','PUT',{tariffs:[{id:roomTariff.id,price_per_hour:7000}]});assert.equal(update.status,200);
+    const preserved=db.prepare('SELECT * FROM sessions WHERE id=?').get(oldRow.id);
+    for(const field of ['tariff_id','paid_amount','total_amount','started_at','ends_at'])assert.equal(preserved[field],oldRow[field]);
+    const unchanged=db.prepare('SELECT * FROM tariffs WHERE id=?').get(roomTariff.id);
+    for(const field of ['id','zone_id','start_time','end_time','days_of_week','is_vip_postpaid_allowed'])assert.equal(unchanged[field],roomTariff[field]);
+    const listed=(await api('/api/zones')).body.zones;
+    assert.equal(listed.find(z=>z.id===rooms[0]).currentRate,7000);
+    assert.equal(listed.find(z=>z.id===rooms[1]).currentRate,14000);
+    await api('/api/sessions/'+oldRow.id+'/stop-early','POST',{paymentType:'CASH'});
+    const nextQuote=await api('/api/tariffs/calculate','POST',{computerId:pcs[0],durationHours:1});assert.equal(nextQuote.body.price,7000);
+    const nextSession=await api('/api/sessions/start','POST',{computerId:pcs[0],mode:'hours',durationMinutes:60,paymentType:'CASH'});
+    assert.equal(nextSession.status,201);assert.equal(nextSession.body.amount,7000);
+    await api('/api/sessions/'+nextSession.body.sessionId+'/stop-early','POST',{paymentType:'CASH'});
+    console.log('PASS settings room tariff 12000 -> 7000: real one-hour quote/start, other room and prepaid history preserved');
     for (const batch of [false,true]) for (const mode of ['hours','price','endtime']) {
       const targetEndTime=new Date(Date.now()+1800000).toISOString();
       const data={mode,durationMinutes:90,amount:mode==='price'?10000:1,targetEndTime,paymentType:'CASH'};

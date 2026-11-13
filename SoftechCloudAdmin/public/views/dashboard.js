@@ -105,6 +105,8 @@ async function fetchSummaryData() {
     const data = await res.json();
     if (data.success && data.summary) {
       state.summary = data.summary;
+      if (Array.isArray(data.clubs)) state.clubs = data.clubs;
+      else await fetchClubsData();
     }
   } catch (err) {
     console.warn('⚠️ [Cockpit] Telemetriya summary olishda xatolik:', err);
@@ -152,7 +154,7 @@ async function refreshDashboardData() {
   state.isRefreshing = true;
 
   try {
-    await Promise.all([fetchSummaryData(), fetchClubsData(), fetchActivationRequests()]);
+    await Promise.all([fetchSummaryData(), fetchActivationRequests()]);
     renderDashboard();
     showToast('✓ Ma\'lumotlar so\'nggi holatda yangilandi');
   } catch (err) {
@@ -685,7 +687,7 @@ setInterval(async () => {
   liveClubsRefreshing = true;
   try {
     if (marker.dataset.liveClubs === 'directory') await fetchClubsDirectory();
-    else await Promise.all([fetchSummaryData(), fetchClubsData()]);
+    else await fetchSummaryData();
     if (!marker.isConnected || document.activeElement?.matches('input,select,textarea')) return;
     if (marker.dataset.liveClubs === 'directory') renderClubsDirectoryView();
     else renderDashboard();

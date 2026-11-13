@@ -87,6 +87,8 @@ public class WebSocketClientService
     private          CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
+    public event Action<string, string>? OnAdminMessage;
+
     // ---- Events ----
     public event Action?                                       OnLockScreen;
     public event Action<string, int, string, string, double?>? OnStartSession;       // sessionId, remainingSecs, tariffName, customerName, clientBalance?
@@ -426,6 +428,16 @@ public class WebSocketClientService
 
             switch (eventName.ToUpperInvariant())
             {
+                case "SEND_MESSAGE": {
+                    var text = data.TryGetProperty("message", out var messageText) ? messageText.GetString() : null;
+                    var id = data.TryGetProperty("messageId", out var messageId) ? messageId.GetString() : null;
+                    var title = data.TryGetProperty("title", out var messageTitle) ? messageTitle.GetString() : "Softech";
+                    if (!string.IsNullOrWhiteSpace(text) && text.Length <= 2000 && OnAdminMessage != null) {
+                        OnAdminMessage.Invoke(title ?? "Softech", text);
+                        if (!string.IsNullOrEmpty(id)) _ = SendRawAsync(new {type="MESSAGE_DISPLAYED", payload=new {messageId=id}});
+                    }
+                    break;
+                }
                 case "BAR_ORDER_RECEIVED":
                     _barOrderResponse?.TrySetResult(true);
                     break;

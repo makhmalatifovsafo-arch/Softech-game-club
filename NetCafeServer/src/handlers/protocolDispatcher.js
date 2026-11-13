@@ -1,3 +1,4 @@
+import { acknowledgeScreenMessage } from '../services/screenMessages.js';
 import { updateCustomerCredentials } from '../services/customerCredentials.js';
 import { clientSessionState } from '../services/clientSessionState.js';
 import { canClientCloseSession } from '../services/sessionMode.js';
@@ -26,6 +27,9 @@ export class ProtocolDispatcher {
     if (!type) return;
 
     switch (type) {
+      case 'MESSAGE_DISPLAYED':
+        acknowledgeScreenMessage(socket, message.payload || message);
+        break;
       case 'CLIENT_HELLO':
       case 'CLIENT_HANDSHAKE':
         this.handleClientHello(socket, message);

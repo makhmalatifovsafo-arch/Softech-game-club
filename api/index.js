@@ -152,19 +152,20 @@ export default async function handler(req, res) {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { success: false, error: 'Ruxsat berilmagan' });
 
-      const clubs = (await SupabaseCloudService.getAllClubs()) || [];
+      const reportDate = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
+      const metricsRequest = new CloudDashboardService(SupabaseCloudService.getClient()).dailyMetrics(reportDate);
+      const [clubs,metrics] = await Promise.all([SupabaseCloudService.getAllClubs(metricsRequest),metricsRequest]);
       const totalClubs = clubs.length;
       const onlineClubs = clubs.filter(c => c.is_online_now).length;
       const occupiedNow = clubs.reduce((sum, c) => sum + (c.occupied_pcs || 0), 0);
       const totalNetwork = clubs.reduce((sum, c) => sum + Number(c.actual_workstations || 0), 0);
-      const reportDate = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
-      const metrics = await new CloudDashboardService(SupabaseCloudService.client).dailyMetrics(reportDate);
       const todayTotal = metrics.reduce((sum,m)=>sum+Number(m.total_daily_revenue||0),0);
       const sessionsCount = metrics.reduce((sum,m)=>sum+Number(m.total_sessions_count||0),0);
       const barTotal = metrics.reduce((sum,m)=>sum+Number(m.bar_revenue||0),0);
 
       return sendJson(res, 200, {
         success: true,
+        clubs,
         summary: {
           clubs: { total: totalClubs, onlineNow: onlineClubs, offlineNow: totalClubs - onlineClubs },
           workstations: { occupiedNow, availableNow: Math.max(0, clubs.filter(c=>c.is_online_now).reduce((n,c)=>n+Number(c.online_pcs||0),0) - occupiedNow), totalNetwork },

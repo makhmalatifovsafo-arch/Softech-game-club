@@ -122,7 +122,24 @@ class ClientProtocolAudit
   widget.StopSession();
   Console.WriteLine("PASS member-only logout, paid amount, Postpaid elapsed/bill, offline status and local expiry");
   app.Dispatcher.InvokeAsync(async ()=>{
-   var service=new WebSocketClientService();var done=new TaskCompletionSource();
+   var service=new WebSocketClientService();var done=new TaskCompletionSource();int adminMessages=0;
+   service.OnAdminMessage+=(title,message)=>app.Dispatcher.Invoke(()=>{
+    if(title!="Admin"||message!="Hello <b>literal</b>\nSecond line")throw new Exception("Message text changed");
+    var owner=new Window {Left=-10000,Top=-10000,Width=200,Height=200,ShowActivated=false,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.Manual};
+    owner.Show();
+    var notice=new NetCafeClient.Views.AdminMessageWindow(title,message) {WindowStartupLocation=WindowStartupLocation.Manual,Left=-10000,Top=-10000};
+    if(adminMessages==0)notice.Owner=owner;
+    notice.Show();
+    if(!notice.IsVisible||!notice.Topmost||notice.ShowInTaskbar)throw new Exception("Message overlay not visible/topmost");
+    var panel=(System.Windows.Controls.StackPanel)notice.Content;
+    var scroll=(System.Windows.Controls.ScrollViewer)panel.Children[1];
+    if(((System.Windows.Controls.TextBlock)scroll.Content).Text!=message)throw new Exception("Message rendering changed literal text");
+    notice.Owner=null;owner.Hide();
+    if(!notice.IsVisible)throw new Exception("Message disappeared after unlocking");
+    owner.Show();notice.Owner=owner;notice.Show();
+    if(!notice.IsVisible)throw new Exception("Message disappeared after locking");
+    notice.Close();owner.Close();adminMessages++;
+   });
    int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false,memberReceipt=false,cashBlocked=false,billReceived=false;
    Task<bool>? logoutCheck=null;
    service.OnMemberSessionEnded+=receipt=>memberReceipt=receipt.Username=="member-test"&&receipt.Balance==46500;
@@ -140,6 +157,8 @@ class ClientProtocolAudit
     service.Start();await done.Task.WaitAsync(TimeSpan.FromSeconds(25));
     if(logoutCheck==null||!await logoutCheck||!memberReceipt)throw new Exception("Logout acknowledgement or member receipt failed");
     if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power||!barNotice||!cashBlocked||!billReceived)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power},bar={barNotice},cashBlocked={cashBlocked},bill={billReceived}");
+    if(adminMessages<2)throw new Exception("Missing admin messages");
+    Console.WriteLine("PASS screen message dispatch and native owned/unowned topmost windows");
     Console.WriteLine("PASS native client WebSocket handshake, fragmented messages, zero-balance session, time/config/lock/stop/power dispatch, disconnect and reconnect");
    }catch(Exception error){Console.Error.WriteLine(error.Message);Environment.ExitCode=1;}
    finally{service.Stop();app.Shutdown();}

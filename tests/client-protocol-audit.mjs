@@ -1,6 +1,7 @@
 ﻿import {WebSocketServer} from 'ws';import {spawn} from 'node:child_process';import {once} from 'node:events';import assert from 'node:assert/strict';import path from 'node:path';
-const server=new WebSocketServer({host:'127.0.0.1',port:0});await once(server,'listening');let connections=0,hellos=0;let failure;
+const server=new WebSocketServer({host:'127.0.0.1',port:0});await once(server,'listening');let connections=0,hellos=0;let failure;let messageAcks=0;
 server.on('connection',socket=>{const index=++connections;socket.on('message',raw=>{const m=JSON.parse(raw);
+ if(m.type==='MESSAGE_DISPLAYED'){if(m.payload.messageId!=='notice-'+index)failure='Wrong message receipt';messageAcks++;return;}
  if(m.type==='CLIENT_MEMBER_LOGOUT'){
   if(m.payload.sessionId!=='paid-session')failure='Logout must identify the active session';
   const send=(type,payload)=>socket.send(JSON.stringify({type,payload}));
@@ -10,6 +11,7 @@ server.on('connection',socket=>{const index=++connections;socket.on('message',ra
  }
  if(m.type!=='CLIENT_HELLO')return;hellos++;if(m.pcNumber!=='PC-07')failure='Wrong PC identity';
  const send=(type,payload)=>socket.send(JSON.stringify({type,payload}));
+ send('SEND_MESSAGE',{messageId:'notice-'+index,title:'Admin',message:'Hello <b>literal</b>\nSecond line'});
  send('CONFIG_UPDATE',{zoneName:'VIP',pricePerHour:12000});
  const now=Date.now();
  const info={sessionId:'cash-session',startedAt:now-3600000,asOf:now,gameAmount:14000,isPostpaid:false,canSelfClose:false};
@@ -20,4 +22,4 @@ server.on('connection',socket=>{const index=++connections;socket.on('message',ra
  });});
 const child=spawn(process.env.DOTNET_EXE || path.resolve('.tools/dotnet/dotnet.exe'),['tests/ClientProtocol/bin/Debug/net8.0-windows/ClientProtocol.dll','ws://127.0.0.1:'+server.address().port],{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let output='';child.stdout.on('data',d=>output+=d);child.stderr.on('data',d=>output+=d);const timer=setTimeout(()=>child.kill(),35000);
-try{const [code]=await once(child,'exit');assert.equal(code,0,output);assert.equal(failure,undefined);assert.ok(hellos>=2);console.log(output.trim());}finally{clearTimeout(timer);for(const s of server.clients)s.terminate();await new Promise(r=>server.close(r));}
+try{const [code]=await once(child,'exit');assert.equal(code,0,output);assert.equal(failure,undefined);assert.ok(hellos>=2);assert.ok(messageAcks>=2);console.log(output.trim());}finally{clearTimeout(timer);for(const s of server.clients)s.terminate();await new Promise(r=>server.close(r));}

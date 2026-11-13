@@ -1769,34 +1769,34 @@
 
     <!-- Statistik Hisoblagichlar (4 Cards Grid) -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
+      <button type="button" data-history-category="ALL" aria-pressed="false" onclick="selectHistoryCard('ALL')" class="text-left cursor-pointer hover:border-sky-500 focus-visible:outline focus-visible:outline-sky-400 p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
         <div>
           <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Jami Voqealar</span>
           <div id="historyStatTotal" class="text-lg font-bold font-mono text-white mt-0.5">0</div>
         </div>
         <div class="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center text-sm">📋</div>
-      </div>
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
+      </button>
+      <button type="button" data-history-category="SESSIONS" aria-pressed="false" onclick="selectHistoryCard('SESSIONS')" class="text-left cursor-pointer hover:border-sky-500 focus-visible:outline focus-visible:outline-sky-400 p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
         <div>
           <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Seans Amallari</span>
           <div id="historyStatSessions" class="text-lg font-bold font-mono text-emerald-400 mt-0.5">0</div>
         </div>
         <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-sm">🖥️</div>
-      </div>
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
+      </button>
+      <button type="button" data-history-category="BAR" aria-pressed="false" onclick="selectHistoryCard('BAR')" class="text-left cursor-pointer hover:border-sky-500 focus-visible:outline focus-visible:outline-sky-400 p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
         <div>
           <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Bar Savdolari</span>
           <div id="historyStatBar" class="text-lg font-bold font-mono text-purple-400 mt-0.5">0</div>
         </div>
         <div class="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center text-sm">🛒</div>
-      </div>
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
+      </button>
+      <button type="button" data-history-category="FINANCE" aria-pressed="false" onclick="selectHistoryCard('FINANCE')" class="text-left cursor-pointer hover:border-sky-500 focus-visible:outline focus-visible:outline-sky-400 p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
         <div>
           <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Kassa Qaytimlari</span>
           <div id="historyStatRefunds" class="text-lg font-bold font-mono text-amber-400 mt-0.5">0</div>
         </div>
         <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-sm">💵</div>
-      </div>
+      </button>
     </div>
 
     <!-- Filtrlar Paneli (Tabs) -->
@@ -2196,6 +2196,8 @@
             </div>
           </div>
 
+          <section id="roomPricingSettings" class="p-4 rounded-xl border border-sky-500/30 bg-sky-500/5"></section>
+          <div id="generalTariffSettings" hidden>
           <p class="text-xs text-amber-300">Tarif belgilanmagan kun yoki vaqtga seans ochilmaydi. Xonaga alohida tarif kiritilgan bo‘lsa, o‘sha xona tariflari ishlaydi. Boshlanish va tugash bir xil bo‘lsa, tarif tanlangan kunlarda 24 soat amal qiladi.</p>
           <!-- 1. Yangi Dinamik Jadval Qo'shish -->
           <form onsubmit="handleCreateSchedule(event)" class="p-4 rounded-xl border border-[#27272a] bg-[#09090b] space-y-3">
@@ -2250,6 +2252,7 @@
             </div>
           </div>
 
+          </div>
         </div>
 
         <!-- TAB 3: CLIENTS & PREPAID TOP-UP -->
@@ -3130,7 +3133,7 @@
         <input type="hidden" id="messagePcId">
         <div>
           <label class="block text-[11px] text-[var(--text-muted)] mb-1 uppercase font-semibold">Xabar matni</label>
-          <textarea id="messageContent" rows="3" required placeholder="Hurmatli mijoz..." 
+          <textarea id="messageContent" rows="3" maxlength="2000" required placeholder="Hurmatli mijoz..."
                     class="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[var(--brand-color)]"></textarea>
         </div>
         <button type="submit" class="softech-btn-primary w-full text-xs">
@@ -7963,6 +7966,8 @@
     // --- TAB 2: TARIFFS & PRICING ---
     // --- TAB 2 CONTINUED: DYNAMIC SCHEDULES ENGINE ---
     async function loadDynamicSchedules() {
+      window.SoftechRoomPricing?.load({token:authToken,preferredZoneId:typeof selectedZoneId==='undefined'?null:selectedZoneId,refresh:async()=>{await fetchData();}});
+
       try {
         const res = await fetch('/api/tariff-schedules', {
           headers: { 'Authorization': `Bearer ${authToken}` }
@@ -8992,7 +8997,7 @@
     // ========================================================================
     let currentStartMode = 'hours'; // 'hours' | 'price' | 'endtime' | 'postpaid' | 'client'
     let selectedCustomer = null;
-    let currentHourlyRate = 12000;
+    let currentHourlyRate = 0;
     let customerSearchTimeout = null;
 
     function openStartModal(pcId, pcName, batchIds = null) {
@@ -9148,6 +9153,14 @@
         : quoteDurationLabel(Math.min(...durations)) + ' ? ' + quoteDurationLabel(Math.max(...durations)) + ' (PC tarifiga qarab)';
       return { ok: true, json: async () => data };
     }
+    function applyStartQuoteRate(data) {
+      const rate=Number(data.currentRate);
+      if(!Number.isFinite(rate)||rate<=0)return;
+      currentHourlyRate=rate;
+      const label=document.getElementById('startModalTariffRate');
+      if(label)label.textContent=`${rate.toLocaleString()} UZS / soat - ${data.currentRateName || 'Amaldagi tarif'}${data.roomName?' ('+data.roomName+')':''}`;
+    }
+
     function setStartQuotePending(pending, error = false) {
       const button = document.getElementById('btnSubmitStart');
       if (button) button.disabled = pending;
@@ -9193,6 +9206,7 @@
             const data = await res.json();
             perPc = data.price !== undefined ? data.price : perPc;
             if (revision !== priceCalculationRevision) return;
+            applyStartQuoteRate(data);
             total = data.totalPrice;
             document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
             document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
@@ -9243,6 +9257,7 @@
             const data = await res.json();
             if (data.durationMinutes !== undefined) {
               if (revision !== priceCalculationRevision) return;
+            applyStartQuoteRate(data);
               mins = data.durationMinutes;
               h = (mins / 60).toFixed(1);
               document.getElementById('priceCalculatedTime').textContent = data.durationLabel;
@@ -9289,6 +9304,7 @@
             const data = await res.json();
             const perPc = data.price || 0;
             if (revision !== priceCalculationRevision) return;
+            applyStartQuoteRate(data);
             const mins = data.durationMinutes || 0;
             quotedTargetEndTime = data.endTime;
             const count = Math.max(1, targetSelectedPcIds.length);
@@ -9384,6 +9400,7 @@
           const res = await fetchStartQuote({method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken},body:JSON.stringify({durationHours:h,computerId:targetSelectedPcIds[0],isVip:false})});
           const data = await res.json();
           if (revision !== priceCalculationRevision) return;
+            applyStartQuoteRate(data);
           document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
           document.getElementById('startModalPrice').textContent = data.totalPrice.toLocaleString() + ' UZS';
           document.getElementById('balancePaymentOption').classList.toggle('hidden',!selectedCustomer || selectedCustomer.balance < data.totalPrice);
@@ -10039,17 +10056,22 @@
       const pcId = document.getElementById('messagePcId').value;
       const msg = document.getElementById('messageContent').value;
 
-      await fetch('/api/messages/send', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({ computerId: pcId, title: 'Softech Xabari', message: msg })
-      });
-
-      closeModal('messageModal');
-      document.getElementById('messageContent').value = '';
+      const button = e.target.querySelector('[type="submit"]');
+      if (button?.disabled) return;
+      if (button) button.disabled = true;
+      try {
+        const res = await fetch('/api/messages/send', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json',Authorization:`Bearer ${authToken}`},
+          body: JSON.stringify({computerId:pcId,title:'Softech Xabari',message:msg})
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw Error(data.error || 'Xabar yuborilmadi.');
+        closeModal('messageModal');
+        document.getElementById('messageContent').value = '';
+        if (typeof showToast === 'function') showToast('Xabar client ekranida ko‘rsatildi.', 'success');
+      } catch(error) { alert(error.message || 'Server bilan aloqa uzildi.'); }
+      finally { if (button) button.disabled = false; }
     }
 
     function closeModal(id) {
@@ -10158,5 +10180,6 @@ async function refreshManagerSetup(){
 }
 refreshManagerSetup();setInterval(refreshManagerSetup,5000);
 </script>
+<script src="/room-pricing.js" defer></script>
 </body>
 </html>

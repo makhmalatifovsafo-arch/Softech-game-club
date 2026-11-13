@@ -1325,7 +1325,11 @@ function renderReportAuditTrail(auditTrail = []) {
     purple: 'bg-purple-500/15 text-purple-300 border-purple-500/30'
   };
 
-  tbody.innerHTML = filtered.map(item => {
+  tbody.innerHTML = filtered.map(source => {
+    const item = { ...source };
+    for (const key of ['formattedImpact', 'workstationName', 'formattedTime', 'formattedDate', 'title', 'actorUsername', 'summary']) {
+      item[key] = escapeHtml(String(item[key] ?? ''));
+    }
     const badgeCls = badgeStyles[item.badgeColor] || badgeStyles.blue;
     let impactHtml = '<span class="text-zinc-500 font-mono">-</span>';
     if (item.impactAmount !== null && item.impactAmount !== undefined && !isNaN(item.impactAmount)) {
@@ -1351,7 +1355,6 @@ function renderReportAuditTrail(auditTrail = []) {
         <td class="p-3.5">
           <span class="inline-flex flex-col px-2.5 py-1 rounded-lg border text-xs ${badgeCls}">
             <span class="font-bold tracking-tight">${item.title}</span>
-            <span class="text-[9px] opacity-75 font-mono uppercase">${item.actionType}</span>
           </span>
         </td>
         <td class="p-3.5 whitespace-nowrap">
@@ -2876,13 +2879,21 @@ function formatAuditLogEvent(log) {
 async function loadAuditHistory(isManual = false) {
   try {
     const token = typeof authToken !== 'undefined' ? authToken : (localStorage.getItem('softech_token') || '');
-    const res = await fetch('/api/audit-logs?limit=100', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    if (res.ok) {
+    const loaded = [];
+    let cursor = null;
+    do {
+      const res = await fetch('/api/audit-logs?limit=500' + (cursor ? '&beforeId=' + cursor : ''), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw Error('History request failed: ' + res.status);
       const data = await res.json();
-      auditLogsData = data.logs || [];
+      loaded.push(...(data.logs || []));
+      const next = data.nextCursor;
+      if (next && cursor && next >= cursor) throw Error('Invalid history cursor');
+      cursor = next;
+    } while (cursor);
+    {
+      auditLogsData = [...new Map(loaded.map(log => [log.id, log])).values()];
       updateHistoryCounters();
       renderHistoryView();
 
@@ -2903,17 +2914,10 @@ async function loadAuditHistory(isManual = false) {
  */
 function updateHistoryCounters() {
   const total = auditLogsData.length;
-  let sessionsCount = 0;
-  let barCount = 0;
-  let refundCount = 0;
-  let systemCount = 0;
-
-  auditLogsData.forEach(l => {
-    if (['SESSION_START', 'SESSION_STOP', 'SESSION_EXTEND', 'PC_SWAP'].includes(l.eventType)) sessionsCount++;
-    if (l.eventType === 'BAR_SALE') barCount++;
-    if (l.eventType === 'REFUND') refundCount++;
-    if (l.eventType === 'POWER_ACTION') systemCount++;
-  });
+  const sessionsCount = auditLogsData.filter(l => historyMatchesCategory(l, 'SESSIONS')).length;
+  const barCount = auditLogsData.filter(l => historyMatchesCategory(l, 'BAR')).length;
+  const refundCount = auditLogsData.filter(l => historyMatchesCategory(l, 'FINANCE')).length;
+  const systemCount = auditLogsData.filter(l => historyMatchesCategory(l, 'SYSTEM')).length;
 
   const setTxt = (id, val) => {
     const el = document.getElementById(id);
@@ -2928,7 +2932,7 @@ function updateHistoryCounters() {
   setTxt('filterCountAll', total);
   setTxt('filterCountSessions', sessionsCount);
   setTxt('filterCountBar', barCount);
-  setTxt('filterCountFinance', refundCount + barCount);
+  setTxt('filterCountFinance', refundCount);
   setTxt('filterCountSystem', systemCount);
 }
 
@@ -2936,26 +2940,11 @@ function updateHistoryCounters() {
  * History sahifasini chizish (Timeline yoki Jadval)
  */
 function renderHistoryView() {
-  if (auditLogsData.length === 0) {
-    // Agar hali ma'lumot yuklanmagan bo'lsa, yuklaymiz
-    loadAuditHistory();
-    return;
-  }
-
   const query = historySearchQuery.toLowerCase().trim();
   const filtered = auditLogsData.filter(log => {
     const formatted = formatAuditLogEvent(log);
 
-    // Kategoriya filtri
-    if (historyActiveFilter === 'SESSIONS') {
-      if (!['SESSION_START', 'SESSION_STOP', 'SESSION_EXTEND', 'PC_SWAP'].includes(log.eventType)) return false;
-    } else if (historyActiveFilter === 'BAR') {
-      if (log.eventType !== 'BAR_SALE') return false;
-    } else if (historyActiveFilter === 'FINANCE') {
-      if (!['REFUND', 'BAR_SALE', 'SESSION_START', 'SESSION_STOP'].includes(log.eventType)) return false;
-    } else if (historyActiveFilter === 'SYSTEM') {
-      if (log.eventType !== 'POWER_ACTION') return false;
-    }
+    if (!historyMatchesCategory(log, historyActiveFilter)) return false;
 
     // Qidiruv filtri
     if (query) {
@@ -3090,69 +3079,37 @@ function handleLiveAuditLog(newLog) {
   const exists = auditLogsData.some(l => l.id === newLog.id);
   if (exists) return;
 
-  auditLogsData.unshift(newLog);
+  auditLogsData.unshift({...newLog, eventType: newLog.eventType || newLog.actionType});
   updateHistoryCounters();
 
-  // Agar hozir "Tarix" sahifasida bo'lsa, chiroyli animatsiya bilan eng yuqoriga qo'shamiz
-  if (typeof currentAppView !== 'undefined' && currentAppView === 'history') {
-    const container = document.getElementById('historyEventsTimeline');
-    if (container && historyViewMode === 'timeline') {
-      const ev = formatAuditLogEvent(newLog);
-      
-      const newCardHtml = `
-        <div id="history-event-card-${ev.id}" 
-             class="live-event-enter group p-3.5 sm:p-4 rounded-2xl bg-[#141418] border border-emerald-500/50 hover:border-zinc-500 transition-all flex items-start justify-between gap-3 relative overflow-hidden select-none">
-          
-          <div class="flex items-start gap-3 flex-1 min-w-0">
-            <div class="w-10 h-10 rounded-xl ${ev.iconBg} flex items-center justify-center text-lg shrink-0">
-              ${ev.icon}
-            </div>
-
-            <div class="flex-1 min-w-0">
-              <div class="flex flex-wrap items-center gap-2 mb-1">
-                <span class="font-mono text-xs font-bold text-white tracking-wide">${ev.timeStr}</span>
-                <span class="text-[10px] text-emerald-400 font-mono font-bold animate-pulse">● Yangi</span>
-                <span class="px-2 py-0.5 rounded-full text-[9px] font-bold ${ev.badgeColor}">
-                  ${ev.badgeText}
-                </span>
-                ${ev.targetPc !== '—' ? `
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#09090b] text-sky-400 border border-[#27272a]">
-                    ${ev.targetPc}
-                  </span>
-                ` : ''}
-              </div>
-
-              <p class="text-xs text-zinc-200 leading-snug break-words">
-                ${ev.narrative}
-              </p>
-            </div>
-          </div>
-
-          <div class="flex flex-col items-end justify-between shrink-0 pl-2">
-            <span class="font-mono text-xs ${ev.amountClass} whitespace-nowrap">
-              ${ev.amountStr}
-            </span>
-            <button type="button" onclick="openHistoryDetailModal(${ev.id})" 
-                    class="mt-2 text-[11px] text-zinc-400 hover:text-white transition flex items-center gap-1 cursor-pointer hover:underline">
-              <span>Batafsil</span>
-              <span class="text-[10px]">↗</span>
-            </button>
-          </div>
-        </div>
-      `;
-
-      container.insertAdjacentHTML('afterbegin', newCardHtml);
-    } else {
-      renderHistoryView();
-    }
-  }
+  renderHistoryView();
 }
 
 /**
  * Kategoriya filtri bosilganda
  */
+function historyMatchesCategory(log, category) {
+  const type = log.eventType || log.actionType;
+  const group = ['SESSION_START','START_SESSION','SESSION_STOP','STOP_SESSION','SESSION_EXTEND','PC_SWAP'].includes(type) ? 'SESSIONS'
+    : ['BAR_SALE','BAR_ORDER','NEW_BAR_ORDER'].includes(type) ? 'BAR'
+    : ['REFUND','STOP_EARLY_REFUND'].includes(type) ? 'FINANCE' : 'SYSTEM';
+  return category === 'ALL' || category === group;
+}
+function selectHistoryCard(category) {
+  historySearchQuery = '';
+  const search = document.getElementById('historySearchInput');
+  if (search) search.value = '';
+  filterHistoryCategory(category);
+  document.getElementById(historyViewMode === 'table' ? 'historyTableWrapper' : 'historyTimelineWrapper')?.scrollIntoView({behavior:'smooth', block:'start'});
+}
 function filterHistoryCategory(cat) {
   historyActiveFilter = cat;
+  document.querySelectorAll('[data-history-category]').forEach(button => {
+    const active = button.dataset.historyCategory === cat;
+    button.setAttribute('aria-pressed', String(active));
+    button.classList.toggle('ring-2', active);
+    button.classList.toggle('ring-sky-500', active);
+  });
   document.querySelectorAll('.history-filter-btn').forEach(btn => {
     const text = btn.textContent;
     const matches = (cat === 'ALL' && text.includes('Barchasi'))

@@ -21,6 +21,7 @@ public partial class App : WpfApplication
     private static Mutex? _instanceMutex;
 
     // ---- Windows ----
+    private readonly System.Collections.Generic.List<AdminMessageWindow> _adminMessages = new();
     private LockWindow?               _lockWindow;
     private TimeWidgetWindow?         _timeWidget;
     private MaintenanceToolbarWindow? _maintenanceToolbar;
@@ -242,6 +243,14 @@ public partial class App : WpfApplication
             });
         };
 
+        _wsService.OnAdminMessage += (title, message) => Dispatcher.Invoke(() => {
+            var notice = new NetCafeClient.Views.AdminMessageWindow(title, message);
+            _adminMessages.Add(notice);
+            notice.Closed += (_, _) => _adminMessages.Remove(notice);
+            if (_lockWindow?.IsVisible == true) notice.Owner = _lockWindow;
+            notice.Show();
+        });
+
         _wsService.OnSessionBarNotice += (sessionId, message, amount) =>
             Dispatcher.Invoke(() => _lockWindow?.ShowSessionBarNotice(sessionId, message, amount));
         _wsService.OnMemberSessionEnded += summary =>
@@ -441,10 +450,14 @@ public partial class App : WpfApplication
             // 4. Task Manager va tizim cheklovlarini yoqish
             TaskManagerBlocker.EnableRestrictions();
         }
+        if (_lockWindow?.IsVisible == true)
+            foreach (var notice in _adminMessages) { notice.Owner = _lockWindow; notice.Show(); }
     }
 
     private void UnlockScreen()
     {
+        // Keep messages visible when their lock-screen owner is hidden.
+        foreach (var notice in _adminMessages) notice.Owner = null;
         // 1. Qulf oynasini yashirish
         _displayMgr?.HideLock();
         if (_lockWindow != null)

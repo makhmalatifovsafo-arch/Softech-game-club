@@ -7,13 +7,61 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
  const pcOptions=(pcs=state.pcs)=>pcs.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
  const clientOptions=users=>'<option value="">Tanlang</option>'+users.map(u=>`<option value="${u.id}">${esc(u.username)} · ${esc(money(u.balance))}</option>`).join('');
  async function startSession(pc){
-  try{online();const users=await clients();
-   modal(pc.name+' — yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo‘yicha</option><option value="price">Summa bo‘yicha</option><option value="postpaid">Keyin to‘lash</option></select></label><label>Mijoz nomi<input name="customerName" maxlength="100" value="Mijoz"></label><label>Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label>Summa (summa bo‘yicha seans uchun)<input name="amount" type="number" min="0" value="0"></label>${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}<label>Balans egasi<select name="customerId">${clientOptions(users)}</select></label>`,v=>{
-    if(v.mode==='price'&&Number(v.amount)<=0)throw Error('Seans summasini kiriting.');
-    if(v.paymentType==='BALANCE'&&!v.customerId)throw Error('Balans egasini tanlang.');
-    if(v.mode==='postpaid'&&v.paymentType==='BALANCE')throw Error('Balans uchun vaqt yoki summa bo‘yicha seans tanlang.');
-    return remote('/api/sessions/start','POST',{computerId:pc.id,mode:v.mode,durationMinutes:Number(v.minutes),amount:Number(v.amount),customerName:v.customerName,customerId:v.customerId?Number(v.customerId):null,paymentType:v.mode==='postpaid'?'POSTPAID':v.paymentType});
+  try{
+   online();let quote=null,quotedInput='',revision=0;
+   modal(pc.name+' - yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo'yicha</option><option value="price">Summa bo'yicha</option><option value="postpaid">VIP Postpaid</option></select></label><label>Mijoz nomi<input name="customerName" maxlength="100" value="Mijoz"></label><label id="sessionMinutes">Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label id="sessionAmount" hidden>Summa (so'm)<input name="amount" type="number" min="1" step="1"></label><div id="sessionPayment">${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}</div><label id="sessionMember" hidden>Balans egasi<select name="customerId"><option value="">Tanlang</option></select></label><button type="button" id="sessionCalculate" class="quiet">Serverda hisoblash</button><div id="sessionQuote" class="card" aria-live="polite">Hisoblanmoqda...</div><p class="hint">Narx va vaqt klub serverida hisoblanadi. Seans ochilgan paytda server amaldagi tarifni qayta tekshiradi.</p>${!pc.isOnline?'<p class="hint">Kompyuter ulanmagan. Seans boshlanganda avtomatik yoqish sinaladi; buning uchun MAC va Wake-on-LAN sozlangan bo&#39;lishi kerak. Kompyuter hali yoqilmagan bo&#39;lsa ham seans vaqti boshlanadi.</p>':''}`,async v=>{
+    if(!quote||quotedInput!==key())throw Error('Avval serverda hisoblash tugmasini bosing.');
+    if(v.mode!=='postpaid'&&v.paymentType==='BALANCE'&&!v.customerId)throw Error('Balans egasini tanlang.');
+    const result=await remote('/api/sessions/start','POST',request());
+    return result;
    });
+   const form=$('#actionForm'),fields=form.elements,panel=$('#sessionQuote');
+   function request(){const mode=fields.mode.value;return {computerId:pc.id,mode,...(mode==='hours'?{durationMinutes:Number(fields.minutes.value)}:mode==='price'?{amount:Number(fields.amount.value)}:{}),customerName:fields.customerName.value,customerId:mode!=='postpaid'&&fields.paymentType.value==='BALANCE'?Number(fields.customerId.value):null,paymentType:mode==='postpaid'?'POSTPAID':fields.paymentType.value};}
+   function key(){return JSON.stringify(request());}
+   function invalidate(){revision++;quote=null;$('#actionSubmit').disabled=true;panel.textContent="Narx va vaqtni serverda hisoblang.";}
+   function modeChanged(){
+    const mode=fields.mode.value;
+    $('#sessionMinutes').hidden=mode!=='hours';fields.minutes.disabled=mode!=='hours';fields.minutes.required=mode==='hours';
+    $('#sessionAmount').hidden=mode!=='price';fields.amount.disabled=mode!=='price';fields.amount.required=mode==='price';
+    $('#sessionPayment').hidden=mode==='postpaid';fields.paymentType.disabled=mode==='postpaid';
+    $('#sessionMember').hidden=mode==='postpaid'||fields.paymentType.value!=='BALANCE';
+    invalidate();
+   }
+   let usersLoaded=false;
+   fields.paymentType.onchange=async()=>{
+    modeChanged();if(fields.paymentType.value!=='BALANCE'||usersLoaded)return;
+    fields.customerId.disabled=true;
+    try{const users=await clients();if(!panel.isConnected)return;fields.customerId.innerHTML=clientOptions(users);usersLoaded=true;}
+    catch(error){if(panel.isConnected)panel.textContent=error.message;}
+    finally{fields.customerId.disabled=false;}
+   };
+   fields.mode.onchange=modeChanged;
+   for(const name of ['minutes','amount','customerName','customerId'])fields[name].oninput=invalidate;
+   async function calculate(){
+    invalidate();const rev=revision,input=key(),body=request();
+    if(body.mode==='hours'&&(!Number.isInteger(body.durationMinutes)||body.durationMinutes<1||body.durationMinutes>1440)){panel.textContent='1-1440 daqiqa kiriting.';return;}
+    if(body.mode==='price'&&!(body.amount>0)){panel.textContent='Seans summasini kiriting.';return;}
+    panel.textContent='Klub serverida hisoblanmoqda...';$('#sessionCalculate').disabled=true;
+    try{
+     const data=await remote('/api/sessions/start-preview','POST',body);
+     if(rev!==revision||!panel.isConnected)return;
+     quote=data;quotedInput=input;
+     const seconds=Math.round(Number(data.durationMinutes||0)*60);
+     panel.innerHTML=`<p>Hozirgi tarif: <b>${esc(money(data.currentRate))}/soat</b></p>`+(data.isPostpaid?`<h3>VIP Postpaid</h3><p>Oldindan pul olinmaydi. O'yin va bar hisobi seans yakunida to'lanadi.</p>`:`<h3>${esc(money(data.price))}</h3><p>${Math.floor(seconds/3600)} soat ${Math.floor(seconds%3600/60)} daqiqa ${seconds%60} soniya</p>`);
+     $('#actionSubmit').disabled=false;
+    }catch(error){
+     if(rev!==revision||!panel.isConnected)return;
+     // Older installed servers can still start sessions with their own pricing engine.
+     // Only the relay's explicit unsupported-route response enables this fallback.
+     if(error.status===403&&error.message.includes('Bu amal mobil dasturda ruxsat etilmagan')){
+      quote={legacy:true};quotedInput=input;
+      panel.textContent="Bu server versiyasi oldindan hisob ko'rsatishni qo'llamaydi. Tasdiqlasangiz, narx va vaqt serverda hisoblanib seans ochiladi. Aniq hisobni oldindan ko'rish uchun serverni yangilash kerak.";
+      $('#actionSubmit').disabled=false;
+     }else panel.textContent=error.message;
+    }
+    finally{if(panel.isConnected)$('#sessionCalculate').disabled=false;}
+   }
+   $('#sessionCalculate').onclick=calculate;modeChanged();await calculate();
   }catch(e){notice(e.message);}
  }
  async function checkout(pc){

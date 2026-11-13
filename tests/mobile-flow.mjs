@@ -1,3 +1,4 @@
+import dgram from 'node:dgram';import {once} from 'node:events';
 import assert from 'node:assert/strict';import {makeRequest,open} from '../public/mobile/crypto.js';
 export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,reconnect,ageSession}){
  async function cloud(route,body){const r=await fetch(cloudUrl+'/api/mobile/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};}
@@ -73,7 +74,7 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  assert.equal((await mobile('/api/settings','GET',undefined,token)).body.settings.vip_custom_price,19000);
  // User scenario: change the PC room's rate from mobile, then start on desktop.
  async function desktop(path,method='GET',body){const response=await fetch(localUrl+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+ownerToken},...(body?{body:JSON.stringify(body)}:{})});return {status:response.status,body:await response.json()};}
- const room=await desktop('/api/zones','POST',{name:'Mobile tariff parity',tariffs:[{name:'Room hourly',price_per_hour:23000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7]}]});assert.equal(room.status,201,JSON.stringify(room));
+ const room=await desktop('/api/zones','POST',{name:'Mobile tariff parity',tariffs:[{name:'Room hourly',is_vip_postpaid_allowed:true,price_per_hour:23000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7]}]});assert.equal(room.status,201,JSON.stringify(room));
  assert.equal((await desktop('/api/admin/computers/'+pc.id,'PUT',{zoneId:room.body.zone.id,zone:'STANDARD'})).status,200);
  const roomRate=room.body.tariffs[0];
  assert.equal((await mobile('/api/admin/tariffs','PUT',{tariffs:[{id:roomRate.id,name:roomRate.name,price_per_hour:10000}]},cloudLogin.body.grant)).status,200);
@@ -90,6 +91,39 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const syncedNet=await(await fetch(cloudUrl+'/api/mobile/dashboard/data?resource=reports',{headers:{Authorization:'Bearer '+cloudLogin.body.token}})).json();assert.deepEqual(syncedNet.data.breakdown,netReport.body.breakdown);
  console.log('PASS 10000 prepaid - 6000 refund = 4000 in desktop rows, summaries and cloud mobile reports');
  console.log('PASS mobile tariff 10000 -> desktop manager rate 10000 -> desktop quote 10000 -> one-hour session charged 10000');
+ // Mobile and desktop must use the same server clock, room and exact amount conversion.
+ await desktop('/api/admin/tariffs','PUT',{tariffs:[{id:roomRate.id,name:roomRate.name,price_per_hour:7000,is_vip_postpaid_allowed:true}]});
+ const amountRequest={computerId:pc.id,mode:'price',amount:10000,paymentType:'CASH'};
+ const mobileQuote=await mobile('/api/sessions/start-preview','POST',amountRequest,cashierToken);
+ const desktopQuote=await desktop('/api/sessions/start-preview','POST',amountRequest);
+ assert.equal(mobileQuote.status,200,JSON.stringify(mobileQuote));
+ assert.equal(mobileQuote.body.price,10000);assert.equal(mobileQuote.body.durationMinutes,desktopQuote.body.durationMinutes);
+ assert.ok(Math.abs(mobileQuote.body.durationMinutes-10000/7000*60)<0.001);
+ assert.equal((await mobile('/api/sessions/start-preview','POST',amountRequest,token)).status,403,'Manager cannot open sessions');
+ const amountStart=await mobile('/api/sessions/start','POST',amountRequest,cashierToken);
+ assert.equal(amountStart.status,201,JSON.stringify(amountStart));assert.equal(amountStart.body.amount,10000);
+ await mobile('/api/sessions/'+amountStart.body.sessionId+'/stop-early','POST',{paymentType:'CASH'},cashierToken);
+ const vipRequest={computerId:pc.id,mode:'postpaid',paymentType:'POSTPAID'};
+ const vipQuote=await mobile('/api/sessions/start-preview','POST',vipRequest,cashierToken);
+ assert.equal(vipQuote.status,200,JSON.stringify(vipQuote));assert.equal(vipQuote.body.currentRate,19000);assert.equal(vipQuote.body.isPostpaid,true);
+ const vip=await mobile('/api/sessions/start','POST',vipRequest,cashierToken);assert.equal(vip.status,201,JSON.stringify(vip));
+ await ageSession(vip.body.sessionId,30);
+ const product=await desktop('/api/bar/items','POST',{name:'Mobile VIP test drink',category:'DRINKS',buyPrice:1000,sellPrice:6000,stockQuantity:2});assert.equal(product.status,201);
+ const bar=await mobile('/api/bar/orders','POST',{items:[{barItemId:product.body.item?.id||product.body.id,quantity:1}],computerId:pc.id,sessionId:vip.body.sessionId,paymentMethod:'ON_PC_SESSION',paymentStatus:'PENDING_AT_CHECKOUT'},cashierToken);assert.equal(bar.status,201,JSON.stringify(bar));
+ const vipBill=await mobile('/api/sessions/'+vip.body.sessionId+'/checkout-preview','GET',undefined,cashierToken);
+ assert.equal(vipBill.status,200);assert.ok(vipBill.body.gameBill>=9500&&vipBill.body.gameBill<9600);assert.equal(vipBill.body.barBill,6000);
+ const vipClose=await mobile('/api/sessions/'+vip.body.sessionId+'/checkout','POST',{paymentMethod:'CASH'},cashierToken);
+ assert.equal(vipClose.status,200);assert.equal(vipClose.body.amountCollected,vipClose.body.gameBill+6000);
+ console.log('PASS mobile exact amount quote/start and VIP custom rate with bar: same server billing and checkout');
+ const receiver=dgram.createSocket('udp4');receiver.bind(0,'127.0.0.1');await once(receiver,'listening');
+ try {
+  const packet=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Mobile Wake-on-LAN packet missing')),5000);receiver.once('message',bytes=>{clearTimeout(timer);resolve(bytes);});});
+  const wake=await mobile('/api/computers/'+pc.id+'/power','POST',{action:'wake',broadcastIp:'127.0.0.1',port:receiver.address().port},cashierToken);
+  assert.equal(wake.status,200,JSON.stringify(wake));const bytes=await packet;assert.equal(bytes.length,102);assert.equal(bytes.subarray(0,6).toString('hex'),'ffffffffffff');
+  for(let i=0;i<16;i++)assert.equal(bytes.subarray(6+i*6,12+i*6).toString('hex'),'020000000001');
+  console.log('PASS mobile wake command delivers the correct Magic Packet to a loopback UDP receiver');
+ } finally {receiver.close();}
+
  assert.equal((await mobile('/api/auth/logout','POST',{},token)).status,200);assert.equal((await mobile('/api/computers','GET',undefined,token)).status,401);
  console.log('PASS real mobile relay: login, RBAC, session start/extend/refund, bar sale, duplicate retry, power safety, exact server report parity and logout');
 }

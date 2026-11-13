@@ -1,3 +1,4 @@
+import { deliverScreenMessage } from './services/screenMessages.js';
 import { updateCustomerCredentials } from './services/customerCredentials.js';
 import { transferSession, previewSessionTransfer } from './services/sessionTransfer.js';
 import { frozenPriceSegments } from './services/prepaidTransferPlan.js';
@@ -99,7 +100,7 @@ function handleRequest(req, res) {
   }
 
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
-  if(mutating && /^\/api\/(sessions\/|bar\/|clients\/topup|shifts\/|bookings)/.test(url.pathname)){
+  if(mutating && url.pathname!=='/api/sessions/start-preview' && /^\/api\/(sessions\/|bar\/|clients\/topup|shifts\/|bookings)/.test(url.pathname)){
     res.once('finish',()=>{if(res.statusCode<400)mobileSnapshots.requestSoon();});
   }
 
@@ -1838,6 +1839,32 @@ function handleRequest(req, res) {
   }
 
   // POST /api/sessions/start (Qayta ishlangan: Hours, Price, VIP Postpaid, Client Base, Tenant Scoped)
+  // Read-only quote using the same clock, room and pricing engine as session start.
+  if (url.pathname === '/api/sessions/start-preview' && req.method === 'POST') {
+    if (!authenticate(req,res,{permission:'session:manage'})) return;
+    readBody(req,body=>{
+      try {
+        const clubId=req.user.clubId||1;
+        const pc=db.prepare('SELECT * FROM computers WHERE id=? AND club_id=?').get(body.computerId,clubId);
+        if(!pc) return sendJson(res,404,{error:'Kompyuter topilmadi.'});
+        if(db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id))return sendJson(res,409,{error:'Kompyuterda faol seans mavjud.'});
+        if(!['hours','price','postpaid'].includes(body.mode))return sendJson(res,400,{error:'Seans turi notogri.'});
+        const now=new Date(),zoneId=resolveZoneIdForComputer(pc.id,clubId),isPostpaid=body.mode==='postpaid';
+        const rate=requireRateForMoment(now,isPostpaid,clubId,zoneId);
+        if(isPostpaid){
+          const settings=getClubSettings(clubId);
+          if(!settings.vip_enabled||rate.isVipPostpaidAllowed===false)return sendJson(res,403,{error:'VIP Postpaid bu xona yoki klubda yoqilmagan.'});
+          const currentRate=settings.vip_pricing_mode==='CUSTOM'?Number(settings.vip_custom_price):rate.pricePerHour;
+          if(!Number.isFinite(currentRate)||currentRate<=0)throw Error('VIP tarifi belgilanmagan.');
+          return sendJson(res,200,{success:true,isPostpaid:true,currentRate,pricingMode:settings.vip_pricing_mode,asOf:now.toISOString()});
+        }
+        const quote=prepaidQuote(body,now,clubId,zoneId);
+        sendJson(res,200,{success:true,isPostpaid:false,price:quote.totalAmount,durationMinutes:quote.totalMinutes,endTime:quote.endTime,currentRate:rate.pricePerHour,asOf:now.toISOString()});
+      }catch(error){sendJson(res,400,{error:error.message});}
+    });
+    return;
+  }
+
   if (url.pathname === '/api/sessions/start' && req.method === 'POST') {
     if (CloudLicenseService.isBlocked() || !LicenseManager.isOperational()) {
       sendJson(res, 403, {
@@ -2525,16 +2552,23 @@ function handleRequest(req, res) {
   // POST /api/messages/send
   if (url.pathname === '/api/messages/send' && req.method === 'POST') {
     if (!authenticate(req, res, { permission: 'message:send' })) return;
-    readBody(req, (data) => {
-      const { computerId, title, message } = data;
-      ClientManager.send(computerId, 'SEND_MESSAGE', {
-        messageId: `msg_${Date.now()}`,
-        title: title || 'Admin Xabari',
-        message: message || '',
-        severity: 'INFO',
-        displayDurationSeconds: 10
-      });
-      sendJson(res, 200, { success: true });
+    readBody(req, async (data) => {
+      try {
+        const { computerId } = data;
+        const message = typeof data.message === 'string' ? data.message.trim() : '';
+        const title = typeof data.title === 'string' ? data.title.trim() : 'Softech';
+        if (!message || message.length > 2000 || title.length > 120) return sendJson(res,400,{error:'Xabar 1-2000, sarlavha 120 tagacha belgi bo‘lishi kerak.'});
+        if (!['string','number'].includes(typeof computerId)) return sendJson(res,400,{error:'Kompyuterni tanlang.'});
+        const pc = db.prepare('SELECT * FROM computers WHERE id = ?').get(computerId);
+        if (!pc) return sendJson(res,404,{error:'Kompyuter topilmadi.'});
+        const clubId = getTenantClubId(req);
+        if (clubId !== null && pc.club_id !== clubId) return sendJson(res,403,{error:'Boshqa klub kompyuteriga xabar yuborish taqiqlangan.'});
+        const client = [...ClientManager.clients.values()].find(c => String(c.pcId) === String(pc.id));
+        const status = await deliverScreenMessage(client?.socket,{title:title || 'Softech',message});
+        if (status === 'offline') return sendJson(res,409,{error:'Client bilan aloqa yo‘q. Kompyuter va client dasturini tekshiring.'});
+        if (status !== 'displayed') return sendJson(res,504,{error:'Xabar ko‘rsatilgani tasdiqlanmadi. Client versiyasi va ulanishini tekshiring; xabar yetib borgan bo‘lishi mumkin.'});
+        sendJson(res,200,{success:true,status:'displayed'});
+      } catch { sendJson(res,500,{error:'Xabar yuborishda xatolik.'}); }
     });
     return;
   }
@@ -3160,7 +3194,7 @@ function handleRequest(req, res) {
             orderNumber: orderNum,
             totalAmount: calculatedTotal,
             paymentMethod: validPayMethod,
-            paymentStatus: validPayStatus,
+            paymentStatus: effectivePayStatus,
             computerId,
             sessionId,
             itemsCount: processedItems.length,
@@ -3428,7 +3462,8 @@ function handleRequest(req, res) {
   if (url.pathname === '/api/audit-logs' && req.method === 'GET') {
     if (!authenticate(req, res, { allowExpiredClub: true })) return;
     const clubId = getTenantClubId(req);
-    const limit = parseInt(url.searchParams.get('limit') || '50', 10);
+    const limit = Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+    const beforeId = Number(url.searchParams.get('beforeId'));
     const shiftIdParam = url.searchParams.get('shiftId');
 
     try {
@@ -3452,6 +3487,7 @@ function handleRequest(req, res) {
         }
       }
 
+      if (Number.isSafeInteger(beforeId) && beforeId > 0) { query += ' AND id < ?'; params.push(beforeId); }
       query += ' ORDER BY id DESC LIMIT ?';
       params.push(limit);
 
@@ -3467,13 +3503,13 @@ function handleRequest(req, res) {
           id: l.id,
           clubId: l.club_id,
           shiftId: l.shift_id,
-          eventType: l.event_type,
+          eventType: l.action_type || l.event_type,
           details,
           createdAt: l.created_at
         };
       });
 
-      sendJson(res, 200, { success: true, logs: formatted });
+      sendJson(res, 200, { success: true, logs: formatted, nextCursor: logs.length === limit ? logs[logs.length - 1].id : null });
     } catch (err) {
       sendJson(res, 500, { error: 'Audit tarixini olishda xatolik: ' + err.message });
     }

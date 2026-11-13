@@ -14,6 +14,7 @@ const pcs=[{id:'pc_1',pcNumber:1,name:'PC-1',isOnline:true,status:'AVAILABLE',zo
 const report={accountingVersion:2,filter:{from:'2026-11-10',to:'2026-11-10'},summary:{barProfit:4000,barRevenue:10000},breakdown:{total:10000,cash:10000,card:0,receipts:{BAR:{CASH:10000,CARD:0}},rows:[]}};
 async function upload(){const capturedAt=new Date().toISOString();await dashboard.upload({signedLicense,entries:[{key:'metadata',capturedAt,data:{serverDate:'2026-11-10',staff:[{role:'administrator',username:'cashier',revision:admin.revision,permissions:['session:manage','customers:view','message:send','computers:manage']}]}},{key:'computers',capturedAt,data:pcs},{key:'bar',capturedAt,data:items},{key:'cash',capturedAt,data:{shift:{id:1,openedAt:'2026-11-10',systemCash:111111,systemCard:222222,expectedCash:333333}}},{key:'report:2026-11-10',capturedAt,data:report}]});}
 await upload();const calls=[];
+let legacyPreview=false;
 const staff=[{id:5,role:'client',username:'Player',balance:50000},{id:6,role:'administrator',username:'cashier',permissions:['session:manage']}],tariffs=[{id:'zone-rate',zone_id:1,zone_name:'VIP',name:'Daily',type:'HOURLY',price_per_hour:10000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7]}];
 const agent=new MobileAgent({db:local,getLicense:()=>signedLicense,getCloudUrl:()=>'',isOperational:()=>true,localPort:5000,
  staffSession:token=>({role:token==='manager'?'club_owner':'administrator',clubId:1}),logout(){},resolveCloudSession:async grant=>grant.payload.role==='manager'?'manager':'cashier',onMutation:async()=>{await upload();return true;},
@@ -30,6 +31,7 @@ const agent=new MobileAgent({db:local,getLicense:()=>signedLicense,getCloudUrl:(
   else if(u.pathname==='/api/settings')data={settings:{vip_enabled:1,vip_pricing_mode:'SCHEDULE',vip_custom_price:15000}};
   else if(u.pathname==='/api/computers')data=pcs;
   else if(u.pathname==='/api/bar/orders'&&options.method==='POST'){items[0].stockQuantity-=body.items[0].quantity;data={success:true,message:'Savdo saqlandi'};}
+  else if(u.pathname==='/api/sessions/start-preview'){if(legacyPreview)return new Response(JSON.stringify({error:'Bu amal mobil dasturda ruxsat etilmagan.'}),{status:403});data={success:true,isPostpaid:body.mode==='postpaid',currentRate:7000,price:body.mode==='price'?body.amount:7000*body.durationMinutes/60,durationMinutes:body.mode==='price'?body.amount/7000*60:body.durationMinutes};}
   else if(u.pathname==='/api/sessions/start'){pcs[0].activeSession={sessionId:'test-session',remainingSeconds:1800,totalWithBar:5000};data={success:true,message:'Seans ochildi'};}
   else if(u.pathname==='/api/bookings'&&options.method==='GET')data={bookings:[]};
   return new Response(JSON.stringify(data));
@@ -58,7 +60,28 @@ try{
  assert.equal(await page.locator('[data-tab=cash]').count(),0);assert.equal(await page.locator('#shiftAction, #closeShift, #openShift').count(),0);
  await page.locator('[data-tab=bar]').click();await page.locator('[data-quantity="1"]').fill('2');await page.locator('#saleCheckout').click();await page.locator('#dialog').waitFor({state:'visible'});await page.locator('[name=paymentMethod]').selectOption('CARD');await page.locator('#actionSubmit').click();await page.locator('#dialog').waitFor({state:'hidden'});await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Qoldiq: 8'));
  const sale=calls.find(c=>c.path==='/api/bar/orders'&&c.method==='POST');assert.deepEqual(sale.body.items,[{barItemId:1,quantity:2}]);assert.equal(sale.body.paymentMethod,'CARD');
- await page.locator('[data-tab=computers]').click();await page.locator('[data-action=start]').click();await page.locator('#dialog').waitFor({state:'visible'});await page.locator('[name=minutes]').fill('30');await page.locator('#actionSubmit').click();await page.locator('#dialog').waitFor({state:'hidden'});await page.locator('[data-action=end]').waitFor();assert.equal(calls.find(c=>c.path==='/api/sessions/start').body.durationMinutes,30);
+ await page.locator('[data-tab=computers]').click();
+ for(const scenario of ['hours','price','postpaid','legacy']) {
+  legacyPreview=scenario==='legacy';const mode=legacyPreview?'hours':scenario;
+  await page.locator('[data-action=start]').click();await page.locator('#dialog').waitFor({state:'visible'});
+  await page.locator('[name=mode]').selectOption(mode);
+  if(mode==='hours')await page.locator('[name=minutes]').fill('30');
+  if(mode==='price')await page.locator('[name=amount]').fill('10000');
+  assert.equal(await page.locator('[name=minutes]').isVisible(),mode==='hours');
+  assert.equal(await page.locator('[name=amount]').isVisible(),mode==='price');
+  assert.equal(await page.locator('[name=paymentType]').isVisible(),mode!=='postpaid');
+  await page.locator('#sessionCalculate').click();await page.waitForFunction(()=>!document.querySelector('#actionSubmit').disabled);
+  if(legacyPreview)assert.match(await page.locator('#sessionQuote').innerText(),/server versiyasi/);
+  if(mode==='price')assert.match(await page.locator('#sessionQuote').innerText(),/1 soat 25 daqiqa 43 soniya/);
+  if(mode==='postpaid')assert.match(await page.locator('#sessionQuote').innerText(),/VIP Postpaid/);
+  await page.locator('#actionSubmit').click();await page.locator('#dialog').waitFor({state:'hidden'});await page.locator('[data-action=end]').waitFor();
+  const sent=calls.filter(c=>c.path==='/api/sessions/start').at(-1).body;
+  assert.equal(sent.mode,mode);
+  if(mode==='hours')assert.equal(sent.durationMinutes,30);
+  if(mode==='price'){assert.equal(sent.amount,10000);assert.equal(sent.durationMinutes,undefined);}
+  if(mode==='postpaid'){assert.equal(sent.paymentType,'POSTPAID');assert.equal(sent.amount,undefined);}
+  delete pcs[0].activeSession;await upload();await page.locator('#refresh').click();await page.locator('[data-action=start]').waitFor();
+ }
  await page.locator('[data-tab=operations]').click();await page.locator('[data-operation=bookings]').click();await page.locator('#newBooking').click();await page.locator('[name=customerName]').fill('Booking customer');await page.locator('[name=startDate]').fill('2026-11-11');await page.locator('[name=startTime]').fill('13:00');await page.locator('[name=endDate]').fill('2026-11-11');await page.locator('[name=endTime]').fill('14:00');await page.locator('#actionSubmit').click();await page.locator('#dialog').waitFor({state:'hidden'});assert.ok(calls.find(c=>c.path==='/api/bookings'&&c.method==='POST'));
  await page.screenshot({path:'.test-output/mobile-operator-390.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
  console.log('PASS real mobile UI + encrypted relay: manager tariff/staff controls, cashier menus, hidden totals, multi-item sale body, session start and booking forms');

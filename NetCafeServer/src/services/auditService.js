@@ -51,6 +51,9 @@ export function formatAuditEntry(row) {
     parsedDetails = row.details;
   }
 
+  if (!parsedDetails || typeof parsedDetails !== 'object' || Array.isArray(parsedDetails)) parsedDetails = {};
+  const paymentName = value => ({ CASH: 'Naqd', CARD: 'Karta', BALANCE: 'Mijoz balansi', DEBT: 'Qarz', MIXED: 'Aralash' }[value] || 'Usuli ko‘rsatilmagan');
+  const minutes = value => Math.round(Number(value || 0) * 100) / 100;
   const action = String(row.action_type || row.event_type || '').toUpperCase();
   const category = row.category || resolveCategory(action);
   let title = action;
@@ -69,7 +72,7 @@ export function formatAuditEntry(row) {
       formattedImpact = `+${formatMoney(impactAmount)}`;
     }
     const cust = parsedDetails.customerName || 'Mehmon';
-    const dur = parsedDetails.durationMinutes ? `${Math.round(parsedDetails.durationMinutes / 60 * 10) / 10} soat (${parsedDetails.durationMinutes} daq)` : '';
+    const dur = parsedDetails.isPostpaid ? 'Yakunida to‘lanadi' : parsedDetails.durationMinutes ? `${minutes(parsedDetails.durationMinutes)} daqiqa` : '';
     const tariff = parsedDetails.tariffName ? `[${parsedDetails.tariffName}]` : '';
     summary = `Mijoz: ${cust} ${tariff} ${dur ? '• ' + dur : ''} ${amount > 0 ? '• ' + formatMoney(amount) : ''}`.trim();
   } else if (action === 'STOP_SESSION' || action === 'SESSION_STOP') {
@@ -79,7 +82,9 @@ export function formatAuditEntry(row) {
     if (bill > 0) {
       formattedImpact = formatMoney(bill);
     }
-    summary = parsedDetails.formula || parsedDetails.barSummary 
+    summary = parsedDetails.gameBill != null && parsedDetails.barBill != null
+      ? `Kompyuter: ${formatMoney(parsedDetails.gameBill)} • Bar: ${formatMoney(parsedDetails.barBill)} • Jami: ${formatMoney(bill)}`
+      : parsedDetails.formula || parsedDetails.barSummary
       ? `${parsedDetails.formula || parsedDetails.barSummary}`
       : `Seans to'xtatildi. Jami hisob: ${formatMoney(bill)}`;
   } else if (action === 'STOP_EARLY_REFUND' || action === 'REFUND') {
@@ -94,16 +99,16 @@ export function formatAuditEntry(row) {
   } else if (action === 'SESSION_EXTEND') {
     title = "Vaqt uzaytirildi";
     badgeColor = 'green';
-    const extra = parsedDetails.addedAmount || parsedDetails.extraAmount || 0;
+    const extra = parsedDetails.additionalAmount ?? parsedDetails.addedAmount ?? parsedDetails.extraAmount ?? 0;
     if (extra > 0) {
       impactAmount = Number(extra);
       formattedImpact = `+${formatMoney(impactAmount)}`;
     }
-    summary = `Qo'shilgan vaqt: ${parsedDetails.addedMinutes || 0} daqiqa • To'lov: ${formatMoney(extra)}`;
+    summary = `Qo'shilgan vaqt: ${minutes(parsedDetails.additionalMinutes ?? parsedDetails.addedMinutes)} daqiqa • To'lov: ${formatMoney(extra)}`;
   } else if (action === 'PC_SWAP') {
     title = "Kompyuter almashtirildi";
     badgeColor = 'blue';
-    summary = `${parsedDetails.fromComputerName || parsedDetails.fromComputerId || 'PC'} dan ${parsedDetails.toComputerName || parsedDetails.toComputerId || 'PC'} ga ko'chirildi.`;
+    summary = `${parsedDetails.fromName || parsedDetails.fromComputerName || parsedDetails.fromComputerId || 'Kompyuter'} → ${parsedDetails.toName || parsedDetails.toComputerName || parsedDetails.toComputerId || 'Kompyuter'}: seans ko'chirildi.`;
   }
 
   // 2. BAR Actions
@@ -118,7 +123,7 @@ export function formatAuditEntry(row) {
     const itemsStr = Array.isArray(parsedDetails.items) 
       ? parsedDetails.items.map(it => typeof it === 'string' ? it : `${it.quantity || 1}x ${it.name || it.item_name}`).join(', ')
       : (parsedDetails.orderNumber ? `Chek: ${parsedDetails.orderNumber}` : '');
-    summary = `Chek: ${parsedDetails.orderNumber || ''} • ${itemsStr} • Jami: ${formatMoney(tot)} (${parsedDetails.paymentMethod || 'NAQD'})`;
+    summary = [parsedDetails.orderNumber ? `Chek: ${parsedDetails.orderNumber}` : '', Array.isArray(parsedDetails.items) ? itemsStr : '', `Jami: ${formatMoney(tot)}`, ['UNPAID', 'PENDING_AT_CHECKOUT'].includes(parsedDetails.paymentStatus) ? 'Hali to‘lanmagan' : parsedDetails.paymentMethod ? paymentName(parsedDetails.paymentMethod) : 'To‘lov usuli qayd etilmagan'].filter(Boolean).join(' • ');
   }
 
   // 3. FINANCE Actions
@@ -130,7 +135,7 @@ export function formatAuditEntry(row) {
       impactAmount = Number(amt);
       formattedImpact = `+${formatMoney(amt)}`;
     }
-    summary = `Mijoz: ${parsedDetails.username || 'Foydalanuvchi'} • To'ldirildi: ${formatMoney(amt)} (${parsedDetails.paymentMethod || 'CASH'})`;
+    summary = `Mijoz: ${parsedDetails.username || 'Foydalanuvchi'} • To'ldirildi: ${formatMoney(amt)} (${paymentName(parsedDetails.paymentMethod)})`;
   } else if (action === 'OPEN_SHIFT') {
     title = "Smena ochildi";
     badgeColor = 'green';
@@ -143,15 +148,16 @@ export function formatAuditEntry(row) {
 
   // 4. SYSTEM & SECURITY
   else if (action === 'REMOTE_SHUTDOWN' || action === 'POWER_ACTION') {
-    title = parsedDetails.action === 'REBOOT' ? "Masofaviy qayta yuklash" : "Masofaviy o'chirish";
+    title = ({ WAKE: 'Kompyuterni yoqish', REBOOT: 'Kompyuterni qayta yuklash', SHUTDOWN: 'Kompyuterni o‘chirish', LOCK: 'Kompyuterni qulflash', UNLOCK: 'Kompyuter qulfini ochish' })[parsedDetails.action || (action === 'REMOTE_SHUTDOWN' ? 'SHUTDOWN' : '')] || 'Kompyuterga buyruq';
     badgeColor = 'blue';
-    summary = `Admin buyrug'i: ${parsedDetails.action || action} yuborildi.`;
+    summary = `${title} buyrug‘i yuborildi.`;
   } else if (action === 'SECURITY_ALERT' || action === 'USB_BLOCKED') {
     title = "Xavfsizlik hodisasi";
     badgeColor = 'purple';
     summary = parsedDetails.message || "Tashqi USB xotira vositasi aniqlandi va darhol bloklandi.";
   } else {
-    summary = typeof parsedDetails === 'object' ? JSON.stringify(parsedDetails) : String(parsedDetails);
+    title = 'Tizim amali';
+    summary = 'Amal qayd etilgan. Batafsil ma’lumot texnik jurnalda saqlangan.';
   }
 
   // Date/Time extraction
@@ -174,7 +180,7 @@ export function formatAuditEntry(row) {
     clubId: row.club_id,
     shiftId: row.shift_id,
     actorUserId: row.actor_user_id,
-    actorUsername: row.actor_username || 'SYSTEM',
+    actorUsername: !row.actor_username || row.actor_username === 'SYSTEM' ? 'Tizim' : row.actor_username,
     workstationId: row.workstation_id,
     workstationName: row.workstation_name || (row.workstation_id ? `PC-${String(row.workstation_id).padStart(2, '0')}` : '-'),
     category,

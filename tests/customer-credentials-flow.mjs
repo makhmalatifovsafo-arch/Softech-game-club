@@ -9,6 +9,8 @@ export async function checkCustomerCredentials({localUrl,token,databasePath}) {
   return {status:response.status,body:await response.json()};
  };
  const db=new DatabaseSync(databasePath);
+ // The isolated server also writes heartbeats; wait for its short transactions.
+ db.exec("PRAGMA busy_timeout=5000");
  const ws=new WebSocket(localUrl.replace('http','ws')+'/ws');
  const exchange=(type,payload,reply)=>new Promise((resolve,reject)=>{
   const timer=setTimeout(()=>{ws.off('message',listen);reject(Error('Timeout '+reply));},5000);
