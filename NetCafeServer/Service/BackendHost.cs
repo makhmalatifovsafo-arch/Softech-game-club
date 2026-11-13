@@ -134,6 +134,7 @@ public sealed class BackendHost(string root)
     }
     private async Task Stop()
     {
+        Log("Backend shutdown started.");
         // An updater owns the files/child while its transaction lock is held.
         var deadline=DateTimeOffset.UtcNow.AddSeconds(150);
         while(Updating()&&DateTimeOffset.UtcNow<deadline)await Task.Delay(250);

@@ -38,9 +38,13 @@ try {
         if(node.SessionId!=0||!string.Equals(node.MainModule?.FileName,Path.Combine(root,"runtime","node.exe"),StringComparison.OrdinalIgnoreCase))throw new Exception("Backend is not owned by the service in Session 0");
         node.Kill();await node.WaitForExitAsync();
     }
-    await Ready(first);
+    int restarted=await Ready(first);
+    using var restartedProcess=Process.GetProcessById(restarted);
     ServerService.StopAndWait(root);
     ServerService.StopAndWait(root); // Already stopped is a successful no-op.
+    if(!restartedProcess.HasExited)throw new Exception("Owned backend process survived SCM stop: "+restarted);
+    if(!File.ReadAllText(Path.Combine(root,"logs","service.log")).Contains("SCM shutdown completed."))
+        throw new Exception("SCM reported stopped without completing managed shutdown");
     try {await http.GetStringAsync($"http://127.0.0.1:{port}/api/health");throw new Exception("Backend survived SCM stop");}catch(HttpRequestException){}
     ServerService.Command("start",ServerService.Name);await Ready();
     ServerService.StopAndWait(root);

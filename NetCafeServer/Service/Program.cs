@@ -1,5 +1,7 @@
-using System.Runtime.InteropServices;
+using System.ServiceProcess;
 using Softech.Updates;
+
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("ServiceCancellation")]
 
 namespace SoftechService;
 
@@ -17,31 +19,60 @@ public static class Program
             using var stop=new CancellationTokenSource();Console.CancelKeyPress+=(_,e)=>{e.Cancel=true;stop.Cancel();};
             new BackendHost(root).Run(stop.Token).GetAwaiter().GetResult();return 0;
         }
-        return ServiceDispatcher.Run(()=>new BackendHost(root));
+        using var service=new WindowsBackendService(root);
+        ServiceBase.Run(service);
+        return service.ExitCode;
     }
 }
 
-internal static class ServiceDispatcher
+internal sealed class WindowsBackendService : ServiceBase
 {
-    [UnmanagedFunctionPointer(CallingConvention.Winapi)] private delegate void MainCallback(int count,IntPtr args);
-    [UnmanagedFunctionPointer(CallingConvention.Winapi)] private delegate void ControlCallback(uint code);
-    [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] private struct Entry { public string? Name;public MainCallback? Main; }
-    [StructLayout(LayoutKind.Sequential)] private struct Status { public uint Type,State,Accepted,ExitCode,Specific,Checkpoint,WaitHint; }
-    [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern bool StartServiceCtrlDispatcher(Entry[] table);
-    [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern IntPtr RegisterServiceCtrlHandler(string name,ControlCallback callback);
-    [DllImport("advapi32.dll",SetLastError=true)] private static extern bool SetServiceStatus(IntPtr handle,ref Status status);
-    private static IntPtr handle;private static MainCallback? main;private static ControlCallback? control;
-    private static void Report(uint state,uint accepted=0,uint error=0) {var status=new Status{Type=16,State=state,Accepted=accepted,ExitCode=error,WaitHint=180000};SetServiceStatus(handle,ref status);}
-    public static int Run(Func<BackendHost> create)
+    private readonly string root;
+    private readonly Action<int> requestAdditionalTime;
+    private readonly CancellationTokenSource cancellation=new();
+    private Task? worker;
+    private int stopping;
+    public WindowsBackendService(string root,Action<int>? requestAdditionalTime=null)
     {
-        main=(_,_)=>{
-            using var stop=new CancellationTokenSource();
-            control=code=>{if(code is 1 or 5){Report(3);stop.Cancel();}};
-            handle=RegisterServiceCtrlHandler(ServerService.Name,control);if(handle==IntPtr.Zero)return;
-            Report(2);uint error=0;
-            try{Report(4,5);create().Run(stop.Token).GetAwaiter().GetResult();}catch{error=1;}
-            Report(1,0,error);
-        };
-        return StartServiceCtrlDispatcher(new[]{new Entry{Name=ServerService.Name,Main=main},new Entry()})?0:Marshal.GetLastWin32Error();
+        this.root=root;ServiceName=ServerService.Name;CanStop=true;CanShutdown=true;
+        this.requestAdditionalTime=requestAdditionalTime??RequestAdditionalTime;
+        AutoLog=false; // LocalService does not need permission to create an EventLog source.
+    }
+    private void Log(string message)=>BoundedLog.Append(Path.Combine(root,"logs","service.log"),message);
+    protected override void OnStart(string[] args)=>StartWorker();
+    internal void StartWorker()
+    {
+        worker=Task.Run(()=>new BackendHost(root).Run(cancellation.Token));
+        _=worker.ContinueWith(task=>{
+            if(Volatile.Read(ref stopping)!=0)return;
+            Log("Service worker ended unexpectedly: "+(task.Exception?.ToString()??"no stop requested"));
+            // A failed host must trigger SCM recovery; it can then adopt any
+            // surviving owned backend. Never report a successful normal stop.
+            Environment.Exit(1);
+        },CancellationToken.None,TaskContinuationOptions.None,TaskScheduler.Default);
+    }
+    protected override void OnStop()=>StopWorker();
+    internal void StopWorker(bool extendDeadline=true)
+    {
+        Interlocked.Exchange(ref stopping,1);
+        if(extendDeadline)requestAdditionalTime(240000);
+        Log("SCM stop requested; waiting for backend shutdown.");
+        try{
+            // ServiceBase reports STOPPED only after this method returns.
+            // CancelAsync keeps worker continuations off the SCM control callback.
+            Task.WhenAll(cancellation.CancelAsync(),worker??Task.CompletedTask).GetAwaiter().GetResult();
+            Log("SCM shutdown completed.");
+        }catch(Exception error){
+            ExitCode=1;Log("SCM shutdown failed: "+error);
+            throw; // No successful STOPPED acknowledgement while shutdown failed.
+        }
+    }
+    // RequestAdditionalTime is supported during OnStop's STOP_PENDING state,
+    // not during the separate Windows shutdown notification.
+    protected override void OnShutdown()=>StopWorker(false);
+    protected override void Dispose(bool disposing)
+    {
+        if(disposing&&(worker==null||worker.IsCompleted))cancellation.Dispose();
+        base.Dispose(disposing);
     }
 }

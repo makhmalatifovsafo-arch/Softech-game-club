@@ -92,6 +92,16 @@ jobs:
       - run: dotnet build NetCafeServer/Service/SoftechService.csproj
       - run: node tests/server-service.mjs
       - run: node tests/service-emergency-fallback.mjs
+      - name: Verify cancellation drains the real backend
+        run: |
+          dotnet build tests/ServiceCancellation/ServiceCancellation.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'Cancellation fixture build failed' }
+          $env:SOFTECH_SERVICE_EXE = (Resolve-Path tests/ServiceCancellation/bin/Debug/net8.0-windows/win-x64/ServiceCancellation.exe).Path
+          node tests/server-service.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Backend cancellation test failed' }
+          $env:SOFTECH_SERVICE_TEST_SHUTDOWN = '1'
+          node tests/server-service.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Backend Windows shutdown test failed' }
       - name: Publish and verify real Windows service on disposable runner
         id: service_test
         run: |

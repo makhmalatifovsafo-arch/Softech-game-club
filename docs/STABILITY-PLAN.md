@@ -308,6 +308,22 @@ Yangi ZIP/setup relizi tayyorlanib tarqatilmadi, versiya o'zgartirilmadi.
 
 ### Tarqatishdan oldin
 
+1.2.0 keyingi CI natijasi (`Backend survived SCM stop`): oldingi kutish tuzatishi
+yetarli bo'lmadi. Windows STOPPED holatini qaytargan, ammo Node ishlashda qolgan
+va managed shutdown yakuni logda yo'q. Mustaqil cancellation sinovida real worker,
+OTA va bazaning yopilishi o'tdi; native boshqaruv qismi alohida muammo bo'lib qoldi.
+Qo'lda yozilgan SCM dispatcher .NET `ServiceBase` (ServiceController 8.0.1) bilan
+almashtirildi. OnStop worker va cancellation yakunini kutadi; shutdown xatosini
+yutmaydi. OnShutdown alohida yo'l orqali ishlaydi, unsupported RequestAdditionalTime
+chaqirmaydi. Mahalliy sinov yangi StartWorker/StopWorker callbacklarini real Node
+bilan bajaradi; faqat SCM vaqt so'rash chaqiruvini almashtiradi. Haqiqiy SCM testi
+Node PID yopilganini va managed shutdown logini ham talab qiladi. Mahalliy SCM
+o'rnatilmagan; GitHub hosted runner tekshiruvi muvaffaqiyatli o'tishi hali shart.
+Tekshirildi: yangi callback bilan normal stop va Windows shutdown yo'li, real
+Node crash/restart/adoption, OTA, 5320 so'm yozuvi va SQLite integrity; publish
+qilingan service EXE console sinovi ham o'tdi. Service publish va SCM test buildi
+xatosiz. Mahalliy sinov SCM o'rnatilganini yoki uning o'tganini anglatmaydi.
+
 1.2.0 CI xizmat sinovi: `StopAndWait` to'xtatish buyrug'i rad etilganda holatni
 qayta tekshirmasdan xato chiqargan; eski xabarda Win32 kodi yo'q edi. Pending
 holatlarni kutish, rad etilgan buyruqdan keyin STOPPED holatini qayta tekshirish,
