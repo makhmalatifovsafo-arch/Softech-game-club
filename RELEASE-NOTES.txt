@@ -1,3 +1,9 @@
+2026-11-13: 1.2.1
+- Set Server, Client, cloud panels and Windows installer metadata to 1.2.1.
+- Includes the server resilience, session continuity and Windows update/recovery
+  fixes described below. OTA manifests are generated from the new release ZIPs.
+- Existing installations need ServerSetup once to enable the Windows service.
+
 2026-11-13: 1.2.0 server resilience and session continuity
 - Retry transient Windows executable/sharing locks during file replacement and
   rollback for up to 30 seconds. Persistent failures retain recovery evidence and
