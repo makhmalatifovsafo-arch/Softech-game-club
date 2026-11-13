@@ -4,13 +4,24 @@ import { canClientCloseSession, isPostpaidSession } from './sessionMode.js';
 
 // Both cashier checkout and the client display use this calculation.
 export function postpaidGameBill(session, now = Date.now()) {
-  const elapsed = Math.max(0, now - Date.parse(session.started_at));
+  const started = Date.parse(session.started_at);
+  if (!Number.isFinite(started) || !Number.isFinite(now)) throw new Error('Seans vaqti noto‘g‘ri. Hisobni tekshiring.');
+  const elapsed = Math.max(0, now - started);
   if (!elapsed) return 0;
   const settings = getClubSettings(session.club_id);
-  if (settings.vip_pricing_mode === 'CUSTOM')
-    return Math.round(Math.max(1,Math.ceil(elapsed/60000)) / 60 * settings.vip_custom_price);
+  if (settings.vip_pricing_mode === 'CUSTOM') {
+    const rate = Number(settings.vip_custom_price);
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error('VIP soatlik narxi noto‘g‘ri. Tarifni tekshiring.');
+    return Math.round(elapsed / 3600000 * rate);
+  }
   return calculateIntervalPrice(session.started_at,new Date(now),true,session.club_id,
     resolveZoneIdForComputer(session.computer_id,session.club_id)).totalAmount;
+}
+
+export function sessionGameAmount(session, now = Date.now()) {
+  if (!isPostpaidSession(session)) return { gameAmount:Number(session.paid_amount || session.total_amount || 0), billingError:null };
+  try { return { gameAmount:postpaidGameBill(session,now), billingError:null }; }
+  catch (error) { return { gameAmount:null, billingError:error.message || 'Hisobni aniqlash uchun kassirga murojaat qiling.' }; }
 }
 
 export function clientSessionState(id, now = Date.now()) {
@@ -18,11 +29,7 @@ export function clientSessionState(id, now = Date.now()) {
   if (!session) return {};
   const postpaid = isPostpaidSession(session);
   const startedAt = Date.parse(session.started_at);
-  let gameAmount = Number(session.paid_amount || session.total_amount || 0), billingError = null;
-  if (postpaid) {
-    try { gameAmount = postpaidGameBill(session,now); }
-    catch { gameAmount = null; billingError = 'Hisobni aniqlash uchun kassirga murojaat qiling.'; }
-  }
+  const {gameAmount,billingError} = sessionGameAmount(session,now);
   const member = /^CLIENT_BALANCE_(PREPAID|LIVE):/.test(session.notes || '');
   return {
     canSelfClose:canClientCloseSession(session), isPostpaid:postpaid, startedAt,

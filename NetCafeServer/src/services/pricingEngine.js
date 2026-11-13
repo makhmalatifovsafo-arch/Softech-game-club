@@ -11,20 +11,22 @@ import { db } from '../db.js';
 /**
  * ISO yoki Date yoki "HH:mm" ni hisobga olgan holda sanani tahlil qilish
  */
-function parseDateOrTodayTime(input) {
-  if (!input) return new Date();
-  if (input instanceof Date) return new Date(input);
+function parseDateOrTodayTime(input, reference = new Date()) {
+  if (input === undefined) return new Date(reference);
 
   // Agar "16:00" yoki "16:30" kabi vaqt formati bo'lsa
   if (typeof input === 'string' && /^\d{1,2}:\d{2}$/.test(input.trim())) {
     const [h, m] = input.trim().split(':').map(Number);
-    const d = new Date();
+    if (h > 23 || m > 59) throw new Error('Vaqt HH:mm formatida 00:00–23:59 oralig‘ida bo‘lsin.');
+    const d = new Date(reference);
     d.setHours(h, m, 0, 0);
     return d;
   }
 
+  if (input === null || input === '' || (typeof input === 'object' && !(input instanceof Date))) throw new Error('Sana yoki vaqt noto‘g‘ri.');
   const parsed = new Date(input);
-  return isNaN(parsed.getTime()) ? new Date() : parsed;
+  if (!Number.isFinite(parsed.getTime())) throw new Error('Sana yoki vaqt noto‘g‘ri.');
+  return parsed;
 }
 
 const parseOrCurrentDate = parseDateOrTodayTime;
@@ -146,19 +148,23 @@ export function calculateMinuteCost(momentDate, isVip = false, clubId = 1, zoneI
 /**
  * 1. Vaqt oralig'i bo'yicha dinamik narxni hisoblash (Start Time -> End Time)
  */
-export function calculateIntervalPrice(startDateInput, endDateInput, isVip = false, clubId = 1, zoneId = null) {
+export function calculateIntervalPrice(startDateInput, endDateInput, isVip = false, clubId = 1, zoneId = null, maxHours = Infinity) {
   const start = parseDateOrTodayTime(startDateInput);
-  const end = parseDateOrTodayTime(endDateInput);
+  const end = parseDateOrTodayTime(endDateInput, start);
 
   let startEpoch = start.getTime();
   let endEpoch = end.getTime();
 
   // Agar end start dan oldin bo'lsa (masalan 23:00 -> 03:00)
-  if (endEpoch <= startEpoch) {
-    endEpoch += 24 * 60 * 60 * 1000;
+  const clockEnd = typeof endDateInput === 'string' && /^\d{1,2}:\d{2}$/.test(endDateInput.trim());
+  if (clockEnd && endEpoch <= startEpoch) {
+    end.setDate(end.getDate()+1);
+    endEpoch = end.getTime();
   }
+  if (endEpoch < startEpoch) throw new Error('Tugash vaqti boshlanishdan oldin bo‘lishi mumkin emas.');
+  if (endEpoch-startEpoch > maxHours*3600000) throw new Error('Seans 72 soatdan oshmasligi kerak.');
 
-  const totalMinutes = Math.max(1, Math.round((endEpoch - startEpoch) / (60 * 1000)));
+  const totalMinutes = (endEpoch - startEpoch) / 60000;
 
   let totalAmount = 0;
   const breakdownMap = new Map();
@@ -196,6 +202,7 @@ export function calculateIntervalPrice(startDateInput, endDateInput, isVip = fal
     startTime: new Date(startEpoch).toISOString(),
     endTime: new Date(endEpoch).toISOString(),
     totalMinutes,
+    totalSeconds: (endEpoch - startEpoch) / 1000,
     totalHours: Number((totalMinutes / 60).toFixed(2)),
     totalAmount: finalAmount,
     zoneId: zoneId ? Number(zoneId) : null,
@@ -206,9 +213,29 @@ export function calculateIntervalPrice(startDateInput, endDateInput, isVip = fal
 /**
  * 2. Berilgan summa (Amount) bo'yicha qancha vaqt o'ynay olishini hisoblash
  */
-export function calculateTimeFromAmount(startDateInput, targetAmount, isVip = false, clubId = 1, zoneId = null) {
+export function calculateTimeFromAmount(startDateInput, targetAmount, isVip = false, clubId = 1, zoneId = null, exactAmount = false) {
   const start = parseDateOrTodayTime(startDateInput);
   let startEpoch = start.getTime();
+  if (exactAmount) {
+    const budget=Number(targetAmount);
+    if (!Number.isSafeInteger(budget) || budget<=0) throw new Error('Summani musbat butun so‘mda kiriting.');
+    let remaining=budget,cursor=startEpoch;
+    const limit=startEpoch+72*3600000;
+    while (remaining>1e-7 && cursor<limit) {
+      const rate=requireRateForMoment(new Date(cursor),isVip,clubId,zoneId).pricePerHour/3600000;
+      const end=Math.min(limit,(Math.floor(cursor/60000)+1)*60000);
+      const cost=(end-cursor)*rate;
+      if (remaining<=cost+1e-7) {
+        cursor=Math.min(end,cursor+Math.round(remaining/rate));
+        remaining=0;
+      } else { remaining-=cost;cursor=end; }
+    }
+    if (remaining>1e-7) throw new Error('Bu summa 72 soatdan ortiq vaqtga yetadi. Kichikroq summa kiriting.');
+    if (cursor<=startEpoch) throw new Error('Bu summa uchun seans vaqti juda qisqa.');
+    const result=calculateIntervalPrice(start,new Date(cursor),isVip,clubId,zoneId);
+    if (result.totalAmount!==budget) throw new Error('Summaga mos vaqtni aniq hisoblab bo‘lmadi. Tarifni tekshiring.');
+    return result;
+  }
   const maxBudget = Math.max(0, Number(targetAmount) || 0);
 
   if (maxBudget <= 0) {
@@ -281,8 +308,8 @@ export function calculateTimeFromAmount(startDateInput, targetAmount, isVip = fa
 export function calculateFromDurationHours(startDateInput, durationHours, isVip = false, clubId = 1, zoneId = null) {
   const start = parseDateOrTodayTime(startDateInput);
   const hours = Number(durationHours);
-  if (!Number.isFinite(hours) || hours <= 0 || hours > 72) throw new Error('Seans vaqti 0 dan katta va 72 soatdan oshmasligi kerak.');
-  const minutes = Math.max(1, Math.round(hours * 60));
+  if (!Number.isFinite(hours) || hours < 1/60 || hours > 72) throw new Error('Seans vaqti kamida 1 daqiqa va 72 soatdan oshmasligi kerak.');
+  const minutes = Math.round(hours * 60);
   const endEpoch = start.getTime() + minutes * 60 * 1000;
   return calculateIntervalPrice(start, new Date(endEpoch), isVip, clubId, zoneId);
 }

@@ -3607,6 +3607,7 @@
     let clientsData = [];
     let calcDebounceTimer = null;
     let priceCalculationRevision = 0;
+    let quotedTargetEndTime = null;
     let clubSettingsData = { vip_enabled: true, vip_pricing_mode: 'SCHEDULE', vip_custom_price: 15000 };
     let selectedVipPayMethod = 'CASH';
 
@@ -4300,9 +4301,49 @@
       document.getElementById('liveClock').textContent = now.toTimeString().split(' ')[0];
     }, 1000);
 
+    function sessionBillLabel(session) {
+      if (session?.billingError || session?.totalAmount === null) return "Hisobni tekshiring";
+      return Number(session?.totalAmount ?? session?.amount ?? 0).toLocaleString() + ' UZS';
+    }
+    function postpaidTimeLabel(session) {
+      const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(session.startedAt)) / 60000));
+      return Number.isFinite(minutes) ? `${minutes} daq / VIP` : 'VIP';
+    }
+    // Refresh only live bills; do not rebuild cards during selection or dragging.
+    let billRefreshPending = false;
+    async function refreshActiveSessionBills() {
+      if (!authToken || billRefreshPending || isMainLayoutEdit || !computersData.some(p => p.activeSession?.isPostpaid)) return;
+      billRefreshPending = true;
+      const token = authToken;
+      try {
+        const res = await fetch('/api/computers', {headers:{Authorization:`Bearer ${token}`},cache:'no-store',signal:AbortSignal.timeout(8000)});
+        if (!res.ok) return;
+        const list = await res.json();
+        if (token !== authToken || !Array.isArray(list)) return;
+        for (const current of computersData) {
+          const incoming = list.find(p => p.id === current.id)?.activeSession;
+          if (!incoming || incoming.sessionId !== current.activeSession?.sessionId) continue;
+          Object.assign(current.activeSession,incoming);
+        }
+        document.querySelectorAll('[data-session-bill]').forEach(el => {
+          const session = computersData.find(p => p.id === el.dataset.sessionBill)?.activeSession;
+          if (session) { el.textContent = sessionBillLabel(session); el.title = session.billingError || ''; }
+        });
+      } catch (error) { console.warn('Live session bill refresh failed:',error.message); }
+      finally { billRefreshPending = false; }
+    }
+    setInterval(refreshActiveSessionBills, 10000);
+
     // Jonli taymerlar va progress barlar (sekundma-sekund kamayib boradi)
     setInterval(() => {
       computersData.forEach(pc => {
+        if (pc.activeSession?.isPostpaid) {
+          for (const prefix of ['timer-', 'desk-timer-', 'table-timer-']) {
+            const el = document.getElementById(prefix + pc.id);
+            if (el) el.textContent = postpaidTimeLabel(pc.activeSession);
+          }
+          return;
+        }
         if (pc.activeSession && pc.activeSession.remainingSeconds > 0) {
           pc.activeSession.remainingSeconds--;
           const timeStr = formatTime(pc.activeSession.remainingSeconds);
@@ -4734,7 +4775,7 @@
           if (s.isPostpaid || s.paymentType === 'POSTPAID') {
             const playedMins = Math.max(0, Math.floor((Date.now() - new Date(startVal || Date.now()).getTime()) / 60000));
             timeInfo = `
-              <span class="text-xs font-bold font-mono text-amber-400">O'ynalmoqda: ${playedMins} daq</span>
+              <span id="table-timer-${pc.id}" class="text-xs font-bold font-mono text-amber-400">O'ynalmoqda: ${playedMins} daq</span>
               <span class="text-[10px] text-zinc-500 block">Vaqt chegarasiz</span>
             `;
           } else {
@@ -4761,7 +4802,7 @@
           const amt = Number(s.totalAmount || s.amount || 0);
           const pMethod = s.paymentType === 'BALANCE' ? 'Akkaunt' : (s.paymentType === 'CARD' ? 'Karta' : (s.paymentType === 'POSTPAID' ? 'Kassada' : 'Naqd'));
           paymentInfo = `
-            <div class="text-xs font-bold text-emerald-400 font-mono">${amt > 0 ? amt.toLocaleString() + ' UZS' : 'Kassada'}</div>
+            <div data-session-bill="${pc.id}" title="${escapeHtml(s.billingError || '')}" class="text-xs font-bold text-emerald-400 font-mono">${sessionBillLabel(s)}</div>
             <span class="text-[10px] text-zinc-500 font-mono">${pMethod}</span>
           `;
         }
@@ -5315,8 +5356,9 @@
           bottomText = `
             ${activeS?.isMember ? `<div class="text-[8px] text-emerald-300 truncate" title="Mijoz hisobi #${Number(activeS.memberId)}">👤 ${escapeHtml(activeS.customerName || 'Mijoz')}</div>` : ''}
             <div id="desk-timer-${pc.id}" class="text-[10px] font-mono font-bold text-amber-300 leading-none truncate">
-              ${formatTime(activeS ? (activeS.remainingSeconds || 0) : 0)}
+              ${activeS?.isPostpaid ? postpaidTimeLabel(activeS) : formatTime(activeS ? (activeS.remainingSeconds || 0) : 0)}
             </div>
+            ${activeS?.isPostpaid ? `<div data-session-bill="${pc.id}" title="${escapeHtml(activeS.billingError || '')}" class="text-[9px] text-amber-300 truncate mt-1">${sessionBillLabel(activeS)}</div>` : ''}
             <div class="w-full bg-zinc-800/80 rounded-full h-1 mt-1 overflow-hidden">
               <div id="desk-progress-${pc.id}" class="bg-amber-400 h-full transition-all" style="width: 100%"></div>
             </div>
@@ -8786,7 +8828,7 @@
                 <div>
                   <div class="flex items-baseline justify-between">
                     <div id="timer-${pc.id}" class="softech-timer text-2xl font-bold tracking-tight ${(activeS?.remainingSeconds || 0) <= 300 ? 'text-amber-400 animate-pulse' : 'text-amber-400'}">
-                      ${formatTime(activeS?.remainingSeconds || 0)}
+                      ${activeS?.isPostpaid ? postpaidTimeLabel(activeS) : formatTime(activeS?.remainingSeconds || 0)}
                     </div>
                     <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300">
                       ${activeS?.isMember ? '👤 Mijoz hisobi' : escapeHtml(activeS?.paymentType || 'CASH')}
@@ -8808,7 +8850,7 @@
                   <div class="flex items-center justify-between text-[10px] text-zinc-400 mt-1">
                     ${activeS?.isMember ? `<span>Hisob #${Number(activeS.memberId)} balansi:</span><span class="font-mono text-emerald-300">${Number(activeS.memberBalance || 0).toLocaleString()} UZS</span></div><div class="flex items-center justify-between text-[10px] text-zinc-400 mt-1">` : ''}
                     <span>To'langan:</span>
-                    <span class="font-mono text-zinc-300 font-semibold">${(activeS?.totalAmount || 0).toLocaleString()} UZS</span>
+                    <span data-session-bill="${pc.id}" title="${escapeHtml(activeS?.billingError || '')}" class="font-mono text-zinc-300 font-semibold">${sessionBillLabel(activeS)}</span>
                   </div>
                   ${((activeS?.barPendingAmount || 0) > 0 || (pc.barPendingAmount || 0) > 0) ? `
                   <div class="flex items-center justify-between text-[10px] text-amber-400 mt-1 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
@@ -8972,6 +9014,7 @@
 
     function setStartMode(mode) {
       priceCalculationRevision++;
+      quotedTargetEndTime = null;
       clearTimeout(calcDebounceTimer);
       if (mode === 'postpaid') {
         if (clubSettingsData && clubSettingsData.vip_enabled === false) {
@@ -9015,7 +9058,7 @@
       } else if (mode === 'client') {
         guestNameSec.classList.add('hidden');
         paymentTypeSec.classList.remove('hidden');
-        calcClientHours(document.getElementById('clientHoursInput').value || 1);
+        calcClientHours(document.getElementById('clientHoursInput').value);
         submitBtn.textContent = count > 1 ? `Guruh Seansini Boshlash (${count} PC) ↵` : 'Seansni Boshlash ↵';
       } else if (mode === 'endtime') {
         guestNameSec.classList.remove('hidden');
@@ -9036,8 +9079,13 @@
       }
     }
 
+    function quoteDurationLabel(seconds) {
+      const total = Math.max(0, Math.round(seconds));
+      return `${Math.floor(total / 60)} daqiqa${total % 60 ? ' ' + total % 60 + ' soniya' : ''}`;
+    }
     async function fetchStartQuote(options) {
       const body = JSON.parse(options.body);
+      body.startTime ??= new Date().toISOString();
       const ids = [...targetSelectedPcIds];
       const rows = await Promise.all(ids.map(async computerId => {
         const response = await fetch('/api/tariffs/calculate', { ...options, body: JSON.stringify({ ...body, computerId }) });
@@ -9047,6 +9095,10 @@
       }));
       const data = { ...rows[0], totalPrice: rows.reduce((sum, row) => sum + Number(row.price), 0),
         perPcLabel: rows.every(row => row.price === rows[0].price) ? Number(rows[0].price).toLocaleString() + ' UZS' : 'Har bir PC tarifi bo‘yicha' };
+      const durations = rows.map(row => row.totalSeconds ?? row.durationMinutes * 60);
+      data.durationLabel = Math.round(Math.min(...durations)) === Math.round(Math.max(...durations))
+        ? quoteDurationLabel(durations[0])
+        : quoteDurationLabel(Math.min(...durations)) + ' ? ' + quoteDurationLabel(Math.max(...durations)) + ' (PC tarifiga qarab)';
       return { ok: true, json: async () => data };
     }
     function setStartQuotePending(pending, error = false) {
@@ -9062,7 +9114,7 @@
     function calcFromHours(val) {
       const revision = ++priceCalculationRevision;
       setStartQuotePending(true);
-      const h = parseFloat(val) || 1;
+      const h = Number(val);
       const mins = Math.round(h * 60);
       const pcId = targetSelectedPcIds[0];
       const count = Math.max(1, targetSelectedPcIds.length);
@@ -9146,8 +9198,10 @@
               if (revision !== priceCalculationRevision) return;
               mins = data.durationMinutes;
               h = (mins / 60).toFixed(1);
-              document.getElementById('priceCalculatedTime').textContent = `${mins} daqiqa (${h} soat)`;
-              document.getElementById('startModalDurationSummary').textContent = `${mins} daqiqa (${h} soat)`;
+              document.getElementById('priceCalculatedTime').textContent = data.durationLabel;
+              document.getElementById('startModalDurationSummary').textContent = data.durationLabel;
+              document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
+              document.getElementById('startModalPrice').textContent = data.totalPrice.toLocaleString() + ' UZS';
               setStartQuotePending(false);
             }
           }
@@ -9163,6 +9217,7 @@
     // 3. Tugash vaqti bo'yicha dinamik hisoblash (Server Dynamic Pricing Engine orqali)
     async function calcFromEndTime(timeVal) {
       const revision = ++priceCalculationRevision;
+      quotedTargetEndTime = null;
       setStartQuotePending(true);
       if (!timeVal) return;
       clearTimeout(calcDebounceTimer);
@@ -9188,11 +9243,12 @@
             const perPc = data.price || 0;
             if (revision !== priceCalculationRevision) return;
             const mins = data.durationMinutes || 0;
+            quotedTargetEndTime = data.endTime;
             const count = Math.max(1, targetSelectedPcIds.length);
             const total = data.totalPrice;
 
-            document.getElementById('endTimeCalculatedMins').textContent = `${mins} daqiqa (${(mins/60).toFixed(1)} soat)`;
-            document.getElementById('startModalDurationSummary').textContent = `${mins} daqiqa (soat ${timeVal} gacha)`;
+            document.getElementById('endTimeCalculatedMins').textContent = data.durationLabel;
+            document.getElementById('startModalDurationSummary').textContent = data.durationLabel + ` (soat ${timeVal} gacha)`;
             document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
             document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
             document.getElementById('startModalTotalLabel').textContent = count > 1 ? `JAMI TO'LOV (${count} PC):` : `JAMI TO'LOV:`;
@@ -9264,7 +9320,7 @@
       document.getElementById('selectedClientBalance').textContent = `${cust.balance.toLocaleString()} UZS`;
       document.getElementById('selectedClientCard').classList.remove('hidden');
 
-      calcClientHours(document.getElementById('clientHoursInput').value || 1);
+      calcClientHours(document.getElementById('clientHoursInput').value);
     }
 
     function calcClientHours(val) {
@@ -9272,7 +9328,7 @@
       clearTimeout(calcDebounceTimer);
       setStartQuotePending(true);
       document.getElementById('balancePaymentOption').classList.add('hidden');
-      const h = parseFloat(val) || 1;
+      const h = Number(val);
       const count = Math.max(1, targetSelectedPcIds.length);
       document.getElementById('startModalDurationSummary').textContent = h + ' soat (' + Math.round(h*60) + ' daqiqa)';
       document.getElementById('startModalTotalLabel').textContent = count > 1 ? 'JAMI TO‘LOV ('+count+' PC):' : 'JAMI TO‘LOV:';
@@ -9303,18 +9359,19 @@
       let customerId = null;
 
       if (currentStartMode === 'hours') {
-        const h = parseFloat(document.getElementById('inputHours').value) || 1;
+        const h = Number(document.getElementById('inputHours').value);
         durationMinutes = Math.round(h * 60);
         amount = Math.round(h * currentHourlyRate);
       } else if (currentStartMode === 'price') {
-        amount = parseFloat(document.getElementById('inputPrice').value) || 10000;
+        amount = Number(document.getElementById('inputPrice').value);
         durationMinutes = currentHourlyRate > 0 ? Math.round((amount / currentHourlyRate) * 60) : 0;
       } else if (currentStartMode === 'endtime') {
-        targetEndTime = document.getElementById('inputTargetEndTime').value;
-        const text = document.getElementById('startModalPerPcPrice').textContent.replace(/[^\d]/g, '');
-        amount = parseFloat(text) || 10000;
-        const durText = document.getElementById('endTimeCalculatedMins').textContent;
-        durationMinutes = parseInt(durText) || 60;
+        targetEndTime = quotedTargetEndTime;
+        if (!targetEndTime || Date.parse(targetEndTime) <= Date.now()) {
+          setStartQuotePending(true, 'Tanlangan tugash vaqti o‘tgan. Yangi vaqt tanlang.');
+          return;
+        }
+        amount = 0;
       } else if (currentStartMode === 'postpaid') {
         durationMinutes = 24 * 60;
         amount = 0;
@@ -9324,7 +9381,7 @@
           alert('Iltimos, avval ro\'yxatdan mijozni tanlang yoki qidiring!');
           return;
         }
-        const h = parseFloat(document.getElementById('clientHoursInput').value) || 1;
+        const h = Number(document.getElementById('clientHoursInput').value);
         durationMinutes = Math.round(h * 60);
         amount = Math.round(h * currentHourlyRate);
 

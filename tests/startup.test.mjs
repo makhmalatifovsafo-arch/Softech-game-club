@@ -1,4 +1,6 @@
 import { checkMobileFlow } from './mobile-flow.mjs';
+import { checkPostpaidFlow } from './postpaid-flow.mjs';
+import { checkPrepaidFlow } from './prepaid-flow.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { checkClubOperations, readClubCatalog } from './club-operations.mjs';
 import test from 'node:test';
@@ -230,6 +232,8 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     },reconnect:async()=>{
       socket.terminate();socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');let restored;socket.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='START_SESSION')restored=m.payload||m;});await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01'}}));for(let i=0;i<60&&!restored;i++)await new Promise(r=>setTimeout(r,50));assert.ok(restored);return restored;
     }});
+    await checkPostpaidFlow({localUrl,token:ownerLogin.token,databasePath:path.join(club,'netcafe.db')});
+    await checkPrepaidFlow({localUrl,token:ownerLogin.token,databasePath:path.join(club,'netcafe.db')});
     const fixture=new DatabaseSync(path.join(club,'netcafe.db'));
     fixture.exec('PRAGMA busy_timeout=5000');
     fixture.prepare("INSERT INTO clubs(id,name,owner_name,phone,expires_at,is_active) VALUES(99,'Other club','Owner','123','2099-01-01',1)").run();

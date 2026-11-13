@@ -1,4 +1,6 @@
-import { clientSessionState } from './services/clientSessionState.js';
+import { prepaidQuote } from './services/prepaidQuote.js';
+import { clientSessionState, sessionGameAmount } from './services/clientSessionState.js';
+import { isPostpaidSession } from './services/sessionMode.js';
 import { validateSchedule } from './services/tariffValidation.js';
 import { getFinancialBreakdown } from './services/financialBreakdown.js';
 import { autoWakeComputer } from './services/autoWake.js';
@@ -1341,9 +1343,13 @@ function handleRequest(req, res) {
 
     readBody(req, (body) => {
       try {
-        const vip_enabled = body.vip_enabled !== undefined ? (body.vip_enabled ? 1 : 0) : 1;
-        const vip_pricing_mode = body.vip_pricing_mode === 'CUSTOM' ? 'CUSTOM' : 'SCHEDULE';
-        const vip_custom_price = parseFloat(body.vip_custom_price) || 15000.0;
+        const previous = getClubSettings(clubId);
+        const vip_enabled = body.vip_enabled !== undefined ? (body.vip_enabled ? 1 : 0) : Number(previous.vip_enabled);
+        const vip_pricing_mode = body.vip_pricing_mode ?? previous.vip_pricing_mode;
+        const vip_custom_price = body.vip_custom_price === undefined ? previous.vip_custom_price : Number(body.vip_custom_price);
+        if (!['CUSTOM','SCHEDULE'].includes(vip_pricing_mode) || !Number.isFinite(vip_custom_price) || vip_custom_price <= 0) {
+          sendJson(res,400,{error:'VIP tarif rejimi va 0 dan katta soatlik narxni kiriting.'}); return;
+        }
 
         db.prepare(`
           INSERT INTO club_settings (club_id, vip_enabled, vip_pricing_mode, vip_custom_price, updated_at)
@@ -1533,12 +1539,19 @@ function handleRequest(req, res) {
       if (pc.ends_at) {
         remainingSeconds = Math.max(0, Math.floor((new Date(pc.ends_at).getTime() - now) / 1000));
       }
-      const isPostpaid = Boolean(pc.notes && pc.notes.includes('POSTPAID'));
+      const isPostpaid = isPostpaidSession(pc);
       const isMember = isMemberSession(pc);
       const barPending = Number(pc.bar_pending_amount || 0);
-      const gameAmount = Number(pc.total_amount || 0);
+      const {gameAmount,billingError} = sessionGameAmount({...pc,computer_id:pc.id},now);
       const pcZoneId = pc.zone_id ?? null;
-      const currentRateInfo = getActiveRateForMoment(new Date(now), false, pc.club_id || clubId || 1, pcZoneId);
+      const currentRateInfo = getActiveRateForMoment(new Date(now), isPostpaid, pc.club_id || clubId || 1, pcZoneId);
+      if (isPostpaid) {
+        const settings = getClubSettings(pc.club_id || clubId || 1);
+        if (settings.vip_pricing_mode === 'CUSTOM') {
+          currentRateInfo.pricePerHour = settings.vip_custom_price;
+          currentRateInfo.name = 'VIP — alohida soatlik narx';
+        }
+      }
 
       // Ushbu kompyuter uchun yaqinlashib kelayotgan bronni aniqlash (15-30 daqiqa oldin ogohlantirish)
       let upcomingBooking = null;
@@ -1612,7 +1625,7 @@ function handleRequest(req, res) {
         isVipPostpaidAllowed: currentRateInfo.isVipPostpaidAllowed !== false,
         isVisible: pc.is_visible ?? 1,
         barPendingAmount: barPending,
-        totalWithBar: (pc.session_id ? gameAmount : 0) + barPending,
+        totalWithBar: billingError ? null : (pc.session_id ? gameAmount : 0) + barPending,
         upcomingBooking,
         activeSession: pc.session_id ? {
           sessionId: pc.session_id,
@@ -1621,14 +1634,16 @@ function handleRequest(req, res) {
           startedAt: pc.started_at,
           endsAt: pc.ends_at,
           totalAmount: gameAmount,
+          billingError,
+          asOf: now,
           barPendingAmount: barPending,
-          totalWithBar: gameAmount + barPending,
+          totalWithBar: billingError ? null : gameAmount + barPending,
           paymentType: isMember ? 'BALANCE' : (pc.payment_type || (isPostpaid ? 'POSTPAID' : 'CASH')),
           isMember,
           memberId: isMember ? pc.member_id : null,
           memberBalance: isMember ? Number(pc.member_balance || 0) : null,
           isPostpaid,
-          remainingSeconds
+          remainingSeconds: isPostpaid ? -1 : remainingSeconds
         } : null
       };
     });
@@ -1704,14 +1719,16 @@ function handleRequest(req, res) {
 
         let result;
 
-        if (targetEndTime) {
-          result = calculateIntervalPrice(startTime, targetEndTime, isVip, clubId, zoneId);
-        } else if (amount !== undefined && amount !== null && amount !== '') {
-          result = calculateTimeFromAmount(startTime, parseFloat(amount), isVip, clubId, zoneId);
+        if (targetEndTime !== undefined) {
+          if (!targetEndTime) throw new Error('Tugash vaqtini kiriting.');
+          result = calculateIntervalPrice(startTime, targetEndTime, isVip, clubId, zoneId,72);
+        } else if (amount !== undefined) {
+          result = calculateTimeFromAmount(startTime, Number(amount), isVip, clubId, zoneId, true);
         } else {
-          const hours = durationHours !== undefined ? parseFloat(durationHours) : 1;
+          const hours = durationHours !== undefined ? Number(durationHours) : 1;
           result = calculateFromDurationHours(startTime, hours, isVip, clubId, zoneId);
         }
+        if (!(result.totalMinutes>0) || !(result.totalAmount>0)) throw new Error('Seans vaqti va to‘lovi 0 dan katta bo‘lishi kerak.');
 
         sendJson(res, 200, {
           success: true,
@@ -1850,9 +1867,6 @@ function handleRequest(req, res) {
         if (!targetPcRow) { sendJson(res, 404, { error: 'Kompyuter topilmadi.' }); return; }
         const activeSession = db.prepare("SELECT id FROM sessions WHERE computer_id = ? AND status = 'ACTIVE'").get(targetPcRow.id);
         if (activeSession) { sendJson(res, 409, { error: 'Kompyuterda faol seans mavjud.' }); return; }
-        if (!Number.isFinite(Number(durationMinutes)) || Number(durationMinutes) <= 0 || !Number.isFinite(Number(amount)) || Number(amount) < 0) {
-          sendJson(res, 400, { error: 'Vaqt yoki summa notogri.' }); return;
-        }
         const resolvedCompId = targetPcRow.id;
         const pcZoneId = targetPcRow?.zone_id || resolveZoneIdForComputer(resolvedCompId, clubId);
 
@@ -1862,9 +1876,8 @@ function handleRequest(req, res) {
         let finalEndsAt;
         const startedAt = new Date();
 
-        const activeRate = requireRateForMoment(startedAt, false, clubId, pcZoneId);
-
         const isPostpaidReq = Boolean(mode === 'postpaid' || mode === 'VIP' || mode === 'vip' || isPostpaid || paymentType === 'POSTPAID');
+        const activeRate = requireRateForMoment(startedAt, isPostpaidReq, clubId, pcZoneId);
         if(isPostpaidReq && paymentType==='BALANCE')throw new Error('Postpaid seansni balansdan oldindan to‘lab bo‘lmaydi.');
         if (isPostpaidReq) {
           const settings = getClubSettings(clubId);
@@ -1880,26 +1893,10 @@ function handleRequest(req, res) {
           finalAmount = 0;
           finalEndsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
         } else {
-          if (mode === 'endtime') {
-            if (!data.targetEndTime) throw new Error('Tugash vaqtini kiriting.');
-            const calc = calculateIntervalPrice(startedAt, data.targetEndTime, false, clubId, pcZoneId);
-            finalDuration = calc.totalMinutes;
-            finalAmount = calc.totalAmount;
-            finalEndsAt = new Date(calc.endTime);
-          } else if (mode === 'hours' || (!amount && durationMinutes)) {
-            const calc = calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
-            finalAmount = calc.totalAmount;
-            finalEndsAt = new Date(calc.endTime);
-          } else if ((mode === 'price' || mode === 'amount') && amount) {
-            const calc = calculateTimeFromAmount(startedAt, amount, false, clubId, pcZoneId);
-            finalDuration = calc.totalMinutes;
-            finalAmount = calc.totalAmount;
-            finalEndsAt = new Date(calc.endTime);
-          } else {
-            const calc = calculateFromDurationHours(startedAt, finalDuration / 60, false, clubId, pcZoneId);
-            finalAmount = calc.totalAmount;
-            finalEndsAt = new Date(calc.endTime);
-          }
+          const calc = prepaidQuote(data, startedAt, clubId, pcZoneId);
+          finalDuration = calc.totalMinutes;
+          finalAmount = calc.totalAmount;
+          finalEndsAt = new Date(calc.endTime);
         }
 
         if (!isPostpaidReq) calculateIntervalPrice(startedAt, finalEndsAt, false, clubId, pcZoneId);
@@ -2018,11 +2015,11 @@ function handleRequest(req, res) {
           mode,
           durationMinutes: finalDuration,
           amount: finalAmount,
-          isPostpaid: !!isPostpaid
+          isPostpaid: isPostpaidReq
         });
       } catch (e) {
         try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, e.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500, { error: e.message });
+        sendJson(res, ['TARIFF_NOT_CONFIGURED','INVALID_SESSION_QUOTE'].includes(e.code) ? 400 : 500, { error: e.message });
       }
     });
     return;
@@ -2087,7 +2084,7 @@ function handleRequest(req, res) {
           return;
         }
 
-        if (isMemberSession(sessionRow) || sessionRow.notes === 'POSTPAID') {
+        if (isMemberSession(sessionRow) || isPostpaidSession(sessionRow)) {
           const result=BarLedgerService.executeSessionCheckout({target:sessionRow.id,clubId:sessionRow.club_id,
             paymentMethod:data.paymentType||'CASH',cashierUserId:currentUserId,broadcastUpdate:broadcastAdminUpdate});
           sendJson(res,200,{...result,refundAmount:result.refundAmount || 0,usedAmount:result.gameBill}); return;
@@ -2631,21 +2628,11 @@ function handleRequest(req, res) {
           if (!pc) throw new Error('Kompyuter topilmadi.');
           if (db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id)) throw new Error('Kompyuter band.');
           const zoneId = resolveZoneIdForComputer(pc.id,clubId);
-          const rate = requireRateForMoment(startedAt,false,clubId,zoneId);
+          const rate = requireRateForMoment(startedAt,isPostpaid,clubId,zoneId);
           if (isPostpaid && rate.isVipPostpaidAllowed === false) throw new Error('Xonada Postpaid taqiqlangan.');
           let calc;
           if (isPostpaid) calc = {totalMinutes:1440,totalAmount:0,endTime:new Date(startedAt.getTime()+86400000).toISOString()};
-          else if (['END_TIME','ENDTIME'].includes(normalizedMode)) {
-            if (!data.targetEndTime && !value) throw new Error('Tugash vaqti kerak.');
-            calc = calculateIntervalPrice(startedAt,data.targetEndTime||value,false,clubId,zoneId);
-          } else if (['AMOUNT','PRICE'].includes(normalizedMode)) {
-            const amount = Number(data.amount ?? value);
-            if (!Number.isFinite(amount) || amount <= 0) throw new Error('Summa noto‘g‘ri.');
-            calc = calculateTimeFromAmount(startedAt,amount,false,clubId,zoneId);
-          } else {
-            calc = calculateFromDurationHours(startedAt,data.durationMinutes != null ? Number(data.durationMinutes)/60 : Number(value ?? 1),false,clubId,zoneId);
-
-          }
+          else calc = prepaidQuote(data,startedAt,clubId,zoneId);
           return {pcId:pc.id,rate,perPcAmount:calc.totalAmount,perPcDurationMins:calc.totalMinutes,endsAt:new Date(calc.endTime),prepaidRates:paymentType==='BALANCE'?freezePrepaidRates(pc.id,startedAt,calc.endTime):null};
         });
         if (new Set(plans.map(p=>p.pcId)).size !== plans.length) throw new Error('Kompyuter takroran tanlangan.');
@@ -2748,7 +2735,7 @@ function handleRequest(req, res) {
         });
       } catch (err) {
         try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, err.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500, { error: 'Guruh seansini ochishda xatolik: ' + err.message });
+        sendJson(res, ['TARIFF_NOT_CONFIGURED','INVALID_SESSION_QUOTE'].includes(err.code) ? 400 : 500, { error: 'Guruh seansini ochishda xatolik: ' + err.message });
       }
     });
     return;

@@ -1,7 +1,7 @@
 import { postpaidGameBill } from './clientSessionState.js';
 import { isMemberSession, isPrepaidMember, prepaidRefund, settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
-import { db } from '../db.js';
+import { db, getClubSettings } from '../db.js';
 import { getSessionBarDebt } from './sessionBarDebt.js';
 import { isPostpaidSession } from './sessionMode.js';
 import { ClientManager } from './clientManager.js';
@@ -49,6 +49,7 @@ export class BarLedgerService {
     const playedMinutes = Math.max(1, Math.ceil((now - startedAt) / 60000));
     const playedHours = Number((playedMinutes / 60).toFixed(1));
     const isPostpaid = !isMemberSession(session) && isPostpaidSession(session);
+    const vipSettings = isPostpaid ? getClubSettings(targetClubId) : null;
     const member = isMemberSession(session) ? db.prepare('SELECT id,username,balance FROM users WHERE id=? AND club_id=?').get(session.user_id,session.club_id) : null;
     const refund = isPrepaidMember(session) && session.status === 'ACTIVE' ? prepaidRefund(session,new Date(now)) : null;
 
@@ -120,6 +121,8 @@ export class BarLedgerService {
       playedMinutes,
       playedHours,
       isPostpaid,
+      pricingMode: vipSettings?.vip_pricing_mode || null,
+      customPrice: vipSettings?.vip_pricing_mode === 'CUSTOM' ? vipSettings.vip_custom_price : null,
       isMember: Boolean(member),
       member: member ? { accountId:member.id, username:member.username, balance:Number(member.balance), refundAmount:refund?.amount || 0 } : null,
       tariffName: session.tariff_name || (isPostpaid ? 'VIP Postpaid' : 'Standart'),

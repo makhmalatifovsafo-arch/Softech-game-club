@@ -189,6 +189,8 @@ test('self-service origin survives reconnect and Postpaid widget amount matches 
   assert.equal(BarLedgerService.getSessionCheckoutPreview('post',1).gameBill,state.sessionInfo.gameAmount);
   db.prepare("UPDATE club_settings SET vip_pricing_mode='CUSTOM',vip_custom_price=9000 WHERE club_id=1").run();
   assert.equal(clientSessionState('post',now).sessionInfo.gameAmount,18000);
+  assert.equal(postpaidGameBill({...db.prepare("SELECT * FROM sessions WHERE id='post'").get(),started_at:new Date(now-1830000).toISOString()},now),4575,'Custom VIP charges actual 30m30s, not a rounded-up 31 minutes');
+  assert.throws(()=>postpaidGameBill({club_id:1,started_at:'invalid'},now),/Seans vaqti/);
   db.prepare("UPDATE club_settings SET vip_pricing_mode='SCHEDULE' WHERE club_id=1").run();
   db.exec('DELETE FROM tariff_schedules');
   assert.equal(clientSessionState('post',now).sessionInfo.gameAmount,null,'Missing tariffs must never display a made-up zero bill');
