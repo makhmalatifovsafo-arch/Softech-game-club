@@ -5,6 +5,10 @@ using Microsoft.Win32;
 using Softech.Updates;
 using ServerSetup;
 
+if(args.Length==1&&args[0]=="--probe-tests"){
+    await StoppedBackendProbe.SelfTest();return;
+}
+
 // Intentionally restricted to a disposable hosted CI machine. Never install or
 // replace a real club's service as part of a developer's ordinary npm test.
 if(Environment.GetEnvironmentVariable("GITHUB_ACTIONS")!="true"||Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT")!="github-hosted")
@@ -45,7 +49,10 @@ try {
     if(!restartedProcess.HasExited)throw new Exception("Owned backend process survived SCM stop: "+restarted);
     if(!File.ReadAllText(Path.Combine(root,"logs","service.log")).Contains("SCM shutdown completed."))
         throw new Exception("SCM reported stopped without completing managed shutdown");
-    try {await http.GetStringAsync($"http://127.0.0.1:{port}/api/health");throw new Exception("Backend survived SCM stop");}catch(HttpRequestException){}
+    await StoppedBackendProbe.Verify(restartedProcess.HasExited,async()=>{
+        using var response=await http.GetAsync($"http://127.0.0.1:{port}/api/health");
+        // Any HTTP response, even 503/404, proves an endpoint still responds.
+    });
     ServerService.Command("start",ServerService.Name);await Ready();
     ServerService.StopAndWait(root);
     ServerService.Command("start",ServerService.Name);

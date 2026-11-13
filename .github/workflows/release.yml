@@ -107,6 +107,8 @@ jobs:
         run: |
           dotnet publish NetCafeServer/Service/SoftechService.csproj -c Release -p:PublishDir=../../.test-output/service-publish/ -p:NuGetAudit=false
           if ($LASTEXITCODE -ne 0) { throw 'Service publish failed' }
+          dotnet run --project tests/ServerService/ServerService.csproj -- --probe-tests
+          if ($LASTEXITCODE -ne 0) { throw 'Stopped backend probe tests failed' }
           dotnet run --project tests/ServerService/ServerService.csproj -- .test-output/service-publish/SoftechService.exe (Get-Command node).Source
           if ($LASTEXITCODE -ne 0) { throw 'Windows service lifecycle test failed' }
       - name: Save failed Windows service diagnostics

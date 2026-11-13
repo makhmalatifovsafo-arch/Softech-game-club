@@ -308,6 +308,15 @@ Yangi ZIP/setup relizi tayyorlanib tarqatilmadi, versiya o'zgartirilmadi.
 
 ### Tarqatishdan oldin
 
+1.2.0 SCM keyingi tekshiruv: ServiceBase bilan Node PID yopilgani va
+`SCM shutdown completed` tasdiqlandi. Keyingi HTTP yo'qlik tekshiruvi 2 soniyali
+HttpClient timeoutini xato sanagan (faqat connection-refused ushlangan).
+Test endi jarayon yopilgani tasdiqlangandan keyingina HTTP timeoutini qabul qiladi;
+tirik/javob bermayotgan jarayon, istalgan HTTP javobi va aloqasiz cancellation
+baribir yiqiladi. 7 mahalliy holat, jumladan real HttpClient timeouti o'tdi.
+Bu o'zgarish test va CI'ga tegishli; production xizmat kodi o'zgartirilmadi.
+To'liq hosted SCM stop/start sikli va reliz pipeline'i hali qayta o'tishi kerak.
+
 1.2.0 keyingi CI natijasi (`Backend survived SCM stop`): oldingi kutish tuzatishi
 yetarli bo'lmadi. Windows STOPPED holatini qaytargan, ammo Node ishlashda qolgan
 va managed shutdown yakuni logda yo'q. Mustaqil cancellation sinovida real worker,
