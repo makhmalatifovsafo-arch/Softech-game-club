@@ -308,6 +308,22 @@ Yangi ZIP/setup relizi tayyorlanib tarqatilmadi, versiya o'zgartirilmadi.
 
 ### Tarqatishdan oldin
 
+1.2.0 uzilgan OTA tiklash sinovi: `RestoreFile` dagi atomik rename bir martalik
+AccessDenied/sharing xatosida darhol to'xtagan. Qaysi jarayon CI faylini ushlab
+turgani eski logda qayd qilinmagan. Mahalliy real ochiq EXE va FileShare qulfi
+bilan shu turdagi xato takrorlandi. Endi Win32 5/32/33 xatolarida fayl almashtirish
+va rollback o'chirishlari ko'pi bilan 30 soniya qayta urinadi; boshqa xatolar darhol
+qaytariladi. ACL, read-only atribut yoki begona jarayonlar o'zgartirilmaydi.
+Muvaffaqiyatsiz tiklash APPLYING holatida va asl zaxiralari bilan qoladi; xabarda
+fayl manzili, Win32 kodi va urinishlar soni bor. Doimiy qulfda baza tegilmagani,
+qulf ochilgach qayta tiklash, vaqtinchalik fayllar tozalanishi va real executable
+almashishi Windows native testda tekshirildi. Production updater ham ayni
+chegaralangan almashtirish funksiyasidan foydalanadi.
+Tekshiruv: haqiqiy server OTA success/rollback/interrupted/restart holatlari ikki
+marta ketma-ket o'tdi; client updater cancel/concurrent/corrupt/success/rollback,
+UpdatePolicy va StartupSafety o'tdi. Updater, xizmat va ServerSetup buildlari
+xatosiz. GitHub hosted release pipeline'i qayta o'tishi talab qilinadi.
+
 1.2.0 packaged OTA testida `currentVersion: undefined`: test yangi versiyali
 health va success fayli mavjudligini yetarli deb hisoblagan. Updater success
 faylini yozgandan keyin server approvalni 250 ms polling bilan qabul qiladi;

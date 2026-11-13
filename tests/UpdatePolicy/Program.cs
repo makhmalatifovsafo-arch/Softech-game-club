@@ -6,6 +6,7 @@ if (args.Length == 4 && args[0] == "--validate")
     return;
 }
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+await UpdateFileLocks.Run();
 // Simulate SCM state races without installing/stopping a developer's service.
 void ServiceStopCase(ServerService.ServiceState[] states,int[] errors,int expectedCalls,bool fails=false,int? nativeError=null)
 {

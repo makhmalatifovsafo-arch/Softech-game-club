@@ -1,4 +1,7 @@
 2026-11-13: 1.2.0 server resilience and session continuity
+- Retry transient Windows executable/sharing locks during file replacement and
+  rollback for up to 30 seconds. Persistent failures retain recovery evidence and
+  report the affected file and native error; never change permissions to bypass it.
 - Use .NET ServiceBase for Windows service controls; wait for backend cancellation
   and shutdown before acknowledging STOPPED. Log lifecycle failures explicitly.
 - Wait for confirmed Windows service shutdown across pending-state races; retain

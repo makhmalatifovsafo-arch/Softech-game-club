@@ -174,7 +174,7 @@ public static class Program
                 string destination = PackageManifest.ChildPath(target, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                 applied.Add(relative);
-                File.Move(PackageManifest.ChildPath(prepared, relative), destination, true);
+                UpdateJournal.ReplaceFile(PackageManifest.ChildPath(prepared, relative), destination);
             }
             serverGuard?.Dispose();serverGuard=null;
             restarted = Launch(plan,plan.Kind=="server"?journal.Token:null);

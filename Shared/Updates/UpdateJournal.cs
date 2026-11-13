@@ -26,6 +26,24 @@ public sealed class UpdateJournal
 
     public static string Hash(string file) { using var input=File.OpenRead(file); return Convert.ToHexString(SHA256.HashData(input)); }
     public static void Flush(string file) { using var stream=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.Read);stream.Flush(true); }
+    // Process exit does not guarantee that Windows has released executable
+    // mappings, descendant handles or a scanner's sharing lock yet. Retry only
+    // access/sharing/lock errors; never alter ACLs, attributes or unrelated PIDs.
+    internal static void RetryFileOperation(Action operation,string destination,TimeSpan? timeout=null)
+    {
+        var timer=Stopwatch.StartNew();var limit=timeout??TimeSpan.FromSeconds(30);
+        int attempts=0;
+        while(true){
+            try{attempts++;operation();return;}
+            catch(Exception error)when((error is IOException or UnauthorizedAccessException)&&
+                OperatingSystem.IsWindows()&&(error.HResult&0xffff) is 5 or 32 or 33){
+                if(timer.Elapsed>=limit)throw new IOException($"File replacement blocked: '{destination}' (Win32={error.HResult&0xffff}, attempts={attempts}). Recovery remains incomplete; backups retained.",error);
+                System.Threading.Thread.Sleep((int)Math.Min(100,Math.Max(1,(limit-timer.Elapsed).TotalMilliseconds)));
+            }
+        }
+    }
+    public static void ReplaceFile(string source,string destination,TimeSpan? timeout=null) =>
+        RetryFileOperation(()=>File.Move(source,destination,true),destination,timeout);
     public static void Write(string file,object value)
     {
         string temporary=file+"."+Guid.NewGuid().ToString("N")+".tmp";
@@ -33,14 +51,14 @@ public sealed class UpdateJournal
             using(var stream=new FileStream(temporary,FileMode.CreateNew,FileAccess.Write)) {
                 JsonSerializer.Serialize(stream,value,PackageManifest.JsonOptions);stream.Flush(true);
             }
-            File.Move(temporary,file,true);
+            ReplaceFile(temporary,file);
         } finally { if(File.Exists(temporary))File.Delete(temporary); }
     }
     public void Save(string transaction) => Write(Path.Combine(transaction,"journal.json"),this);
-    private static void RestoreFile(string backup,string destination)
+    private static void RestoreFile(string backup,string destination,TimeSpan? timeout)
     {
         string temporary=destination+"."+Guid.NewGuid().ToString("N")+".restore.tmp";
-        try{File.Copy(backup,temporary,false);Flush(temporary);File.Move(temporary,destination,true);}
+        try{File.Copy(backup,temporary,false);Flush(temporary);ReplaceFile(temporary,destination,timeout);}
         finally{if(File.Exists(temporary))File.Delete(temporary);}
     }
 
@@ -115,7 +133,7 @@ public sealed class UpdateJournal
         return true;
     }
 
-    public void Restore(string target,string transaction)
+    public void Restore(string target,string transaction,TimeSpan? fileRetryTimeout=null)
     {
         // Check all backup bytes before changing a single application/database file.
         foreach(var entry in Originals.Concat(Databases)) {
@@ -138,17 +156,17 @@ public sealed class UpdateJournal
             string destination=PackageManifest.ChildPath(target,relative);
             if(Originals.ContainsKey(relative)) {
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                RestoreFile(PackageManifest.ChildPath(transaction,"backup/"+relative),destination);
-            } else if(File.Exists(destination))File.Delete(destination);
+                RestoreFile(PackageManifest.ChildPath(transaction,"backup/"+relative),destination,fileRetryTimeout);
+            } else if(File.Exists(destination))RetryFileOperation(()=>File.Delete(destination),destination,fileRetryTimeout);
         }
         foreach(string relative in Databases.Keys.Where(name=>name.EndsWith(".db",StringComparison.OrdinalIgnoreCase)))
             foreach(string suffix in new[]{"-wal","-shm","-journal"}) {
                 string sidecar=PackageManifest.ChildPath(target,relative+suffix);
-                if(File.Exists(sidecar))File.Delete(sidecar);
+                if(File.Exists(sidecar))RetryFileOperation(()=>File.Delete(sidecar),sidecar,fileRetryTimeout);
             }
         foreach(string relative in Databases.Keys) {
             string destination=PackageManifest.ChildPath(target,relative);
-            RestoreFile(PackageManifest.ChildPath(transaction,"databases/"+relative),destination);
+            RestoreFile(PackageManifest.ChildPath(transaction,"databases/"+relative),destination,fileRetryTimeout);
         }
         Write(PackageManifest.ChildPath(target,"updates-failed-version.json"),new{version=Version,error="Interrupted or unhealthy update",at=DateTimeOffset.UtcNow});
         Phase="ROLLED_BACK";Save(transaction);
