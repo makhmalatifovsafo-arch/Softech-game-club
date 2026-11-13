@@ -93,11 +93,19 @@ jobs:
       - run: node tests/server-service.mjs
       - run: node tests/service-emergency-fallback.mjs
       - name: Publish and verify real Windows service on disposable runner
+        id: service_test
         run: |
           dotnet publish NetCafeServer/Service/SoftechService.csproj -c Release -p:PublishDir=../../.test-output/service-publish/ -p:NuGetAudit=false
           if ($LASTEXITCODE -ne 0) { throw 'Service publish failed' }
           dotnet run --project tests/ServerService/ServerService.csproj -- .test-output/service-publish/SoftechService.exe (Get-Command node).Source
           if ($LASTEXITCODE -ne 0) { throw 'Windows service lifecycle test failed' }
+      - name: Save failed Windows service diagnostics
+        if: ${{ failure() && steps.service_test.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-service-failure-log
+          path: .test-output/scm-*/logs/*.log
+          if-no-files-found: warn
       - name: Build complete payloads and bootstrap installers
         run: ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION -Repository $env:GITHUB_REPOSITORY
       - name: Verify packaged applications

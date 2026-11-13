@@ -5,6 +5,7 @@ using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Text;
+using System.ComponentModel;
 
 namespace Softech.Updates;
 
@@ -45,19 +46,47 @@ public static class ServerService
     public static bool Exists {
         get {if(!OperatingSystem.IsWindows())return false;using var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+Name);return key!=null;}
     }
+    internal readonly record struct ServiceState(uint State,uint Accepted);
+    internal static IOException NativeError(string operation,int code) =>
+        new IOException($"{operation} Win32={code}: {new Win32Exception(code).Message}",new Win32Exception(code));
+
+    // Keep querying until SCM confirms STOPPED. A rejected control request is
+    // not itself evidence that the service is still running (or safe to replace).
+    internal static void WaitForStop(Func<ServiceState> query,Func<int> requestStop,
+        TimeSpan timeout,Action<int>? pause=null,Func<TimeSpan>? elapsed=null)
+    {
+        var timer=Stopwatch.StartNew();pause??=Thread.Sleep;elapsed??=()=>timer.Elapsed;
+        bool sent=false;int lastError=0;ServiceState status=default;
+        while(true){
+            status=query();
+            if(status.State==1)return;
+            if(elapsed()>=timeout)throw new IOException($"Xizmat hali to'xtamadi. Fayllar almashtirilmadi. State={status.State}, Accepted={status.Accepted}, Win32={lastError}.");
+            if(!sent&&(status.State is 4 or 7)&&(status.Accepted&1)!=0){
+                lastError=requestStop();
+                if(lastError==0)sent=true;
+                else {
+                    // It may have stopped between QueryServiceStatus and ControlService.
+                    status=query();
+                    if(status.State==1)return;
+                    if(status.State==3)sent=true;
+                    else if(lastError is not (1061 or 1062))throw NativeError("Xizmatni to'xtatib bo'lmadi.",lastError);
+                }
+            }
+            pause(250);
+        }
+    }
     public static void StopAndWait(string root) {
         if(!Exists)return;
         if(!Installed(root))throw new IOException("Softech xizmati boshqa papkaga tegishli. Mavjud o'rnatma manzilini tanlang.");
         IntPtr manager=OpenSCManager(null,null,1),service=IntPtr.Zero;
         try {
-            if(manager==IntPtr.Zero)throw new IOException("Xizmatni boshqarish uchun administrator huquqi kerak.");
+            if(manager==IntPtr.Zero)throw NativeError("Xizmat boshqaruvini ochib bo'lmadi.",Marshal.GetLastWin32Error());
             service=OpenService(manager,Name,0x24);
-            if(service==IntPtr.Zero||!QueryServiceStatus(service,out var status))throw new IOException("Xizmat holatini aniqlab bo'lmadi.");
-            if(status.State==1)return;
-            if(status.State!=3&&!ControlService(service,1,out status))throw new IOException("Xizmatni to'xtatib bo'lmadi.");
-            var until=DateTime.UtcNow.AddMinutes(4);
-            do {if(!QueryServiceStatus(service,out status))throw new IOException("Xizmat holati yo'qoldi.");if(status.State==1)return;Thread.Sleep(250);}while(DateTime.UtcNow<until);
-            throw new IOException("Xizmat hali to'xtamadi. Fayllar almashtirilmadi.");
+            if(service==IntPtr.Zero)throw NativeError("Xizmatni ochib bo'lmadi.",Marshal.GetLastWin32Error());
+            WaitForStop(()=>{
+                if(!QueryServiceStatus(service,out var status))throw NativeError("Xizmat holatini aniqlab bo'lmadi.",Marshal.GetLastWin32Error());
+                return new ServiceState(status.State,status.Accepted);
+            },()=>ControlService(service,1,out _)?0:Marshal.GetLastWin32Error(),TimeSpan.FromMinutes(4));
         }finally{if(service!=IntPtr.Zero)CloseServiceHandle(service);if(manager!=IntPtr.Zero)CloseServiceHandle(manager);}
     }
 }

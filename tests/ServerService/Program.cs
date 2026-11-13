@@ -26,6 +26,7 @@ async Task<int> Ready(int previous=0){var until=DateTime.UtcNow.AddSeconds(90);w
     using var doc=JsonDocument.Parse(await http.GetStringAsync($"http://127.0.0.1:{port}/api/health"));
     int pid=doc.RootElement.GetProperty("processId").GetInt32();if(pid!=previous)return pid;
 }catch{}await Task.Delay(250);}throw new IOException("SCM backend did not become ready. "+(File.Exists(Path.Combine(root,"logs/service.log"))?File.ReadAllText(Path.Combine(root,"logs/service.log")):"No log"));}
+bool failed=false;
 try {
     // Create the registration first so a test-only environment is set before start.
     string host=Path.Combine(root,".service","SoftechService.exe");
@@ -39,11 +40,24 @@ try {
     }
     await Ready(first);
     ServerService.StopAndWait(root);
+    ServerService.StopAndWait(root); // Already stopped is a successful no-op.
     try {await http.GetStringAsync($"http://127.0.0.1:{port}/api/health");throw new Exception("Backend survived SCM stop");}catch(HttpRequestException){}
     ServerService.Command("start",ServerService.Name);await Ready();
+    ServerService.StopAndWait(root);
+    ServerService.Command("start",ServerService.Name);
+    // Exercise STOP while SCM may still be transitioning out of START_PENDING.
+    ServerService.StopAndWait(root);
+    ServerService.Command("start",ServerService.Name);await Ready();
     Console.WriteLine("PASS actual SCM registration, LocalService ACL, Session 0, crash restart, graceful stop and start without a cashier window");
+}catch(Exception error){
+    failed=true;
+    Console.Error.WriteLine("SCM lifecycle failure: "+error);
+    string log=Path.Combine(root,"logs","service.log");
+    if(File.Exists(log))Console.Error.WriteLine(string.Join(Environment.NewLine,File.ReadLines(log).TakeLast(80)));
+    throw;
 }finally{
-    if(ServerService.Installed(root)){ServerService.StopAndWait(root);ServerService.Command("delete",ServerService.Name);}
+    try{if(ServerService.Installed(root)){ServerService.StopAndWait(root);ServerService.Command("delete",ServerService.Name);}}
+    catch(Exception error)when(failed){Console.Error.WriteLine("SCM cleanup also failed; original failure preserved: "+error);}
     var netsh=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"netsh.exe")){UseShellExecute=false,CreateNoWindow=true};
     foreach(var value in new[]{"advfirewall","firewall","delete","rule","name=Softech Server Service"})netsh.ArgumentList.Add(value);
     using var cleanup=Process.Start(netsh);cleanup?.WaitForExit(30000);

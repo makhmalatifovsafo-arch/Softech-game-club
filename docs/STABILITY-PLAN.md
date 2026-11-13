@@ -308,6 +308,16 @@ Yangi ZIP/setup relizi tayyorlanib tarqatilmadi, versiya o'zgartirilmadi.
 
 ### Tarqatishdan oldin
 
+1.2.0 CI xizmat sinovi: `StopAndWait` to'xtatish buyrug'i rad etilganda holatni
+qayta tekshirmasdan xato chiqargan; eski xabarda Win32 kodi yo'q edi. Pending
+holatlarni kutish, rad etilgan buyruqdan keyin STOPPED holatini qayta tekshirish,
+monoton 4 daqiqalik chegara va aniq Win32 xatosi qo'shildi. Mahalliy UpdatePolicy
+sinovida 10 ta holat o'tdi; service/setup/SCM test loyihalari yig'ildi. Haqiqiy SCM
+testi olib tashlanmadi: ketma-ket stop/start va ishga tushayotgan xizmatni to'xtatish
+qo'shildi. Nosozlik bo'lsa test logi artifact sifatida saqlanadi va cleanup birlamchi
+xatoni yashirmaydi. Bu tuzatishning hosted Windows SCM tasdig'i hali talab qilinadi;
+eski logdan Windows qaytargan aniq sababni taxmin qilib tasdiqlab bo'lmaydi.
+
 Tegishli regressiya testlari, to'liq test to'plami, Windows installer buildi va
 paketdan real ishga tushish tekshiruvi o'tishi kerak. Keyin sinov klubida nazorat.
 Kodning tayyorligi klubga o'rnatilganini anglatmaydi. Versiya chiqarish va tarqatish

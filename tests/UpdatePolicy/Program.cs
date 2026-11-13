@@ -6,6 +6,29 @@ if (args.Length == 4 && args[0] == "--validate")
     return;
 }
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+// Simulate SCM state races without installing/stopping a developer's service.
+void ServiceStopCase(ServerService.ServiceState[] states,int[] errors,int expectedCalls,bool fails=false,int? nativeError=null)
+{
+    int query=0,calls=0;TimeSpan clock=TimeSpan.Zero;Exception? failure=null;
+    try{ServerService.WaitForStop(()=>states[Math.Min(query++,states.Length-1)],
+        ()=>errors[Math.Min(calls++,errors.Length-1)],TimeSpan.FromSeconds(2),
+        ms=>clock+=TimeSpan.FromMilliseconds(ms),()=>clock);}
+    catch(IOException error){failure=error;}
+    Check((failure!=null)==fails,"Unexpected service stop outcome");
+    Check(calls==expectedCalls,"Service stop sent duplicate/premature controls");
+    if(nativeError.HasValue)Check(failure?.InnerException is System.ComponentModel.Win32Exception win&&win.NativeErrorCode==nativeError,"Native stop error was hidden");
+}
+ServiceStopCase([new(1,0)],[],0);
+ServiceStopCase([new(2,0),new(4,0),new(4,1),new(3,0),new(1,0)],[0],1);
+ServiceStopCase([new(3,0),new(1,0)],[],0);
+ServiceStopCase([new(4,1),new(1,0)],[1062],1);
+ServiceStopCase([new(4,1),new(3,0),new(1,0)],[1061],1);
+ServiceStopCase([new(4,1),new(2,0),new(4,1),new(3,0),new(1,0)],[1061,0],2);
+ServiceStopCase([new(4,1),new(3,0),new(1,0)],[1053],1);
+ServiceStopCase([new(4,1)],[5],1,true,5);
+ServiceStopCase([new(2,0)],[],0,true);
+ServiceStopCase([new(4,1),new(3,0)],[0],1,true);
+Console.WriteLine("PASS service stop races, pending states, idempotence, native errors and bounded waits");
 Check(IdleSafety.CanApply(false, false, 10, false), "Idle kiosk should update.");
 Check(!IdleSafety.CanApply(true, false, 100, false), "Live session must block.");
 Check(!IdleSafety.CanApply(false, true, 100, false), "Maintenance must block.");

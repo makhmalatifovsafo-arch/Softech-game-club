@@ -1,4 +1,6 @@
 2026-11-13: 1.2.0 server resilience and session continuity
+- Wait for confirmed Windows service shutdown across pending-state races; retain
+  native error codes and failed CI service logs. Never replace files before STOPPED.
 - Preserve paid session deadlines, balances and receipts across server restarts;
   clients continue their purchased time during a temporary connection loss.
 - Recover valid local settings safely, retain damaged originals and show actionable
