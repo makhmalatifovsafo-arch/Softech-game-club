@@ -5,6 +5,9 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
+using System.Diagnostics;
+using System.Threading;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 
 namespace SoftechCockpit;
@@ -16,6 +19,11 @@ public partial class MainWindow : Window
 {
     private readonly NodeProcessManager _nodeManager = new();
     private bool _isInitialized;
+    private bool _initializing;
+    private bool _closing;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly DispatcherTimer _backendTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly BackendRecovery _recovery;
     private UpdateMonitor? _updateMonitor;
     private HwndSource? _windowSource;
 
@@ -43,6 +51,18 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        _recovery = new BackendRecovery(() => _nodeManager.HasUnexpectedExit,
+            () => _closing || _initializing || _updateMonitor?.IsUpdateShutdown == true || _updateMonitor?.HasPendingHandover() == true,
+            async () => {
+                _nodeManager.GetExitDiagnostic();
+                OnNodeStatusChanged("Server tiklanmoqda. Saqlangan seanslar qayta yuklanadi...");
+                LoadingOverlay.Visibility = Visibility.Visible;
+                ErrorOverlay.Visibility = Visibility.Collapsed;
+                _isInitialized = false;
+                await InitializeCockpitAsync();
+            }, ShowError);
+        _backendTimer.Tick += async (_, _) => await _recovery.TickAsync();
+
         _nodeManager.StatusChanged += OnNodeStatusChanged;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -51,6 +71,8 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        _updateMonitor = new UpdateMonitor(_nodeManager.ServerDirectory, () => System.Windows.Application.Current.Shutdown());
+        _backendTimer.Start();
         await InitializeCockpitAsync();
     }
 
@@ -58,6 +80,9 @@ public partial class MainWindow : Window
     {
         // Standalone oynasi yopilganda fondagi Node.js serverni toza to'xtatish
         bool updating = _updateMonitor?.IsUpdateShutdown == true;
+        _closing = true;
+        _backendTimer.Stop();
+        _lifetime.Cancel();
         _updateMonitor?.Dispose();
         _nodeManager.StopNodeServer(forUpdate: updating);
     }
@@ -76,7 +101,9 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task InitializeCockpitAsync()
     {
-        if (_isInitialized) return;
+        if (_isInitialized || _initializing || _closing) return;
+        _initializing = true;
+        BtnRetry.IsEnabled = false;
 
         LoadingOverlay.Visibility = Visibility.Visible;
         ErrorOverlay.Visibility = Visibility.Collapsed;
@@ -84,7 +111,8 @@ public partial class MainWindow : Window
         try
         {
             // 1. Node.js backend ishga tushirish (Health-Check orqali)
-            bool serverReady = await _nodeManager.EnsureServerRunningAsync();
+            bool serverReady = await _nodeManager.EnsureServerRunningAsync(_lifetime.Token);
+            if (_closing) return;
 
             if (!serverReady)
             {
@@ -120,17 +148,18 @@ public partial class MainWindow : Window
             CockpitWebView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(9, 9, 11);
 
             // 4. Navigatsiya yakunlanganda Splash ekranni yumshoq yashirish
+            CockpitWebView.NavigationCompleted -= CockpitWebView_NavigationCompleted;
             CockpitWebView.NavigationCompleted += CockpitWebView_NavigationCompleted;
 
             // 5. Asosiy Kassa Dashboard manziliga yo'naltirish
-            CockpitWebView.Source = new Uri(NodeProcessManager.ServerUrl);
+            CockpitWebView.CoreWebView2.Navigate(NodeProcessManager.ServerUrl);
             _isInitialized = true;
-            _updateMonitor = new UpdateMonitor(_nodeManager.ServerDirectory, () => System.Windows.Application.Current.Shutdown());
         }
         catch (Exception ex)
         {
-            ShowError(ex.Message);
+            if (!_closing) ShowError(ex.Message);
         }
+        finally { _initializing = false; BtnRetry.IsEnabled = true; }
     }
 
     private void CockpitWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
@@ -180,6 +209,18 @@ public partial class MainWindow : Window
     {
         _isInitialized = false;
         await InitializeCockpitAsync();
+    }
+
+    private async void BtnBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        if (!await _nodeManager.IsServerHealthyAsync()) {
+            ShowError("Server hali tayyor emas. Avval Qayta urinish tugmasini bosing.");
+            return;
+        }
+        try {
+            Process.Start(new ProcessStartInfo(NodeProcessManager.ServerUrl) { UseShellExecute = true });
+            TxtErrorMessage.Text = "Kassa brauzerda ochildi. Server ishlashi uchun ushbu oynani yopmang; kichraytirish mumkin.";
+        } catch (Exception error) { ShowError(error.Message); }
     }
 
     // ========================================================================

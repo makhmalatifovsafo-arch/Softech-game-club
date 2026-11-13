@@ -17,10 +17,11 @@ const existingDatabase = fs.existsSync(DB_FILE) && fs.statSync(DB_FILE).size > 0
 if (existingDatabase) verifyDatabase(DB_FILE);
 export const db = new DatabaseSync(DB_FILE);
 
+// Install the lock timeout before any PRAGMA which can acquire a write lock.
+db.exec('PRAGMA busy_timeout = 5000;');
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA synchronous = FULL;');
 db.exec('PRAGMA foreign_keys = ON;');
-db.exec('PRAGMA busy_timeout = 5000;');
 
 export function initDatabase() {
   if (existingDatabase) snapshot(DB_FILE, 'startup');

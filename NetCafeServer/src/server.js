@@ -11,6 +11,7 @@ import { autoWakeComputer } from './services/autoWake.js';
 import { normalizeMacAddress } from './services/macAddress.js';
 import { MobileAgent } from './services/mobileAgent.js';
 import { MobileSnapshotSync } from './services/mobileSnapshotSync.js';
+import { OptionalService } from './services/optionalService.js';
 import { mobileCloudUser } from './services/mobileCloudSession.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
 import { createBooking, updateBookingStatus } from './services/bookingService.js';
@@ -4185,12 +4186,12 @@ function getLocalLanIps() {
 }
 
 const mobileOptions={db,getLicense:()=>LicenseManager.getSignedLicense(),getCloudUrl:()=>LicenseManager.cloudUrl,isOperational:()=>LicenseManager.isOperational()&&!CloudLicenseService.isBlocked(),localPort:PORT};
-const mobileAgent = new MobileAgent({...mobileOptions,staffSession:mobileStaffSession,logout:mobileLogout,onMutation:()=>mobileSnapshots.flush(),resolveCloudSession:async grant=>{
+const mobileAgent = new OptionalService('Mobile relay', () => new MobileAgent({...mobileOptions,staffSession:mobileStaffSession,logout:mobileLogout,onMutation:()=>mobileSnapshots.flush(),resolveCloudSession:async grant=>{
   let user=mobileCloudUser(db,grant,LicenseManager.licenseData);
   if(!user){await CloudLicenseService.syncStaffAccounts();user=mobileCloudUser(db,grant,LicenseManager.licenseData);}
   return user?createSessionToken(user).token:null;
-}});
-const mobileSnapshots=new MobileSnapshotSync({...mobileOptions,createSession:createSessionToken,destroySession:mobileLogout});
+}}));
+const mobileSnapshots=new OptionalService('Mobile reports', () => new MobileSnapshotSync({...mobileOptions,createSession:createSessionToken,destroySession:mobileLogout}));
 server.listen(PORT, '0.0.0.0', () => {
   mobileAgent.start();
   mobileSnapshots.start();

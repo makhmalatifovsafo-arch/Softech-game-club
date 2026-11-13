@@ -40,7 +40,8 @@ export class ServerUpdater {
     this.minimumIdleSeconds = Math.min(3600, Math.max(5, (Number(config.updateIdleSeconds) === 30 ? 10 : Number(config.updateIdleSeconds)) || 10));
     this.manifestUrl = process.env.UPDATE_MANIFEST_URL || config.updateManifestUrl ||
       'https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json';
-    fs.mkdirSync(this.stagingDir, { recursive: true });
+    // Staging is needed only during download. An unavailable updates directory
+    // must not prevent the cashier and existing sessions from starting.
   }
 
   static startPeriodicChecks(intervalMs = 60000) {
@@ -86,11 +87,11 @@ export class ServerUpdater {
     this.state.downloadedBytes = 0;
     this.state.totalBytes = null;
     const candidate = path.join(this.stagingDir, 'v' + release.version + '-' + crypto.randomUUID());
-    fs.mkdirSync(candidate, { recursive: true });
     const zip = path.join(candidate, 'download.zip');
     const extracted = path.join(candidate, 'package');
     let staged = false;
     try {
+      fs.mkdirSync(candidate, { recursive: true });
       await this.downloadFile(release.url, zip);
       if (await this.calculateSha256(zip) !== release.sha256) throw new Error('Release SHA256 mismatch');
       await this.extractZip(zip, extracted);

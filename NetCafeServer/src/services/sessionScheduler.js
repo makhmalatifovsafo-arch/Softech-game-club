@@ -41,6 +41,7 @@ export class SessionScheduler {
       `).all();
 
       for (const session of activeSessions) {
+        try {
         // Refresh financial information once per minute, independent of time-limit mode.
         if (shouldSyncTime) ClientManager.send(session.computer_id,'SESSION_INFO',clientSessionState(session.id,now.getTime()));
         // Postpaid is open-ended: only cashier checkout may settle and close it.
@@ -64,6 +65,11 @@ export class SessionScheduler {
             endsAt: endsAtEpoch,
           };
           ClientManager.send(session.computer_id, 'UPDATE_REMAINING_TIME', payload);
+        }
+        } catch (error) {
+          // One invalid tariff/session or disconnected client must not stop
+          // expiration and balance accounting for every other computer.
+          console.error(`[SessionScheduler] Session ${session.id}:`, error);
         }
       }
 

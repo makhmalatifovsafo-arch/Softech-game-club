@@ -141,7 +141,9 @@ public static class Program
 
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
             bool ready = false;
-            var healthDeadline = DateTime.UtcNow.AddSeconds(30);
+            // Server startup verifies and snapshots the database before migrations.
+            // Allow the launcher's 90-second readiness window plus stability checks.
+            var healthDeadline = DateTime.UtcNow.AddSeconds(plan.Kind == "server" ? 120 : 30);
             var stableSince = DateTime.UtcNow;
             while (DateTime.UtcNow < healthDeadline)
             {

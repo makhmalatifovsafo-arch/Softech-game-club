@@ -26,6 +26,7 @@ export function markDatabase(database) {
 export function verifyDatabase(database) {
   const check = new DatabaseSync(database, { readOnly: true });
   try {
+    check.exec('PRAGMA busy_timeout=5000;');
     if (check.prepare('PRAGMA quick_check').all().some(r => Object.values(r)[0] !== 'ok'))
       throw Error('Baza yaxlitligi tekshiruvidan o‘tmadi: ' + database);
   } finally { check.close(); }

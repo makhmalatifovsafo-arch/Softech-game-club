@@ -101,6 +101,80 @@ var diagnosticLog = Path.Combine(fixturePath, "logs", "node-startup-error.log");
 Check(File.ReadAllText(diagnosticLog).Contains("ERR_MODULE_NOT_FOUND"), "Startup error not persisted");
 Console.WriteLine("PASS: actual startup error visible and persisted with bounded output");
 
+var recoveryTime = DateTimeOffset.UtcNow;
+bool suspended = true, crashed = true;
+int restarts = 0, reports = 0;
+var recovering = new TaskCompletionSource();
+var recovery = new BackendRecovery(() => crashed, () => suspended, async () => {
+    restarts++;
+    if (restarts == 1) await recovering.Task;
+    throw new IOException("fixture crash");
+}, _ => reports++, () => recoveryTime);
+await recovery.TickAsync(); Check(restarts == 0, "Must not race an update or shutdown");
+suspended = false;
+var firstRecovery = recovery.TickAsync();
+await recovery.TickAsync(); Check(restarts == 1, "Concurrent recovery spawned twice");
+recovering.SetResult(); await firstRecovery;
+await recovery.TickAsync(); Check(restarts == 1, "Crash loop has no delay");
+for (int i=0; i<4; i++) { recoveryTime = recoveryTime.AddSeconds(11); await recovery.TickAsync(); }
+Check(restarts == 3 && reports == 4, "Recovery must stop after three attempts and report exhaustion once");
+recoveryTime = recoveryTime.AddMinutes(6);
+crashed = false; await recovery.TickAsync(); Check(restarts == 3, "A healthy/hung/external server must never be restarted");
+crashed = true; await recovery.TickAsync(); Check(restarts == 4, "Recovery window never reopened");
+Console.WriteLine("PASS: recovery excludes updates, serializes attempts, bounds crash loops and never kills a live backend");
+
+// Real child process, isolated files, no listening port and no production database.
+var nodeExe = Environment.GetEnvironmentVariable("SOFTECH_TEST_NODE") ??
+    Environment.GetEnvironmentVariable("PATH")!.Split(Path.PathSeparator)
+        .Select(dir => Path.Combine(dir, OperatingSystem.IsWindows() ? "node.exe" : "node"))
+        .First(File.Exists);
+var processFixture = Path.GetFullPath(Path.Combine(".test-output", "launcher-process-" + Guid.NewGuid().ToString("N")));
+Directory.CreateDirectory(Path.Combine(processFixture, "src"));
+File.WriteAllText(Path.Combine(processFixture, "package.json"), """{"type":"commonjs"}""");
+File.WriteAllText(Path.Combine(processFixture, "src", "server.js"), """
+    const fs=require('node:fs');
+    fs.appendFileSync('starts.txt', process.pid+'\n');
+    setTimeout(()=>fs.writeFileSync('ready', 'yes'), 600);
+    setInterval(()=>{
+      if(fs.existsSync('crash')){
+        fs.unlinkSync('crash'); fs.rmSync('ready',{force:true});
+        console.error('Error: fixture-backend-crashed'); process.exit(1);
+      }
+    }, 20);
+    """);
+using var fixtureHttp = new HttpClient(new FileHealthHandler(Path.Combine(processFixture, "ready")));
+var processManager = new NodeProcessManager(fixtureHttp) {
+    ResolvePaths = () => (nodeExe, processFixture), PortIsBusy = () => false,
+    StartupTimeout = TimeSpan.FromMilliseconds(100)
+};
+try {
+    bool timedOut = false;
+    try { await processManager.EnsureServerRunningAsync(); }
+    catch (TimeoutException) { timedOut = true; }
+    Check(timedOut && processManager.IsRunning, "Readiness timeout killed initialization");
+    processManager.StartupTimeout = TimeSpan.FromSeconds(10);
+    var waits = await Task.WhenAll(processManager.EnsureServerRunningAsync(), processManager.EnsureServerRunningAsync());
+    Check(waits.All(result => result), "Retry did not wait for existing initialization");
+    Check(File.ReadAllLines(Path.Combine(processFixture,"starts.txt")).Length == 1, "Retry spawned a duplicate backend");
+    File.WriteAllText(Path.Combine(processFixture,"crash"), "1");
+    for(int i=0;i<200&&!processManager.HasUnexpectedExit;i++) await Task.Delay(20);
+    Check(processManager.HasUnexpectedExit, "Backend exit was not detected");
+    Check(processManager.GetExitDiagnostic().Contains("fixture-backend-crashed"), "Runtime crash diagnostic lost");
+    var realRecovery = new BackendRecovery(() => processManager.HasUnexpectedExit, () => false,
+        async () => { Check(await processManager.EnsureServerRunningAsync(), "Recovery failed"); }, message => throw new Exception(message));
+    await realRecovery.TickAsync();
+    Check(processManager.IsRunning && File.ReadAllLines(Path.Combine(processFixture,"starts.txt")).Length == 2,
+        "Backend did not recover exactly once");
+} finally { processManager.StopNodeServer(); }
+Console.WriteLine("PASS: real slow startup survives timeout and concurrent retries; crashed backend restarts with actual diagnostics");
+
+sealed class FileHealthHandler(string readyFile) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        => Task.FromResult(new HttpResponseMessage(File.Exists(readyFile) ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable) {
+            Content = new StringContent("""{"app":"NetCafeServer","status":"ok"}""") });
+}
+
 sealed class HealthHandler(HttpStatusCode status, string body, bool fail = false) : HttpMessageHandler
 {
     public int Calls { get; private set; }

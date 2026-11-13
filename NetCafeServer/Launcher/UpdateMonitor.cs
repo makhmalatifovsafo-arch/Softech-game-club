@@ -23,19 +23,26 @@ public sealed class UpdateMonitor : IDisposable
 
     private void Tick(object? sender, EventArgs args)
     {
+        if (!HasPendingHandover()) return;
+        IsUpdateShutdown = true;
+        timer.Stop();
+        exit();
+    }
+
+    public bool HasPendingHandover()
+    {
         try
         {
             string marker = Path.Combine(serverDirectory, "updates", "cockpit-exit.json");
-            if (!File.Exists(marker)) return;
+            if (!File.Exists(marker)) return false;
             using var doc = JsonDocument.Parse(File.ReadAllText(marker));
-            if (doc.RootElement.GetProperty("pid").GetInt32() != Environment.ProcessId) return;
+            if (doc.RootElement.GetProperty("pid").GetInt32() != Environment.ProcessId) return false;
             long at = doc.RootElement.GetProperty("at").GetInt64();
-            if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - at > 60000) return;
-            IsUpdateShutdown = true;
-            timer.Stop();
-            exit();
+            long age = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - at;
+            return age >= 0 && age <= 60000;
         }
         catch { /* Atomic file writes can be observed briefly before completion. */ }
+        return false;
     }
 
     public void Dispose() => timer.Stop();

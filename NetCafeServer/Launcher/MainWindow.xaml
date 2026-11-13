@@ -211,6 +211,9 @@
                             <TextBlock Text="Qayta urinish" />
                         </StackPanel>
                     </Button>
+                    <Button Content="Kassani brauzerda ochish" Click="BtnBrowser_Click"
+                            Margin="0,12,0,0" Padding="14,8" HorizontalAlignment="Center"
+                            Background="#27272A" Foreground="White" BorderThickness="0" Cursor="Hand" />
                 </StackPanel>
             </Grid>
         </Grid>

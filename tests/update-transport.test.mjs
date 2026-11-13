@@ -16,6 +16,20 @@ const { ServerUpdater } = await import(pathToFileURL(path.join(fixture,'src/serv
 const { db } = await import(pathToFileURL(path.join(fixture,'src/db.js')).href);
 after(()=>db.close());
 
+test('unavailable update storage does not prevent startup or wedge future update attempts', async () => {
+  const blocked=path.join(fixture,'updates-blocked');
+  fs.writeFileSync(blocked,'not a directory');
+  fs.copyFileSync('NetCafeServer/package.json',path.join(fixture,'package.json'));
+  const previous=ServerUpdater.stagingDir;
+  try {
+    ServerUpdater.stagingDir=path.join(blocked,'staging');
+    assert.doesNotThrow(()=>ServerUpdater.init());
+    await assert.rejects(ServerUpdater.downloadAndStage({version:'99.0.0',server:{downloadUrl:'https://example.com/update.zip',sha256:'a'.repeat(64)}}));
+    assert.equal(ServerUpdater.state.isDownloading,false);
+    assert.equal(fs.readFileSync(blocked,'utf8'),'not a directory');
+  } finally { ServerUpdater.stagingDir=previous; }
+});
+
 test('updater follows GitHub-style redirects with safe DNS and streams large ZIPs; failures recover', async () => {
   fs.mkdirSync('.test-output',{recursive:true});
   const dir=fs.mkdtempSync(path.resolve('.test-output/update-network-'));

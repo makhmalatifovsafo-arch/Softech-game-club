@@ -1,3 +1,19 @@
+2026-11-13: 1.1.17 server availability fixes
+- Preserve slow server initialization instead of killing it after 15 seconds;
+  retries wait for the same process and cannot spawn a second backend.
+- Show and save the actual Node startup/crash error. Restart an unexpectedly
+  exited owned backend up to three times per five minutes, excluding update handover.
+- Offer browser access to the local cashier when the embedded interface fails.
+- Keep local cashier startup independent of unavailable update staging and failed
+  mobile initialization; retry mobile initialization without replacing its stored data.
+- Apply SQLite busy timeouts before startup checks and journal configuration.
+- Isolate session scheduler failures so another computer can still expire normally.
+- Allow more time for server database verification during update health checks.
+- Includes Server/Client ZIP updates and Windows setup installers. A stopped old
+  backend requires manual installation into its existing installation directory.
+- These changes do not establish the cause of a remote installation's generic
+  exit-code-1 error; the actual diagnostic is needed if the installation still fails.
+
 2026-11-13: 1.1.5
 - Isolate updater transport tests from the installed database, including clean CI checkouts.
 - Customers can change their login/password from an authenticated client session;

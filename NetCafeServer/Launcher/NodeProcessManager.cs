@@ -23,6 +23,11 @@ public class NodeProcessManager
     public NodeProcessManager(HttpClient? httpClient = null) => _httpClient = httpClient ?? DefaultHttpClient;
 
     private Process? _spawnedProcess;
+    private readonly SemaphoreSlim _startupGate = new(1, 1);
+    internal Func<(string nodePath, string serverDir)> ResolvePaths = ResolveNodeAndServerPaths;
+    internal TimeSpan StartupTimeout = TimeSpan.FromSeconds(90);
+    internal Func<bool> PortIsBusy = () => Array.Exists(
+        IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners(), endpoint => endpoint.Port == 5000);
     private readonly object _errorLock = new();
     private string _startupError = "";
 
@@ -51,7 +56,7 @@ public class NodeProcessManager
     }
 
     private bool _isSpawnedByThisInstance;
-    public string ServerDirectory => ResolveNodeAndServerPaths().serverDir;
+    public string ServerDirectory => ResolvePaths().serverDir;
 
     public const string ServerUrl = "http://127.0.0.1:5000";
     public const string HealthCheckUrl = "http://127.0.0.1:5000/api/health";
@@ -59,6 +64,14 @@ public class NodeProcessManager
     public event Action<string>? StatusChanged;
 
     public bool IsRunning => _spawnedProcess != null && !_spawnedProcess.HasExited;
+    public bool HasUnexpectedExit => _isSpawnedByThisInstance && _spawnedProcess?.HasExited == true && _spawnedProcess.ExitCode != 0;
+
+    public string GetExitDiagnostic()
+    {
+        if (_spawnedProcess?.HasExited != true) return "";
+        _spawnedProcess.WaitForExit();
+        return StartupFailure(_spawnedProcess.ExitCode, ServerDirectory);
+    }
 
     /// <summary>
     /// Checks if a NetCafeServer is already responding on port 5000.
@@ -86,6 +99,13 @@ public class NodeProcessManager
     /// </summary>
     public async Task<bool> EnsureServerRunningAsync(CancellationToken cancellationToken = default)
     {
+        await _startupGate.WaitAsync(cancellationToken);
+        try { return await StartOrWaitAsync(cancellationToken); }
+        finally { _startupGate.Release(); }
+    }
+
+    private async Task<bool> StartOrWaitAsync(CancellationToken cancellationToken)
+    {
         StatusChanged?.Invoke("Server holati tekshirilmoqda...");
 
         // 1. Agar server allaqachon ishlab turgan bo'lsa, qayta ishga tushirmaymiz
@@ -96,12 +116,12 @@ public class NodeProcessManager
         }
 
         // A port number alone does not identify our process. Never kill another application.
-        foreach (var endpoint in IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners())
-            if (endpoint.Port == 5000)
-                throw new InvalidOperationException("5000-port band, ammo Softech serveri javob bermayapti. Portni ishlatayotgan dasturni tekshiring va qayta urining.");
+        if (IsRunning) return await WaitUntilReadyAsync(cancellationToken);
+        if (PortIsBusy())
+            throw new InvalidOperationException("5000-port band, ammo Softech serveri javob bermayapti. Portni ishlatayotgan dasturni tekshiring va qayta urining.");
 
         // 2. Node.js ijro faylini va server ildiz papkasini topish
-        var (nodePath, serverDir) = ResolveNodeAndServerPaths();
+        var (nodePath, serverDir) = ResolvePaths();
 
         if (string.IsNullOrEmpty(nodePath) || !File.Exists(nodePath))
         {
@@ -135,6 +155,11 @@ public class NodeProcessManager
 
         try
         {
+            // Dispose only an already exited process; retry never kills initialization.
+            if (_spawnedProcess != null) {
+                GetExitDiagnostic();
+                _spawnedProcess.Dispose();
+            }
             lock (_errorLock) _startupError = "";
             _spawnedProcess = new Process { StartInfo = startInfo };
             _spawnedProcess.ErrorDataReceived += (_, e) => CaptureError(e.Data);
@@ -149,23 +174,22 @@ public class NodeProcessManager
             throw new InvalidOperationException($"Node.js jarayonini start qilishda xatolik: {ex.Message}", ex);
         }
 
-        // 4. Asinxron Health-Check so'rovlari (Har 200ms, maksimal 15 soniya)
-        var startTime = DateTime.UtcNow;
-        var timeout = TimeSpan.FromSeconds(15);
+        return await WaitUntilReadyAsync(cancellationToken);
+    }
 
-        while (DateTime.UtcNow - startTime < timeout)
+    private async Task<bool> WaitUntilReadyAsync(CancellationToken cancellationToken)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (elapsed.Elapsed < StartupTimeout)
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                StopNodeServer();
-                return false;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
+            if (_spawnedProcess == null) return false;
             if (_spawnedProcess.HasExited)
             {
                 // Drain stderr even if Node exited before the first health check.
                 _spawnedProcess.WaitForExit();
-                throw new InvalidOperationException(StartupFailure(_spawnedProcess.ExitCode, serverDir));
+                throw new InvalidOperationException(GetExitDiagnostic());
             }
 
             if (await IsServerHealthyAsync())
@@ -177,9 +201,8 @@ public class NodeProcessManager
             await Task.Delay(200, cancellationToken);
         }
 
-        // Timeout bo'lganda to'xtatish
-        StopNodeServer();
-        throw new TimeoutException("Node.js server 15 soniya ichida javob bermadi (Health-Check Timeout).");
+        // Verification/migration may still be running. A slow disk is not a crash.
+        throw new TimeoutException("Server hali tayyor emas. Jarayon saqlandi; biroz kutib Qayta urinish tugmasini bosing.");
     }
 
     /// <summary>

@@ -44,6 +44,20 @@ test('uncovered time rejects quotes instead of falling back to packages or anoth
   assert.throws(()=>calculateFromDurationHours(new Date(),Infinity));
 `));
 
+test('one failing session does not prevent another computer from expiring',()=>run(`
+  for(const [id,pc,ends] of [['bad',81,Date.now()+600000],['good',82,Date.now()-1000]]) {
+    db.prepare("INSERT INTO computers(id,club_id,pc_number,name,current_session_id,status) VALUES(?,1,?,?,?,'OCCUPIED')").run(id,pc,id,id);
+    db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,started_at,ends_at,paid_amount,status) VALUES(?,1,?,'trf_standard_1h',?,?,7000,'ACTIVE')")
+      .run(id,id,new Date(Date.now()-3600000).toISOString(),new Date(ends).toISOString());
+  }
+  ClientManager.send=(pc)=>{if(pc==='bad')throw Error('fixture disconnected socket');return true;};
+  ClientManager.broadcast=()=>{};
+  SessionScheduler.lastSyncMinute=-1;
+  SessionScheduler.checkActiveSessions();
+  assert.equal(db.prepare("SELECT status FROM sessions WHERE id='good'").get().status,'COMPLETED');
+  assert.equal(db.prepare("SELECT status FROM sessions WHERE id='bad'").get().status,'ACTIVE');
+`));
+
 test('VIP remains open until cashier checkout and closes without bar-reminder windows',()=>run(`
   db.prepare("INSERT INTO computers(id,club_id,pc_number,name,current_session_id,status) VALUES('vip-pc',1,8,'VIP-8','vip','OCCUPIED')").run();
   db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,started_at,ends_at,paid_amount,status,notes) VALUES('vip',1,'vip-pc','trf_standard_1h',?,?,0,'ACTIVE','POSTPAID')")
