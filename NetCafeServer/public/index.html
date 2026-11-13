@@ -3518,7 +3518,7 @@
   <!-- ===================================================================== -->
   <!-- RIGHT-CLICK CONTEXT MENU (RAYCAST / LINEAR DARK GLASSMORPHISM)        -->
   <!-- ===================================================================== -->
-  <div id="pcContextMenu" class="fixed hidden z-[100] w-64 bg-[#141418]/95 backdrop-blur-xl border border-[#27272a] rounded-2xl shadow-2xl p-1.5 space-y-1 text-xs select-none shadow-[0_10px_40px_rgba(0,0,0,0.8)]">
+  <div id="pcContextMenu" class="fixed hidden z-[100] w-64 max-h-[calc(100vh-24px)] overflow-y-auto bg-[#141418]/95 backdrop-blur-xl border border-[#27272a] rounded-2xl shadow-2xl p-1.5 space-y-1 text-xs select-none shadow-[0_10px_40px_rgba(0,0,0,0.8)]">
     <!-- Header -->
     <div class="px-3 py-2 border-b border-[#27272a]/70 flex items-center justify-between">
       <div class="flex items-center gap-2">
@@ -3584,7 +3584,7 @@
       <span id="ctxBtnLockIcon">🔒</span> <span id="ctxBtnLockText">Ekranni Qulflash</span>
     </button>
     <button id="ctxBtnWol" onclick="handleCtxPower('wake')" class="w-full text-left px-2.5 py-1.5 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-500/20 flex items-center gap-2 transition">
-      <span>⚡</span> Wake-on-LAN (Yoqish)
+      <span>⚡</span> Yoqish (seans ochmasdan)
     </button>
   </div>
 
@@ -3690,11 +3690,35 @@
     }
 
     // O'ng tugma (Context Menu) ochish
+    function openPcActions(pcId, event) {
+      event?.preventDefault();
+      event?.stopPropagation();
+      const rect = event?.currentTarget?.getBoundingClientRect();
+      openContextMenu(pcId, rect?.left ?? event?.clientX ?? 12, rect?.bottom ?? event?.clientY ?? 12);
+    }
+
+    function startPcSession(pcId) {
+      const pc = computersData.find(c => String(c.id) === String(pcId));
+      if (pc) openStartModal(pc.id, pc.name);
+    }
+
+    // Grid and table are different presentations of the same PC actions.
+    function pcActionsHtml(pc) {
+      const id = escapeHtml(String(pc.id));
+      const occupied = pc.status === 'OCCUPIED' || Boolean(pc.activeSession || pc.active_session);
+      return `<div class="flex items-center justify-end gap-1.5 w-full" onclick="event.stopPropagation()">
+        ${occupied ? `<button type="button" data-pc-id="${id}" onclick="openExtendModal(this.dataset.pcId)" class="px-2 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 text-xs font-semibold">+ Vaqt</button>
+        <button type="button" data-pc-id="${id}" onclick="requestStopSession(this.dataset.pcId)" class="px-2 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 text-xs font-semibold">Yopish</button>`
+        : `<button type="button" data-pc-id="${id}" onclick="startPcSession(this.dataset.pcId)" class="softech-btn-primary flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold">Seans ochish</button>`}
+        <button type="button" data-pc-id="${id}" onclick="openPcActions(this.dataset.pcId,event)" aria-label="Kompyuter amallari" title="Kompyuter amallari" class="p-2 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white">&#9881;</button>
+      </div>`;
+    }
+
     function openContextMenu(pcId, clientX, clientY) {
-      const pc = computersData.find(c => c.id === pcId);
+      const pc = computersData.find(c => String(c.id) === String(pcId));
       if (!pc) return;
 
-      currentCtxPcId = pcId;
+      currentCtxPcId = pc.id;
       const menu = document.getElementById('pcContextMenu');
       if (!menu) return;
 
@@ -3762,6 +3786,7 @@
       }
 
       if (btnLockToggle) {
+        btnLockToggle.classList.toggle('hidden', !isOnline);
         if (isLocked) {
           lockIcon.textContent = '🔓';
           lockText.textContent = 'Ekranni Ochish (Unlock)';
@@ -4815,31 +4840,7 @@
           `;
         }
 
-        // Amallar
-        let actionsHtml = '';
-        if (isOccupied) {
-          actionsHtml = `
-            <div class="flex items-center justify-end gap-1.5">
-              <button onclick="openExtendModal('${pc.id}')" class="px-2 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 text-xs font-semibold transition cursor-pointer" title="Vaqt qo'shish">+Vaqt</button>
-              <button onclick="requestStopSession('${pc.id}')" class="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition cursor-pointer" title="Seansni yopish">Yopish</button>
-              <button onclick="openPowerMenu('${pc.id}', true, event)" class="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer" title="Quvvat / Boshqaruv">⚡</button>
-            </div>
-          `;
-        } else if (isAvailable) {
-          actionsHtml = `
-            <div class="flex items-center justify-end gap-1.5">
-              <button onclick="openStartModal('${pc.id}', '${pc.name}')" class="softech-btn-primary text-xs !py-1 !px-3 font-semibold shadow-sm cursor-pointer">Seans Ochish</button>
-              <button onclick="openPowerMenu('${pc.id}', true, event)" class="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer" title="Quvvat / Boshqaruv">⚡</button>
-            </div>
-          `;
-        } else {
-          actionsHtml = `
-            <div class="flex items-center justify-end gap-1.5">
-              <button onclick="openStartModal('${pc.id}', '${pc.name}')" class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition cursor-pointer" title="Seans ochish va kompyuterni yoqish (WoL)">Ochish</button>
-              <button onclick="openPowerMenu('${pc.id}', true, event)" class="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition cursor-pointer" title="Quvvat / Boshqaruv">⚡</button>
-            </div>
-          `;
-        }
+        const actionsHtml = pcActionsHtml(pc);
 
         html += `
           <tr data-pc-id="${pc.id}" class="hover:bg-white/[0.03] transition-colors ${isSelected ? 'bg-sky-950/30' : ''}">
@@ -4870,6 +4871,12 @@
       });
 
       tbody.innerHTML = html;
+      tbody.oncontextmenu = event => {
+        const row = event.target.closest('tr[data-pc-id]');
+        if (!row) return;
+        event.preventDefault();event.stopPropagation();
+        openContextMenu(row.dataset.pcId,event.clientX,event.clientY);
+      };
     }
 
     function togglePcTableSelect(pcId, isChecked) {
@@ -8945,42 +8952,7 @@
               ` : ''}
             </div>
 
-            <!-- Quyi tugmalar: Amallar -->
-            <div class="pt-2.5 border-t border-[var(--border-color)]/70 flex items-center justify-between gap-1.5" onclick="event.stopPropagation()">
-              ${isOccupied ? `
-                <button onclick="openExtendModal('${pc.id}')" class="flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold bg-[var(--bg-primary)] hover:bg-[#1a1a20] text-white border border-[var(--border-color)] transition text-center" title="Vaqt qo'shish / uzaytirish">
-                  + Vaqt
-                </button>
-                <button onclick="openTransferModal('${pc.id}')" class="p-1.5 rounded-lg bg-[var(--bg-primary)] hover:bg-[#1a1a20] text-sky-400 hover:text-white border border-[var(--border-color)] transition text-xs" title="Boshqa PC ga ko'chirish">
-                  🔄
-                </button>
-                <button onclick="openPowerMenu('${pc.id}', false, event)" class="p-1.5 rounded-lg bg-[var(--bg-primary)] hover:bg-[#1a1a20] text-zinc-400 hover:text-white border border-[var(--border-color)] transition text-xs" title="Masofaviy boshqaruv (Power)">
-                  ⚡
-                </button>
-                <button onclick="openMessageModal('${pc.id}')" class="p-1.5 rounded-lg bg-[var(--bg-primary)] hover:bg-[#1a1a20] text-zinc-400 hover:text-white border border-[var(--border-color)] transition text-xs" title="Xabar yuborish">
-                  💬
-                </button>
-                <button onclick="requestStopSession('${pc.id}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/20 transition text-xs font-bold" title="Seansni yopish (Zdacha)">
-                  🛑
-                </button>
-              ` : (isOffline ? `
-                <button onclick="openPowerMenu('${pc.id}', true, event)" class="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-black shadow-sm transition text-center flex items-center justify-center gap-1.5" title="Wake-on-LAN Magic Packet yuborish">
-                  <span>⚡</span>
-                  <span>Yoqish (WoL)</span>
-                </button>
-                <button onclick="openPowerMenu('${pc.id}', true, event)" class="p-1.5 rounded-lg bg-[var(--bg-primary)] hover:bg-[#1a1a20] text-zinc-400 border border-[var(--border-color)] hover:text-white transition text-xs" title="Boshqa parametrlar">
-                  ⚙️
-                </button>
-              ` : `
-                <button onclick="openStartModal('${pc.id}', '${pc.name}')" 
-                        class="flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-[#fafafa] hover:bg-white text-[#09090b] shadow-sm hover:shadow transition text-center">
-                  Seans Ochish
-                </button>
-                <button onclick="openPowerMenu('${pc.id}', false, event)" class="p-1.5 rounded-lg bg-[var(--bg-primary)] hover:bg-[#1a1a20] text-zinc-400 border border-[var(--border-color)] hover:text-white transition text-xs" title="Masofaviy boshqaruv">
-                  ⚡
-                </button>
-              `)}
-            </div>
+            <div class="pt-2.5 border-t border-[var(--border-color)]/70">${pcActionsHtml(pc)}</div>
           `;
         }
 
@@ -9933,7 +9905,7 @@
       if (isOffline) {
         // Offline bo'lsa faqat Wake-on-LAN Magic Packet taklif qilish
         document.getElementById('powerModalAction').value = 'wake';
-        document.getElementById('powerModalTitle').innerHTML = '<span>⚡</span><span>Wake-on-LAN (Yoqish)</span>';
+        document.getElementById('powerModalTitle').innerHTML = '<span>⚡</span><span>Yoqish (seans ochmasdan)</span>';
         document.getElementById('powerModalMessage').innerHTML = `
           Klient bilan hozir aloqa yo‘q. Kompyuter o‘chiq yoki tarmoq uzilgan bo‘lishi mumkin. Wake-on-LAN orqali yoqish signalini yuborasizmi?
           ${pc?.macAddress ? `<div class="mt-2 text-xs font-mono">MAC: ${escapeHtml(pc.macAddress)}</div>` : '<div class="mt-2 text-xs text-amber-400">MAC hali saqlanmagan. Klientni bir marta qo‘lda yoqib serverga ulang yoki MAC kiriting.</div>'}

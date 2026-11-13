@@ -9,14 +9,14 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
  async function startSession(pc){
   try{
    online();let quote=null,quotedInput='',revision=0;
-   modal(pc.name+' - yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo'yicha</option><option value="price">Summa bo'yicha</option><option value="postpaid">VIP Postpaid</option></select></label><label>Mijoz nomi<input name="customerName" maxlength="100" value="Mijoz"></label><label id="sessionMinutes">Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label id="sessionAmount" hidden>Summa (so'm)<input name="amount" type="number" min="1" step="1"></label><div id="sessionPayment">${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}</div><label id="sessionMember" hidden>Balans egasi<select name="customerId"><option value="">Tanlang</option></select></label><button type="button" id="sessionCalculate" class="quiet">Serverda hisoblash</button><div id="sessionQuote" class="card" aria-live="polite">Hisoblanmoqda...</div><p class="hint">Narx va vaqt klub serverida hisoblanadi. Seans ochilgan paytda server amaldagi tarifni qayta tekshiradi.</p>${!pc.isOnline?'<p class="hint">Kompyuter ulanmagan. Seans boshlanganda avtomatik yoqish sinaladi; buning uchun MAC va Wake-on-LAN sozlangan bo&#39;lishi kerak. Kompyuter hali yoqilmagan bo&#39;lsa ham seans vaqti boshlanadi.</p>':''}`,async v=>{
+   modal(pc.name+' - yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo'yicha</option><option value="price">Summa bo'yicha</option><option value="postpaid">VIP Postpaid</option></select></label><label id="sessionMinutes">Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label id="sessionAmount" hidden>Summa (so'm)<input name="amount" type="number" min="1" step="1"></label><div id="sessionPayment">${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}</div><label id="sessionMember" hidden>Balans egasi<select name="customerId"><option value="">Tanlang</option></select></label><button type="button" id="sessionCalculate" class="quiet">Serverda hisoblash</button><div id="sessionQuote" class="card" aria-live="polite">Hisoblanmoqda...</div><p class="hint">Narx va vaqt klub serverida hisoblanadi. Seans ochilgan paytda server amaldagi tarifni qayta tekshiradi.</p>${!pc.isOnline?'<p class="hint">Kompyuter ulanmagan. Seans boshlanganda avtomatik yoqish sinaladi; buning uchun MAC va Wake-on-LAN sozlangan bo&#39;lishi kerak. Kompyuter hali yoqilmagan bo&#39;lsa ham seans vaqti boshlanadi.</p>':''}`,async v=>{
     if(!quote||quotedInput!==key())throw Error('Avval serverda hisoblash tugmasini bosing.');
     if(v.mode!=='postpaid'&&v.paymentType==='BALANCE'&&!v.customerId)throw Error('Balans egasini tanlang.');
     const result=await remote('/api/sessions/start','POST',request());
     return result;
    });
    const form=$('#actionForm'),fields=form.elements,panel=$('#sessionQuote');
-   function request(){const mode=fields.mode.value;return {computerId:pc.id,mode,...(mode==='hours'?{durationMinutes:Number(fields.minutes.value)}:mode==='price'?{amount:Number(fields.amount.value)}:{}),customerName:fields.customerName.value,customerId:mode!=='postpaid'&&fields.paymentType.value==='BALANCE'?Number(fields.customerId.value):null,paymentType:mode==='postpaid'?'POSTPAID':fields.paymentType.value};}
+   function request(){const mode=fields.mode.value;return {computerId:pc.id,mode,...(mode==='hours'?{durationMinutes:Number(fields.minutes.value)}:mode==='price'?{amount:Number(fields.amount.value)}:{}),customerId:mode!=='postpaid'&&fields.paymentType.value==='BALANCE'?Number(fields.customerId.value):null,paymentType:mode==='postpaid'?'POSTPAID':fields.paymentType.value};}
    function key(){return JSON.stringify(request());}
    function invalidate(){revision++;quote=null;$('#actionSubmit').disabled=true;panel.textContent="Narx va vaqtni serverda hisoblang.";}
    function modeChanged(){
@@ -36,7 +36,7 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
     finally{fields.customerId.disabled=false;}
    };
    fields.mode.onchange=modeChanged;
-   for(const name of ['minutes','amount','customerName','customerId'])fields[name].oninput=invalidate;
+   for(const name of ['minutes','amount','customerId'])fields[name].oninput=invalidate;
    async function calculate(){
     invalidate();const rev=revision,input=key(),body=request();
     if(body.mode==='hours'&&(!Number.isInteger(body.durationMinutes)||body.durationMinutes<1||body.durationMinutes>1440)){panel.textContent='1-1440 daqiqa kiriting.';return;}
@@ -100,19 +100,39 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
 
  function message(pc){modal(pc.name+' — xabar','<label>Sarlavha<input name="title" maxlength="100" value="Administrator"></label><label>Xabar<input name="message" maxlength="1000" required></label>',v=>remote('/api/messages/send','POST',{computerId:pc.id,...v}));}
  function renderBar(items){
-  content().innerHTML=`<section class="card"><div class="heading"><h2>Bar savdosi</h2><button id="barOrders" class="quiet">Buyurtmalar</button></div><p class="hint">Miqdorlarni tanlang. Narx, qoldiq va to‘lov klub serverida tekshiriladi.</p><div id="saleItems">${items.map(i=>`<label class="sale-item"><span>${esc(i.name)}<small>${esc(money(i.sellPrice))} · Qoldiq: ${i.stockQuantity}</small></span><input aria-label="${esc(i.name)} miqdori" data-quantity="${i.id}" type="number" min="0" max="${i.stockQuantity}" step="1" value="0" ${i.stockQuantity<1?'disabled':''}></label>`).join('')||'<p>Mahsulot yo‘q.</p>'}</div><div class="heading"><strong id="saleTotal">${money(0)}</strong><button id="saleCheckout" class="primary" ${state.meta?.serverOnline?'':'disabled'}>Sotishni tasdiqlash</button></div></section>`;
+  state.barDraft ||= {};
+  content().innerHTML=`<section class="card"><div class="heading"><h2>Bar savdosi</h2><button id="barOrders" class="quiet">Buyurtmalar</button></div><p class="hint">Miqdorlarni tanlang. Narx, qoldiq va to‘lov klub serverida tekshiriladi.</p><div id="saleItems">${items.map(i=>`<label class="sale-item"><span>${esc(i.name)}<small>${esc(money(i.sellPrice))} · Qoldiq: ${i.stockQuantity}</small></span><input aria-label="${esc(i.name)} miqdori" data-quantity="${i.id}" type="number" min="0" max="${i.stockQuantity}" step="1" value="${esc(state.barDraft[i.id]??0)}" ${i.stockQuantity<1?'disabled':''}></label>`).join('')||'<p>Mahsulot yo‘q.</p>'}</div><div class="heading"><strong id="saleTotal">${money(0)}</strong><button id="saleCheckout" class="primary" ${state.meta?.serverOnline?'':'disabled'}>Sotishni tasdiqlash</button></div></section>`;
   const selected=()=>Array.from(document.querySelectorAll('[data-quantity]')).filter(el=>Number(el.value)>0).map(el=>({barItemId:Number(el.dataset.quantity),quantity:Number(el.value)}));
-  $('#saleItems').oninput=()=>$('#saleTotal').textContent=money(selected().reduce((sum,line)=>sum+line.quantity*Number(items.find(i=>i.id===line.barItemId)?.sellPrice||0),0));
+  const updateTotal=()=>$('#saleTotal').textContent=money(selected().reduce((sum,line)=>sum+line.quantity*Number(items.find(i=>i.id===line.barItemId)?.sellPrice||0),0));
+  $('#saleItems').oninput=event=>{const input=event.target.closest('[data-quantity]');if(input)state.barDraft[input.dataset.quantity]=input.value;updateTotal();};
+  updateTotal();
   $('#barOrders').onclick=run(orders);
   $('#saleCheckout').onclick=run(async()=>{
    online();const lines=selected();if(!lines.length)throw Error('Kamida bitta mahsulot tanlang.');if(lines.some(l=>!Number.isInteger(l.quantity)))throw Error('Miqdor butun son bo‘lishi kerak.');
-   const users=await clients();const pcs=await remote('/api/computers');state.pcs=Array.isArray(pcs)?pcs:pcs.computers||[];
-   modal('Bar savdosini tasdiqlash',`<p>${lines.map(l=>esc(items.find(i=>i.id===l.barItemId)?.name)+' × '+l.quantity).join('<br>')}</p>${payment('paymentMethod','<option value="ON_PC_SESSION">Kompyuter seansiga qarz</option><option value="CLIENT_BALANCE">Mijoz balansi</option>')}<label>Seans (qarzga yozilganda)<select name="computerId"><option value="">Tanlang</option>${pcOptions(state.pcs.filter(p=>p.activeSession))}</select></label><label>Balans egasi<select name="userId">${clientOptions(users)}</select></label>`,v=>{
-    const pc=state.pcs.find(p=>p.id===v.computerId);
+   let selectionLoading=false,pcLoaded=false,usersLoaded=false;
+   modal('Bar savdosini tasdiqlash',`<p>${lines.map(l=>esc(items.find(i=>i.id===l.barItemId)?.name)+' × '+l.quantity).join('<br>')}</p>${payment('paymentMethod','<option value="ON_PC_SESSION">Kompyuter seansiga qarz</option><option value="CLIENT_BALANCE">Mijoz balansi</option>')}<label id="barSessionSelect" hidden>Seans (qarzga yozilganda)<select name="computerId"><option value="">Tanlang</option></select></label><label id="barMemberSelect" hidden>Balans egasi<select name="userId"><option value="">Tanlang</option></select></label>`,async v=>{
+    if(selectionLoading)throw Error('Tanlov yuklanishini kuting.');
+    const pc=state.pcs.find(p=>String(p.id)===v.computerId);
     if(v.paymentMethod==='ON_PC_SESSION'&&!pc?.activeSession)throw Error('Faol seansni tanlang.');
     if(v.paymentMethod==='CLIENT_BALANCE'&&!v.userId)throw Error('Balans egasini tanlang.');
-    return remote('/api/bar/orders','POST',{items:lines,paymentMethod:v.paymentMethod,...(v.paymentMethod==='ON_PC_SESSION'?{computerId:pc.id,sessionId:pc.activeSession.sessionId}:{}),...(v.paymentMethod==='CLIENT_BALANCE'?{userId:Number(v.userId)}:{})});
+    const result=await remote('/api/bar/orders','POST',{items:lines,paymentMethod:v.paymentMethod,...(v.paymentMethod==='ON_PC_SESSION'?{computerId:pc.id,sessionId:pc.activeSession.sessionId}:{}),...(v.paymentMethod==='CLIENT_BALANCE'?{userId:Number(v.userId)}:{})});
+    state.barDraft={};return result;
    });
+   const form=$('#actionForm'),fields=form.elements,memberSelect=$('#barMemberSelect'),paymentField=fields.paymentMethod;
+   fields.paymentMethod.onchange=async()=>{
+    const mode=fields.paymentMethod.value;
+    $('#barSessionSelect').hidden=mode!=='ON_PC_SESSION';
+    $('#barMemberSelect').hidden=mode!=='CLIENT_BALANCE';
+    if(mode!=='ON_PC_SESSION'&&mode!=='CLIENT_BALANCE')return;
+    selectionLoading=true;fields.paymentMethod.disabled=true;$('#actionSubmit').disabled=true;
+    try{
+     if(mode==='ON_PC_SESSION'&&!pcLoaded){const data=await remote('/api/computers');if(!memberSelect.isConnected||!$('#dialog').open)return;state.pcs=Array.isArray(data)?data:data.computers||[];fields.computerId.innerHTML='<option value="">Tanlang</option>'+pcOptions(state.pcs.filter(p=>p.activeSession));pcLoaded=true;}
+     if(mode==='CLIENT_BALANCE'&&!usersLoaded){const users=await clients();if(!memberSelect.isConnected||!$('#dialog').open)return;fields.userId.innerHTML=clientOptions(users);usersLoaded=true;}
+     $('#dialogError').textContent='';
+    }catch(error){if(memberSelect.isConnected)$('#dialogError').textContent=error.message;}
+    finally{selectionLoading=false;paymentField.disabled=false;if(memberSelect.isConnected)$('#actionSubmit').disabled=false;}
+   };
+
   });
  }
  async function orders(){

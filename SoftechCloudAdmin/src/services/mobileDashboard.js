@@ -3,6 +3,8 @@ import { ManagerAccountService } from './managerAccountService.js';
 import { MobileRelay } from './mobileRelay.js';
 import { verifyTelemetryLicense } from './telemetryAuth.js';
 const fail=(message,statusCode=400)=>Object.assign(Error(message),{statusCode});
+const SESSION_LIFETIME_MS=90*86400000;
+const SESSION_RENEW_WINDOW_MS=89*86400000;
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 const decode=value=>typeof value==='string'?JSON.parse(value):value;
 const validDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'') && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value;
@@ -29,7 +31,7 @@ export class MobileDashboard {
   for(const role of ['manager','administrator']){account=await new ManagerAccountService({...this.storage,role}).authenticate(id,username,body.password);if(account)break;}
   if(!account)throw fail('Login yoki parol noto‘g‘ri. Super admin belgilagan akkaunt bilan kiring.',401);
   const token='mbl_'+crypto.randomBytes(32).toString('hex');
-  const row={token_hash:hash(token),club_id:id,...account,expires_at:new Date(Date.now()+12*3600000).toISOString()};
+  const row={token_hash:hash(token),club_id:id,...account,expires_at:new Date(Date.now()+SESSION_LIFETIME_MS).toISOString()};
   if(this.db){this.db.prepare('DELETE FROM mobile_dashboard_sessions WHERE expires_at<?').run(new Date().toISOString());this.db.prepare('INSERT INTO mobile_dashboard_sessions VALUES(?,?,?,?,?,?)').run(row.token_hash,id,row.role,username,row.revision,row.expires_at);}
   else {await this.query(this.client.from('mobile_dashboard_sessions').delete().lt('expires_at',new Date().toISOString()));await this.query(this.client.from('mobile_dashboard_sessions').insert(row));}
   return {token,...await this.sessionInfo(row,club)};
@@ -40,6 +42,14 @@ export class MobileDashboard {
   if(!session||!(Date.parse(session.expires_at)>Date.now()))throw fail('Sessiya tugagan. Qayta login qiling.',401);
   const [club,account]=await Promise.all([this.club(Number(session.club_id)),new ManagerAccountService({...this.storage,role:session.role}).latest(Number(session.club_id))]);
   if(!account||Number(account.id)!==Number(session.revision)||account.payload.username!==session.username)throw fail('Akkaunt yangilangan. Qayta login qiling.',401);
+  // Renew at most daily, after rechecking the current club and account revision.
+  // Update existing rows only: a concurrent logout must never recreate a session.
+  if(Date.parse(session.expires_at)-Date.now()<SESSION_RENEW_WINDOW_MS){
+   const expires=new Date(Date.now()+SESSION_LIFETIME_MS).toISOString();
+   if(this.db)this.db.prepare('UPDATE mobile_dashboard_sessions SET expires_at=? WHERE token_hash=? AND expires_at=?').run(expires,session.token_hash,session.expires_at);
+   else await this.query(this.client.from('mobile_dashboard_sessions').update({expires_at:expires}).eq('token_hash',session.token_hash).eq('expires_at',session.expires_at));
+   session.expires_at=expires;
+  }
   return {session,club};
  }
  async sessionInfo(session,club,metadata){

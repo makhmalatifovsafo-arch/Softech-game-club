@@ -85,3 +85,22 @@ test('short-lived cloud grants preserve local user identity, permissions and acc
   local.exec('UPDATE cloud_administrator_state SET revision=revision+1');assert.equal(mobileCloudUser(local,login.grant,f.signedLicense.payload),null);
  }finally{local.close();f.db.close();}
 });
+
+test('mobile login persists for 90 days and renews valid legacy sessions without weakening logout or rotation',async()=>{
+ const f=await fixture();const {db,service:s}=f;
+ try{
+  const login=await s.login({clubId:7,username:'owner',password:'1234'},'persistent');
+  const read=()=>db.prepare('SELECT * FROM mobile_dashboard_sessions').get();
+  assert.ok(Date.parse(read().expires_at)>Date.now()+89*86400000);
+  const original=read().expires_at;await s.authorize(login.token);assert.equal(read().expires_at,original,'No write on every poll');
+  db.prepare('UPDATE mobile_dashboard_sessions SET expires_at=?').run(new Date(Date.now()+3600000).toISOString());
+  await s.authorize(login.token);assert.ok(Date.parse(read().expires_at)>Date.now()+89*86400000,'Valid old 12-hour login upgraded');
+  const renewed=read().expires_at;
+  await f.manager.save(7,{username:'owner',password:'4321'});
+  await assert.rejects(()=>s.authorize(login.token),e=>e.statusCode===401);assert.equal(read().expires_at,renewed);
+  await s.logout(login.token);assert.equal(read(),undefined);await assert.rejects(()=>s.authorize(login.token),e=>e.statusCode===401);assert.equal(read(),undefined);
+  const next=await s.login({clubId:7,username:'owner',password:'4321'},'persistent');
+  db.prepare('UPDATE mobile_dashboard_sessions SET expires_at=?').run(new Date(Date.now()-1).toISOString());
+  await assert.rejects(()=>s.authorize(next.token),e=>e.statusCode===401);
+ }finally{db.close();}
+});
