@@ -117,6 +117,8 @@ function handleRequest(req, res) {
 
   // 1. GET /api/license/status (Joriy litsenziya va HWID holati)
   if (url.pathname === '/api/license/status' && req.method === 'GET') {
+    // Retrying a repaired settings file must not require reinstalling or resetting data.
+    if (LicenseManager.state === 'CONFIG_ERROR') initializeLicense();
     const respond = () => {
     const report = LicenseManager.getStatusReport();
     if (CloudLicenseService.isBlocked()) {
@@ -130,10 +132,14 @@ function handleRequest(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     sendJson(res, 200, report);
     };
-    if (url.searchParams.get('refresh') === '1') {
+    if (url.searchParams.get('refresh') === '1' && LicenseManager.state !== 'CONFIG_ERROR') {
       LicenseManager.checkApprovalStatus().then(respond);
     } else respond();
     return;
+  }
+
+  if (url.pathname.startsWith('/api/license/') && LicenseManager.state === 'CONFIG_ERROR') {
+    return sendJson(res, 503, {success:false,error:LicenseManager.lockMessage});
   }
 
   // 2. POST /api/license/request-activation (Bulutdan faollashtirish so'rash)
@@ -4121,6 +4127,8 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 65536 });
 ClientManager.wss = wss;
 
 // Anti-Piracy, HWID Locking & Remote Kill-Switch Initsializatsiyasi
+function initializeLicense() {
+try {
 LicenseManager.init({
   onLicenseActivated: () => {
     CloudLicenseService.stop();
@@ -4137,6 +4145,17 @@ LicenseManager.init({
 });
 
 CloudLicenseService.init().catch(error => console.warn('[CloudLicense]', error.message));
+} catch (error) {
+  if (error.code !== 'INVALID_SERVER_CONFIG') throw error;
+  // Keep the UI/diagnostics available. Do not turn unreadable settings into a
+  // different club, new license, default endpoint, or a permanent license ban.
+  LicenseManager.state = 'CONFIG_ERROR';
+  LicenseManager.lockReason = 'CONFIG_ERROR';
+  LicenseManager.lockMessage = "Dastur sozlamalarini o'qib bo'lmadi. Sozlamalar faylini tiklash kerak. Hisoblar o'chirilmagan.";
+  console.warn('[Server settings]', error.message);
+}
+}
+initializeLicense();
 
 wss.on('connection', (socket, req) => {
   const remoteIp = req.socket?.remoteAddress?.replace('::ffff:', '') || '127.0.0.1';

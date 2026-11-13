@@ -1,3 +1,10 @@
+2026-11-13: 1.1.18 settings recovery
+- Read Windows UTF-8 BOM and UTF-16 configuration files without losing settings.
+- Unreadable settings no longer crash startup: show a dedicated recovery screen,
+  preserve the original file and recheck it after repair without restarting.
+- Keep license verification enforced; never substitute a different club or reset data.
+- Include a separately tested encoding repair tool which backs up the original file.
+
 2026-11-13: 1.1.17 server availability fixes
 - Preserve slow server initialization instead of killing it after 15 seconds;
   retries wait for the same process and cannot spawn a second backend.

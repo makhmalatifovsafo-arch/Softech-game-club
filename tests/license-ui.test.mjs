@@ -3,6 +3,27 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 
+test('unreadable settings show a recovery message, not license renewal, and can be rechecked',async()=>{
+  const elements=new Map();
+  const element=id=>{if(!elements.has(id))elements.set(id,{id,style:{},textContent:'',innerHTML:''});return elements.get(id);};
+  let ready,timer;const calls=[];const window={};
+  const status={state:'CONFIG_ERROR',lockMessage:'do-not-render-raw-input'};
+  vm.runInNewContext(readFileSync('NetCafeServer/public/licenseGuard.js','utf8'),{
+    window,console,AbortSignal,setTimeout(){},setInterval(fn){timer=fn;},clearInterval(){},
+    document:{getElementById:element,createElement:()=>({style:{}}),body:{appendChild(){}},addEventListener(_,fn){ready=fn;}},
+    fetch:async url=>{calls.push(url);return {ok:true,json:async()=>status};}
+  });
+  ready();await new Promise(resolve=>setImmediate(resolve));
+  const html=element('softechLicenseLockOverlay').innerHTML;
+  assert.match(html,/Sozlamalarni tiklash kerak/);
+  assert.match(html,/window.checkLicenseNow\(\)/);
+  assert.doesNotMatch(html,/do-not-render-raw-input|requestServerActivation|manualLicenseKeyInput/);
+  window.checkLicenseNow();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.at(-1),'/api/license/status?refresh=1');
+  status.state='PENDING_ACTIVATION';await timer();
+  assert.match(element('softechLicenseLockOverlay').innerHTML,/clubNameInput/);
+});
+
 test('activation UI uses local persistence result, preserves typed input during polling',async()=>{
   const elements=new Map();
   const element=id=>{ if(!elements.has(id)) elements.set(id,{id,style:{},value:'',textContent:'',innerHTML:''});return elements.get(id); };

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { fetchUpdateManifest, downloadUpdateFile } from './updateTransport.js';
 import { db } from '../db.js';
 import { canApplyUpdate, validateRelease } from './updatePolicy.js';
+import { readServerConfig } from './serverConfig.js';
 
 const execute = promisify(execFile);
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -36,7 +37,7 @@ export class ServerUpdater {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
     this.currentVersion = pkg.version;
     let config = {};
-    try { config = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'config.json'), 'utf8')); } catch {}
+    try { config = readServerConfig(path.join(ROOT_DIR, 'config.json')); } catch {}
     this.minimumIdleSeconds = Math.min(3600, Math.max(5, (Number(config.updateIdleSeconds) === 30 ? 10 : Number(config.updateIdleSeconds)) || 10));
     this.manifestUrl = process.env.UPDATE_MANIFEST_URL || config.updateManifestUrl ||
       'https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json';

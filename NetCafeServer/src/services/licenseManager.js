@@ -18,6 +18,8 @@ import { WebSocket } from 'ws';
 import { HwidService } from './hwidService.js';
 import { resolveCloudUrl } from './cloudUrl.js';
 import { requestCloudJson } from './cloudConnection.js';
+import { readServerConfig, configError } from './serverConfig.js';
+import { writeDurableJson } from './durableJson.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,13 +65,12 @@ export class LicenseManager {
     this.sessionDropper = sessionDropper;
     this.onLicenseActivated = onLicenseActivated;
 
-    let config = {};
     const configFile = path.resolve(__dirname, '../../config.json');
-    if (fs.existsSync(configFile)) {
-      config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    }
-    this.cloudUrl = resolveCloudUrl(config);
+    const config = readServerConfig(configFile);
+    try { this.cloudUrl = resolveCloudUrl(config); }
+    catch { throw configError(configFile); }
     this.cloudWsUrl = process.env.SOFTECH_CLOUD_WS || (new URL(this.cloudUrl).hostname.endsWith('.vercel.app') ? null : this.cloudUrl.replace(/^http/, 'ws') + '/cloud-ws');
+    if (this.state === 'CONFIG_ERROR') { this.lockReason = ''; this.lockMessage = ''; }
 
     console.log(`🌐 [Anti-Piracy] Markaziy Cloud URL: ${this.cloudUrl}`);
     console.log('🔒 [Anti-Piracy] Softech HWID & Kill-Switch xavfsizlik dvigateli yuklanmoqda...');
@@ -257,7 +258,7 @@ export class LicenseManager {
         console.log(`ℹ️ [Anti-Piracy] Birlamchi litsenziya ushbu qurilmaga (${currentHwid}) bog'lanmoqda...`);
         payload.hardwareFingerprint = currentHwid;
         const newSig = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(JSON.stringify(payload)).digest('hex');
-        fs.writeFileSync(LICENSE_FILE, JSON.stringify({ payload, signature: newSig }, null, 2), 'utf8');
+        writeDurableJson(LICENSE_FILE, { payload, signature: newSig });
       } else if (payload.hardwareFingerprint !== currentHwid) {
         console.error(`❌ [Anti-Piracy] HWID mos kelmadi! Litsenziya: ${payload.hardwareFingerprint}, Joriy: ${currentHwid}`);
         this.enforceLockdown('HWID_MISMATCH', `Ushbu dastur boshqa mashinaga nusxalangan! Ushbu qurilma (${currentHwid}) uchun litsenziya berilmagan.`);
@@ -502,15 +503,15 @@ export class LicenseManager {
     if (!Number.isInteger(Number(payload.clubId)) || Number(payload.clubId) <= 0) throw new Error('Klub ID noto\'g\'ri.');
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const configFile = path.resolve(__dirname, '../../config.json');
-    const config = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')) : {};
+    const config = readServerConfig(configFile);
     const changedClub = config.clubId !== payload.clubId;
     const wasActive = this.state === 'ACTIVE';
     config.clubId = payload.clubId;
     config.cloudUrl = this.cloudUrl;
-    fs.writeFileSync(configFile + '.tmp', JSON.stringify(config, null, 2), 'utf8');
-    fs.renameSync(configFile + '.tmp', configFile);
-    fs.writeFileSync(LICENSE_FILE + '.tmp', JSON.stringify(signedLicenseObj, null, 2), 'utf8');
-    fs.renameSync(LICENSE_FILE + '.tmp', LICENSE_FILE);
+    // Keep a separately persisted copy for recovery; do not copy corrupt input.
+    writeDurableJson(configFile + '.last-good', config);
+    writeDurableJson(configFile, config);
+    writeDurableJson(LICENSE_FILE, signedLicenseObj);
     fs.rmSync(LOCK_FILE, { force: true });
     this.loadAndVerifyLocalLicense();
     if (changedClub || !wasActive) this.onLicenseActivated?.(payload);

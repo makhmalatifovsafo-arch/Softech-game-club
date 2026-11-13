@@ -38,6 +38,11 @@ for (const [kind, asset] of [['client', 'SoftechClient.zip'], ['server', 'Softec
   console.log('PASS release archive integrity and native helper: ' + kind);
 }
 const serverDir = path.join(work, 'server');
+// Reproduce a Windows-saved configuration in the actual extracted release.
+const packagedConfig = path.join(serverDir, 'config.json');
+// OTA archives intentionally exclude per-club config; model the retained file.
+const retainedConfig = fs.existsSync(packagedConfig) ? fs.readFileSync(packagedConfig) : Buffer.from('{"updateIdleSeconds":3600}');
+fs.writeFileSync(packagedConfig, Buffer.concat([Buffer.from([0xef,0xbb,0xbf]), retainedConfig]));
 let cloudUnavailable = false;
 const cloudStub = http.createServer((req, res) => {
   if (cloudUnavailable) {

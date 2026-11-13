@@ -21,6 +21,7 @@ import { ClientManager } from './clientManager.js';
 import { SessionScheduler } from './sessionScheduler.js';
 import { LicenseManager } from './licenseManager.js';
 import { db } from '../db.js';
+import { readServerConfig } from './serverConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -50,7 +51,7 @@ export class CloudLicenseService {
     let config = {};
     if (fs.existsSync(CONFIG_FILE)) {
       try {
-        config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        config = readServerConfig(CONFIG_FILE);
       } catch (err) {
         console.warn('⚠️ [CloudLicense] config.json o\'qishda xatolik:', err.message);
       }

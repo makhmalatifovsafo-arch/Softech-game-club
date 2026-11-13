@@ -91,6 +91,16 @@
     if (lastOverlayState === status.state && overlay.innerHTML) return;
     lastOverlayState = status.state;
 
+    if (status.state === 'CONFIG_ERROR') {
+      overlay.innerHTML = `<div style="max-width:480px;width:92%;padding:28px;border-radius:20px;background:#18181b;border:1px solid #f59e0b;text-align:center">
+        <h2 style="color:#fbbf24">Sozlamalarni tiklash kerak</h2>
+        <p style="line-height:1.6">Dastur sozlamalar yozilgan faylni o‘qiy olmadi. Hisoblar va mijozlar ma’lumotlari o‘chirilmagan.</p>
+        <p style="line-height:1.6">Softech xizmatiga murojaat qiling. Sozlamalar tuzatilgach, dastur ularni avtomatik qayta tekshiradi.</p>
+        <button onclick="window.checkLicenseNow()" style="padding:12px 20px;border:0;border-radius:10px;background:#38bdf8;color:#09090b;font-weight:bold;cursor:pointer">Qayta tekshirish</button>
+      </div>`;
+      return;
+    }
+
     // 1. PENDING_ACTIVATION (Birinchi o'rnatish)
     if (status.state === 'PENDING_ACTIVATION') {
       overlay.innerHTML = `
