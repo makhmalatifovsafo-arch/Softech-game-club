@@ -11,6 +11,11 @@ test('mobile manager can observe but cannot operate through legacy or cloud sess
  }
 });
 test('cashier operations are allowlisted but financial reports and staff management are excluded',()=>{
+ const preview='/api/sessions/transfer-preview?fromComputerId=pc_1&toComputerId=pc_2';
+ assert.equal(allowedMobileRequest({path:preview,method:'GET'}),true);
+ assert.equal(mobileRoleAllows('administrator',preview,'GET'),true);
+ assert.equal(mobileRoleAllows('manager',preview,'GET'),false);
+ assert.equal(allowedMobileRequest({path:preview+'&unsafe=1',method:'GET'}),false);
  assert.equal(mobileRoleAllows('administrator','/api/reports/financial','GET'),false);
  for(const [path,method] of [['/api/bookings/1/status','PUT'],['/api/bar/orders/1/pay','POST'],['/api/bar/orders/confirm','POST'],['/api/clients/topup','POST'],['/api/sessions/transfer','POST']]){
   assert.equal(allowedMobileRequest({path,method}),true,path);assert.equal(mobileRoleAllows('administrator',path,method),true);

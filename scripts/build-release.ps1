@@ -15,7 +15,11 @@ $server = Join-Path $work 'server'
 $helper = Join-Path $work 'helper'
 New-Item -ItemType Directory -Force -Path $work,$client,$server,$helper | Out-Null
 function Publish-App([string]$Project,[string]$Output,[bool]$SingleFile = $true) {
-    & $Dotnet publish $Project -c Release -r win-x64 --self-contained true -o $Output --nologo -v minimal "-p:Version=$Version" "-p:AssemblyVersion=$Version.0" "-p:FileVersion=$Version.0" "-p:PublishSingleFile=$($SingleFile.ToString().ToLowerInvariant())" -p:IncludeNativeLibrariesForSelfExtract=true
+    # Keep PublishDir relative: MSBuild item transforms cannot safely interpolate
+    # an absolute output path containing an apostrophe (e.g. Designer's profile).
+    $depth = ($Project.Replace('\','/').Split('/').Length - 1)
+    $relativeOutput = ('../' * $depth) + $Output.Substring($projectRoot.Length + 1).Replace('\','/') + '/'
+    & $Dotnet publish $Project -c Release -r win-x64 --self-contained true "-p:PublishDir=$relativeOutput" --nologo -v minimal "-p:Version=$Version" "-p:AssemblyVersion=$Version.0" "-p:FileVersion=$Version.0" "-p:PublishSingleFile=$($SingleFile.ToString().ToLowerInvariant())" -p:IncludeNativeLibrariesForSelfExtract=true
     if ($LASTEXITCODE -ne 0) { throw "Publish failed: $Project" }
 }
 Publish-App 'SoftechUpdater/SoftechUpdater.csproj' $helper
@@ -74,7 +78,7 @@ $manifest = @{
     version=$Version; releaseDate=(Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
     client=@{ downloadUrl="$assetBase/SoftechClient.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechClient.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
     server=@{ downloadUrl="$assetBase/SoftechServer.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechServer.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
-    changelog='License unlock restores computer and bar screens automatically; persistent Softech messages; unified tariffs and reports; protected database and automatic updates.'
+    changelog='Precise prepaid and VIP billing; session transfers preserve accrued charges and convert remaining credit at the destination tariff; reviewed desktop/mobile transfer previews; protected refunds and bar debt.'
 }
 [IO.File]::WriteAllText((Join-Path $releaseDir 'version.json'), ($manifest | ConvertTo-Json -Depth 10), $utf8)
 # Build bootstrap installers from the exact same versioned payloads.

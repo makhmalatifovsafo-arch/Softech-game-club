@@ -1,5 +1,6 @@
 import { clientSessionState } from './clientSessionState.js';
 import crypto from 'node:crypto';
+import { frozenPriceSegments } from './prepaidTransferPlan.js';
 import { db } from '../db.js';
 import { verifyPassword } from '../auth.js';
 import { requireRateForMoment, calculateMinuteCost, calculateTimeFromAmount, resolveZoneIdForComputer } from './pricingEngine.js';
@@ -76,7 +77,9 @@ export function prepaidRefund(session, now = new Date()) {
   const elapsed = Math.max(0, Math.min(now.getTime(),end)-start);
   let rates; try {rates=JSON.parse(session.prepaid_rate_plan || 'null');} catch {}
   let used;
-  if (Array.isArray(rates) && rates.length) {
+  if (rates?.version===2 && Array.isArray(rates.segments)) {
+    used = rates.segments.reduce((sum,[from,to,amount])=>sum+amount*Math.max(0,Math.min(1,(Math.min(now.getTime(),end)-from)/(to-from))),0);
+  } else if (Array.isArray(rates) && rates.length) {
     used = rates.reduce((sum,rate,i)=>sum+Number(rate)*Math.max(0,Math.min(1,elapsed/60000-i)),0);
   } else {
     // Existing prepaid sessions retain their agreed total and duration.
@@ -143,17 +146,27 @@ export function extendPrepaidMember(sessionId, minutes) {
   if(!isPrepaidMember(session) || session.status!=='ACTIVE' || session.prepaid_settled_at || Date.parse(session.ends_at)<=Date.now())
     throw new Error('Uzaytirish uchun faol, to‘langan mijoz seansi kerak.');
   const duration=(Date.parse(session.ends_at)-Date.parse(session.started_at))/60000;
-  if(!Number.isInteger(duration) || duration+minutes>1440) throw new Error('Jami seans 1440 daqiqadan oshmasin.');
+  if(!Number.isFinite(duration) || duration<=0 || duration+minutes>1440) throw new Error('Jami seans 1440 daqiqadan oshmasin.');
   const quote=quoteMemberMinutes(session.computer_id,minutes,new Date(session.ends_at));
   let previous;try{previous=JSON.parse(session.prepaid_rate_plan || 'null');}catch{}
-  if(!Array.isArray(previous) || previous.length!==duration) previous=Array.from({length:duration},()=>Number(session.paid_amount)/duration);
   const endsAt=new Date(Date.parse(session.ends_at)+minutes*60000).toISOString();
+  let plan;
+  if(previous?.version===2 || !Number.isInteger(duration)) {
+    const start=Date.parse(session.started_at),end=Date.parse(session.ends_at);
+    const segments=previous?.version===2 ? previous.segments : Array.isArray(previous)
+      ? previous.map((rate,i)=>[start+i*60000,Math.min(end,start+(i+1)*60000),rate*Math.min(1,duration-i)])
+      : [[start,end,Number(session.paid_amount)]];
+    plan={version:2,segments:[...segments,...frozenPriceSegments(session.computer_id,session.club_id,session.ends_at,endsAt).segments]};
+  } else {
+    if(!Array.isArray(previous) || previous.length!==duration) previous=Array.from({length:duration},()=>Number(session.paid_amount)/duration);
+    plan=[...previous,...quote.rates];
+  }
   db.exec('BEGIN IMMEDIATE');
   try{
     if(db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(quote.amount,session.user_id,session.club_id,quote.amount).changes!==1)
       throw new Error('Qo‘shimcha vaqt uchun balans yetarli emas.');
     db.prepare('UPDATE sessions SET ends_at=?,paid_amount=paid_amount+?,total_amount=total_amount+?,prepaid_rate_plan=? WHERE id=?')
-      .run(endsAt,quote.amount,quote.amount,JSON.stringify([...previous,...quote.rates]),session.id);
+      .run(endsAt,quote.amount,quote.amount,JSON.stringify(plan),session.id);
     db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category,session_id) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME',?)")
       .run(session.club_id,session.user_id,quote.amount,session.id);
     db.exec('COMMIT');

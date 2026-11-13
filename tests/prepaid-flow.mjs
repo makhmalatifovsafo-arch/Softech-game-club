@@ -35,7 +35,20 @@ export async function checkPrepaidFlow({localUrl,token,databasePath}) {
         if(mode==='hours')assert.equal(duration,5400);
         if(mode==='endtime')assert.equal(row.ends_at,targetEndTime);
         assert.equal((await api('/api/computers')).body.find(pc=>pc.id===pcs[i]).activeSession.totalAmount,expected);
-        assert.equal((await api('/api/sessions/'+row.id+'/checkout','POST',{paymentMethod:'CASH'})).status,200);
+        if (!batch) {
+          const started=Date.now()-duration*500;
+          db.prepare('UPDATE sessions SET started_at=?,ends_at=? WHERE id=?').run(new Date(started).toISOString(),new Date(started+duration*1000).toISOString(),row.id);
+          const q=await api('/api/sessions/transfer-preview?'+new URLSearchParams({fromComputerId:pcs[0],toComputerId:pcs[1]}));
+          assert.equal(q.status,200,JSON.stringify(q.body));assert.ok(Math.abs(q.body.newRemainingSeconds-q.body.oldRemainingSeconds/2)<1);
+          assert.equal((await api('/api/sessions/transfer','POST',{fromComputerId:pcs[0],toComputerId:pcs[1]})).status,409);
+          const moved=await api('/api/sessions/transfer','POST',{fromComputerId:pcs[0],toComputerId:pcs[1],quoteRevision:q.body.quoteRevision});
+          assert.equal(moved.status,200,JSON.stringify(moved.body));assert.equal(moved.body.sessionId,row.id);
+          assert.equal(db.prepare('SELECT paid_amount FROM sessions WHERE id=?').get(row.id).paid_amount,expected);
+          const closed=await api('/api/sessions/stop-early','POST',{sessionId:row.id});assert.equal(closed.status,200,JSON.stringify(closed.body));
+          assert.ok(Math.abs(closed.body.usedAmount-expected/2)<20,'Transfer and stop must keep prior consumption at the original price: '+JSON.stringify({mode,expected,quote:q.body,closed:closed.body}));
+          const net=db.prepare('SELECT SUM(amount) AS amount FROM transactions WHERE session_id=?').get(row.id).amount;
+          assert.equal(net,closed.body.usedAmount);
+        } else assert.equal((await api('/api/sessions/'+row.id+'/checkout','POST',{paymentMethod:'CASH'})).status,200);
       }
       if(batch) assert.equal(start.body.totalAmount,results.reduce((sum,row)=>sum+row.amount,0));
     }

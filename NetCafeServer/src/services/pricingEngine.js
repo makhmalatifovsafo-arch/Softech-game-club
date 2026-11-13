@@ -205,6 +205,7 @@ export function calculateIntervalPrice(startDateInput, endDateInput, isVip = fal
     totalSeconds: (endEpoch - startEpoch) / 1000,
     totalHours: Number((totalMinutes / 60).toFixed(2)),
     totalAmount: finalAmount,
+    totalAmountExact: totalAmount,
     zoneId: zoneId ? Number(zoneId) : null,
     breakdown
   };

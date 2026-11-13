@@ -1,3 +1,5 @@
+import { transferSession, previewSessionTransfer } from './services/sessionTransfer.js';
+import { frozenPriceSegments } from './services/prepaidTransferPlan.js';
 import { prepaidQuote } from './services/prepaidQuote.js';
 import { clientSessionState, sessionGameAmount } from './services/clientSessionState.js';
 import { isPostpaidSession } from './services/sessionMode.js';
@@ -10,7 +12,7 @@ import { MobileSnapshotSync } from './services/mobileSnapshotSync.js';
 import { mobileCloudUser } from './services/mobileCloudSession.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
 import { createBooking, updateBookingStatus } from './services/bookingService.js';
-import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage, freezePrepaidRates } from './services/memberBilling.js';
+import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage, freezePrepaidRates, prepaidRefund } from './services/memberBilling.js';
 import { confirmClientBarOrder, payPendingBarOrder } from './services/clientBarOrders.js';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -1495,7 +1497,7 @@ function handleRequest(req, res) {
       SELECT 
         c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status, c.last_heartbeat,
         COALESCE(c.zone_id, g.zone_id) as zone_id,
-        s.id as session_id, s.user_id as member_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
+        s.id as session_id, s.user_id as member_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes, s.postpaid_carried_amount, s.postpaid_billing_started_at,
         (SELECT balance FROM users WHERE id=s.user_id AND club_id=s.club_id) as member_balance,
         (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as payment_type,
         t.name as tariff_name,
@@ -1513,7 +1515,7 @@ function handleRequest(req, res) {
       SELECT 
         c.id, c.club_id, c.pc_number, c.name, c.ip_address, c.mac_address, c.zone, c.status, c.last_heartbeat,
         COALESCE(c.zone_id, g.zone_id) as zone_id,
-        s.id as session_id, s.user_id as member_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes,
+        s.id as session_id, s.user_id as member_id, s.customer_name, s.started_at, s.ends_at, s.total_amount, s.notes, s.postpaid_carried_amount, s.postpaid_billing_started_at,
         (SELECT balance FROM users WHERE id=s.user_id AND club_id=s.club_id) as member_balance,
         (SELECT tx.payment_type FROM transactions tx WHERE tx.session_id = s.id ORDER BY tx.created_at ASC LIMIT 1) as payment_type,
         t.name as tariff_name,
@@ -2102,6 +2104,10 @@ function handleRequest(req, res) {
           const hourlyRate = sessionRow.price_per_hour || 12000;
           usedAmount = Math.round((playedMinutes / 60) * hourlyRate);
           refundAmount = 0;
+        } else if (sessionRow.prepaid_rate_plan) {
+          const refund = prepaidRefund(sessionRow,now);
+          usedAmount=refund.usedAmount;
+          refundAmount=refund.amount;
         } else {
           const intervalCalc = calculateIntervalPrice(startedAt, now, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(compId, sessionRow.club_id || clubId || 1));
           usedAmount = Math.min(totalPaid, Math.max(0, intervalCalc.totalAmount));
@@ -2277,6 +2283,14 @@ function handleRequest(req, res) {
           WHERE id = ?
         `).run(newEnd.toISOString(), addAmt, addAmt, sessionRow.id);
 
+        if (sessionRow.prepaid_rate_plan) {
+          const plan=JSON.parse(sessionRow.prepaid_rate_plan);
+          if (plan.version===2) {
+            plan.segments.push(...frozenPriceSegments(compId,sessionRow.club_id,new Date(currentEnd).toISOString(),newEnd.toISOString()).segments);
+            db.prepare('UPDATE sessions SET prepaid_rate_plan=? WHERE id=?').run(JSON.stringify(plan),sessionRow.id);
+          }
+        }
+
         // Kassa tranzaksiyasiga yozish
         if (addAmt > 0) {
           const validPayType = ['CASH', 'CARD', 'CLICK', 'PAYME'].includes(paymentType) ? paymentType : 'CASH';
@@ -2331,91 +2345,23 @@ function handleRequest(req, res) {
   // 3. POST /api/sessions/transfer
   // Kompyuterni almashtirish (PC Swap / Session Transfer, Tenant scoped)
   // ==========================================================================
+  if (url.pathname === '/api/sessions/transfer-preview' && req.method === 'GET') {
+    if (!authenticate(req,res,{permission:'session:manage'})) return;
+    try {
+      sendJson(res,200,previewSessionTransfer({fromComputerId:url.searchParams.get('fromComputerId'),toComputerId:url.searchParams.get('toComputerId'),clubId:getTenantClubId(req)}));
+    } catch(error) {sendJson(res,error.status || 400,{error:error.message});}
+    return;
+  }
   if (url.pathname === '/api/sessions/transfer' && req.method === 'POST') {
     if (!authenticate(req, res, { permission: 'session:manage' })) return;
     const clubId = getTenantClubId(req);
 
     readBody(req, (data) => {
       try {
-        const { fromComputerId, toComputerId } = data;
-        if (!fromComputerId || !toComputerId) {
-          sendJson(res, 400, { error: 'fromComputerId va toComputerId ko\'rsatilishi shart.' });
-          return;
-        }
-
-        const fromPcId = resolvePcId(fromComputerId);
-        const toPcId = resolvePcId(toComputerId);
-
-        if (fromPcId === toPcId) {
-          sendJson(res, 400, { error: 'Bir xil kompyuterga ko\'chirib bo\'lmaydi.' });
-          return;
-        }
-
-        const fromPc = db.prepare('SELECT * FROM computers WHERE id = ?').get(fromPcId);
-        if (!fromPc || !fromPc.current_session_id) {
-          sendJson(res, 400, { error: `Manba kompyuter (${fromPc?.name || fromPcId}) da faol seans mavjud emas.` });
-          return;
-        }
-
-        const toPc = db.prepare('SELECT * FROM computers WHERE id = ?').get(toPcId);
-        if (!toPc) {
-          sendJson(res, 400, { error: `Maqsadli kompyuter (${toPcId}) topilmadi.` });
-          return;
-        }
-
-        // Agar har ikkala PC bitta klubga tegishli ekanligini tekshirish
-        if (fromPc.club_id !== toPc.club_id) {
-          sendJson(res, 400, { error: 'Turli klublar kompyuterlari o\'rtasida seansni ko\'chirish taqiqlangan.' });
-          return;
-        }
-
-        if (clubId !== null && fromPc.club_id !== clubId) {
-          sendJson(res, 403, { error: 'Boshqa klub kompyuterini boshqarish taqiqlangan.' });
-          return;
-        }
-
-        if (toPc.status === 'OCCUPIED' && toPc.current_session_id) {
-          sendJson(res, 400, { error: `Maqsadli kompyuter (${toPc.name || toPcId}) hozirda band!` });
-          return;
-        }
-
-        const session = db.prepare(`
-          SELECT s.*, t.name as tariff_name 
-          FROM sessions s 
-          LEFT JOIN tariffs t ON s.tariff_id = t.id 
-          WHERE s.id = ?
-        `).get(fromPc.current_session_id);
-
-        if (!session || session.status !== 'ACTIVE') {
-          sendJson(res, 400, { error: 'Ko\'chirish uchun faol seans topilmadi.' });
-          return;
-        }
-
-        const now = Date.now();
-        const endsAtMs = new Date(session.ends_at).getTime();
-        const remainingSeconds = Math.max(1, Math.floor((endsAtMs - now) / 1000));
-        const isPostpaid = !isMemberSession(session) && (session.notes === 'POSTPAID' || session.paid_amount === 0);
-
-        // 1. Bazada seansni yangi kompyuterga biriktirish
-        db.prepare(`
-          UPDATE sessions 
-          SET computer_id = ?, notes = notes || ' | TRANSFER: ' || ? || '->' || ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(toPcId, fromPc.name || fromPcId, toPc.name || toPcId, session.id);
-
-        // 2. fromComputer bo'shatiladi
-        db.prepare(`
-          UPDATE computers 
-          SET status = 'AVAILABLE', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `).run(fromPcId);
-
-        // 3. toComputer band qilinadi
-        db.prepare(`
-          UPDATE computers 
-          SET status = 'OCCUPIED', current_session_id = ?, updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `).run(session.id, toPcId);
+        const moved = transferSession({fromComputerId:data.fromComputerId,toComputerId:data.toComputerId,quoteRevision:data.quoteRevision,clubId});
+        const {session,from:fromPc,to:toPc,isPostpaid,remainingSeconds,carriedAmount,transferredAt} = moved;
+        const fromPcId=fromPc.id,toPcId=toPc.id,endsAtMs=Date.parse(session.ends_at);
+        const destinationOnline=ClientManager.isConnected(toPcId);
 
         // 4. WebSocket: fromComputer qulflanadi
         ClientManager.send(fromPcId, 'STOP_SESSION', {
@@ -2441,14 +2387,14 @@ function handleRequest(req, res) {
         });
 
         broadcastAdminUpdate();
-        logAuditEvent(fromPc.club_id || clubId || 1, null, 'PC_SWAP', {
+        logAuditEvent(fromPc.club_id || clubId || 1, req.user.id, 'PC_SWAP', {
           sessionId: session.id,
           fromComputerId: fromPcId,
           toComputerId: toPcId,
           fromName: fromPc.name || fromPcId,
           toName: toPc.name || toPcId,
           customerName: session.customer_name || 'Mijoz',
-          remainingSeconds
+          remainingSeconds, carriedAmount, transferredAt
         });
 
         sendJson(res, 200, {
@@ -2456,11 +2402,11 @@ function handleRequest(req, res) {
           sessionId: session.id,
           fromComputerId: fromPcId,
           toComputerId: toPcId,
-          remainingSeconds,
+          remainingSeconds, isPostpaid, carriedAmount, transferredAt, destinationOnline,
           endsAt: session.ends_at
         });
       } catch (err) {
-        sendJson(res, 500, { error: 'Kompyuterni almashtirishda xatolik: ' + err.message });
+        sendJson(res, err.status || (err.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500), { error: 'Kompyuterni almashtirishda xatolik: ' + err.message });
       }
     });
     return;

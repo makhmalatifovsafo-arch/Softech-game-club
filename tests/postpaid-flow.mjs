@@ -11,11 +11,13 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
   try {
     const room=await api('/api/zones','POST',{name:'Postpaid regression room',tariffs:[{name:'Room 10000',price_per_hour:10000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7],is_vip_postpaid_allowed:true}]});
     assert.equal(room.status,201,JSON.stringify(room.body));
+    const expensive=await api('/api/zones','POST',{name:'Postpaid expensive destination',tariffs:[{name:'Room 20000',price_per_hour:20000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7],is_vip_postpaid_allowed:true}]});
+    assert.equal(expensive.status,201);
     const pcs=[];
     for (const pcNumber of [971,972]) {
       const added=await api('/api/admin/computers','POST',{name:'Postpaid-'+pcNumber,pcNumber});
       assert.equal(added.status,201,JSON.stringify(added.body));pcs.push(added.body.computer.id);
-      db.prepare('UPDATE computers SET zone_id=? WHERE id=?').run(room.body.zone.id,pcs.at(-1));
+      db.prepare('UPDATE computers SET zone_id=? WHERE id=?').run(pcs.length===1?room.body.zone.id:expensive.body.zone.id,pcs.at(-1));
     }
     for (const [mode,rate] of [['SCHEDULE',10000],['CUSTOM',9000]]) {
       assert.equal((await api('/api/settings','PUT',{vip_enabled:true,vip_pricing_mode:mode,vip_custom_price:9000})).status,200);
@@ -39,6 +41,7 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
       assert.equal(transfer.status,200,JSON.stringify(transfer.body));
       const moved=(await api('/api/computers')).body.find(p=>p.id===pcs[1]).activeSession;
       assert.equal(moved.isPostpaid,true);assert.ok(moved.totalAmount>=rate/2);
+      assert.ok(moved.totalAmount<rate/2+20,'Historical debt must not be doubled by the new room rate');
       const stop=await api('/api/sessions/stop','POST',{sessionId:id,paymentType:'CASH'});
       assert.equal(stop.status,200,JSON.stringify(stop.body));
       const receipts=db.prepare("SELECT amount FROM transactions WHERE session_id=? AND transaction_type='POSTPAID_SETTLEMENT'").all(id);

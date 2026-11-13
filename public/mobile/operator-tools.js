@@ -21,7 +21,35 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
    modal(pc.name+' — yakunlash',`<p>${esc(bill.formulaText)}</p><p>Bar qarzi: <b>${esc(money(bill.barBill))}</b></p><p>Olinadigan to‘lov: <b>${esc(money(bill.amountToCollect))}</b></p><p class="hint">Yakuniy summa serverda qayta hisoblanadi. Oldindan to‘langan seansning ishlatilmagan qismi server qoidasi bo‘yicha qaytariladi.</p>${payment('paymentType')}`,v=>remote('/api/sessions/'+s.sessionId+(s.isPostpaid||s.paymentType==='BALANCE'?'/checkout':'/stop-early'),'POST',{paymentType:v.paymentType,paymentMethod:v.paymentType}));
   }catch(e){notice(e.message);}
  }
- function transfer(pc){modal('Seansni ko‘chirish',`<label>Yangi kompyuter<select name="target" required>${pcOptions(state.pcs.filter(p=>p.id!==pc.id&&!p.activeSession))}</select></label>`,v=>remote('/api/sessions/transfer','POST',{fromComputerId:pc.id,toComputerId:v.target}));}
+ function transfer(pc){
+  const destinations=state.pcs.filter(p=>p.id!==pc.id&&!p.activeSession);
+  if(!destinations.length){notice("Bo'sh kompyuter yo'q.");return;}
+  let quote=null,revision=0;
+  const duration=seconds=>{const n=Math.max(0,Math.round(seconds));return `${Math.floor(n/60)} daqiqa ${n%60} soniya`;};
+  modal("Seansni ko'chirish",`<label>Yangi kompyuter<select id="transferTarget" name="target" required>${pcOptions(destinations)}</select></label><div id="transferPreview" class="card" aria-live="polite"></div>`,async v=>{
+   if(!quote||quote.toComputerId!==v.target)throw Error('Avval hisob yuklanishini kuting.');
+   try{return await remote('/api/sessions/transfer','POST',{fromComputerId:pc.id,toComputerId:v.target,quoteRevision:quote.quoteRevision});}
+   catch(error){await load();throw error;}
+  });
+  async function load(){
+   const rev=++revision,target=$('#transferTarget').value;quote=null;$('#actionSubmit').disabled=true;
+   const panel=$('#transferPreview');panel.textContent='Yangi vaqt hisoblanmoqda...';
+   try{
+    const data=await remote('/api/sessions/transfer-preview?'+new URLSearchParams({fromComputerId:pc.id,toComputerId:target}));
+    if(rev!==revision||!panel.isConnected)return;
+    quote=data;
+    panel.innerHTML=`<p class="hint">${esc(money(data.oldRate))}/soat → ${esc(money(data.newRate))}/soat</p>`+(data.isPostpaid?
+     `<p>Yig'ilgan summa saqlanadi</p><strong style="font-size:1.8rem">${esc(money(data.carriedAmount))}</strong><p class="hint">Keyingi vaqt yangi tarifda.</p>`:
+     data.isLiveBalance?`<p>Mijoz balansi saqlanadi; keyingi sarf yangi tarifda.</p>`:
+     `<div style="color:#f87171;text-decoration:line-through;text-decoration-color:#ef4444;text-decoration-thickness:2px">${duration(data.oldRemainingSeconds)}</div><strong style="display:block;font-size:1.8rem;color:#34d399;margin:12px 0">${duration(data.newRemainingSeconds)}</strong><p>Qolgan pul: <b>${esc(money(data.remainingAmount))}</b></p><p class="hint">Pul qayta olinmaydi. Vaqt yangi tarifga moslanadi.</p>`);
+    const dest=destinations.find(p=>p.id===target);
+    if(dest&&!dest.isOnline)panel.innerHTML+='<p class="hint">Kompyuter offline. Ulanguncha ham vaqt hisoblanadi.</p>';
+    $('#actionSubmit').disabled=false;
+   }catch(error){if(rev===revision)panel.textContent=error.message;}
+  }
+  $('#transferTarget').onchange=load;load();
+ }
+
  function message(pc){modal(pc.name+' — xabar','<label>Sarlavha<input name="title" maxlength="100" value="Administrator"></label><label>Xabar<input name="message" maxlength="1000" required></label>',v=>remote('/api/messages/send','POST',{computerId:pc.id,...v}));}
  function renderBar(items){
   content().innerHTML=`<section class="card"><div class="heading"><h2>Bar savdosi</h2><button id="barOrders" class="quiet">Buyurtmalar</button></div><p class="hint">Miqdorlarni tanlang. Narx, qoldiq va to‘lov klub serverida tekshiriladi.</p><div id="saleItems">${items.map(i=>`<label class="sale-item"><span>${esc(i.name)}<small>${esc(money(i.sellPrice))} · Qoldiq: ${i.stockQuantity}</small></span><input aria-label="${esc(i.name)} miqdori" data-quantity="${i.id}" type="number" min="0" max="${i.stockQuantity}" step="1" value="0" ${i.stockQuantity<1?'disabled':''}></label>`).join('')||'<p>Mahsulot yo‘q.</p>'}</div><div class="heading"><strong id="saleTotal">${money(0)}</strong><button id="saleCheckout" class="primary" ${state.meta?.serverOnline?'':'disabled'}>Sotishni tasdiqlash</button></div></section>`;

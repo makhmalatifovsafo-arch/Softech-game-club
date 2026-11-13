@@ -2999,7 +2999,7 @@
   <!-- 5.2 MODAL: KOMPYUTERNI ALMASHTIRISH (PC Swap / Transfer Modal) -->
   <!-- ===================================================================== -->
   <div id="transferModal" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
-    <div class="softech-glass w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-sky-500/30 bg-[var(--bg-secondary)] flex flex-col">
+    <div class="softech-glass w-full max-w-md max-h-[90vh] rounded-2xl overflow-y-auto shadow-2xl border border-sky-500/30 bg-[var(--bg-secondary)] flex flex-col">
       <div class="px-6 py-4 border-b border-[var(--border-color)] flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="text-base">🔄</span>
@@ -3034,8 +3034,10 @@
         </div>
 
         <div class="text-[11px] text-zinc-400 bg-sky-500/5 p-3 rounded-xl border border-sky-500/20">
-          💡 <strong>Eslatma:</strong> O'tkazilgach, joriy kompyuter darhol qulflanadi, tanlangan yangi kompyuter esa barcha qolgan vaqt va mijoz ma'lumotlari bilan ochiladi.
+          💡 <strong>Eslatma:</strong> O'tkazilgach, joriy kompyuter darhol qulflanadi, yangi kompyuterda vaqt yuqoridagi hisob bo'yicha davom etadi.
         </div>
+
+        <div id="transferCalculation" class="p-4 rounded-xl border border-sky-500/30 bg-sky-500/5 text-sm" aria-live="polite"></div>
 
         <!-- Tugmalar -->
         <div class="flex items-center justify-end gap-2.5 pt-2">
@@ -9713,6 +9715,8 @@
     // ========================================================================
     let selectedTransferTargetPcId = null;
 
+    let transferQuote = null;
+    let transferQuoteRevision = 0;
     function openTransferModal(fromPcId) {
       const sourcePc = computersData.find(c => c.id === fromPcId);
       if (!sourcePc || !sourcePc.activeSession) {
@@ -9722,14 +9726,17 @@
 
       document.getElementById('transferFromPcId').value = fromPcId;
       document.getElementById('transferFromPcTitle').textContent = `${sourcePc.name} (${sourcePc.activeSession.customerName || 'Mehmon'})`;
-      document.getElementById('transferRemainingTime').textContent = formatTime(sourcePc.activeSession.remainingSeconds);
+      document.getElementById('transferRemainingTime').textContent = sourcePc.activeSession.isPostpaid ? 'VIP / Cheksiz' : formatTime(sourcePc.activeSession.remainingSeconds);
 
       // Bo'sh (AVAILABLE yoki LOCKED/OFFLINE) kompyuterlar ro'yxatini yig'ish
       const targetListEl = document.getElementById('transferTargetList');
       targetListEl.innerHTML = '';
       selectedTransferTargetPcId = null;
+      transferQuote = null;
+      transferQuoteRevision++;
+      document.getElementById('btnSubmitTransfer').disabled = true;
 
-      const availablePcs = computersData.filter(c => c.id !== fromPcId && c.status !== 'OCCUPIED');
+      const availablePcs = computersData.filter(c => c.id !== fromPcId && !c.activeSession && c.status !== 'OCCUPIED');
 
       if (availablePcs.length === 0) {
         targetListEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500">Hozirda boshqa bo\'sh kompyuter mavjud emas!</div>';
@@ -9762,7 +9769,7 @@
       document.getElementById('transferModal').classList.remove('hidden');
     }
 
-    function selectTransferTarget(pcId) {
+    async function selectTransferTarget(pcId) {
       selectedTransferTargetPcId = pcId;
       const targetListEl = document.getElementById('transferTargetList');
       Array.from(targetListEl.children).forEach(child => {
@@ -9772,6 +9779,29 @@
       if (selectedEl) {
         selectedEl.classList.add('border-sky-400', 'bg-sky-500/10');
       }
+      const revision = ++transferQuoteRevision;
+      transferQuote = null;
+      const button = document.getElementById('btnSubmitTransfer');
+      const panel = document.getElementById('transferCalculation');
+      button.disabled = true;
+      panel.textContent = 'Yangi tarif va qolgan vaqt hisoblanmoqda...';
+      try {
+        const from = document.getElementById('transferFromPcId').value;
+        const params = new URLSearchParams({fromComputerId:from,toComputerId:pcId});
+        const response = await fetch('/api/sessions/transfer-preview?' + params,{headers:{Authorization:`Bearer ${authToken}`},cache:'no-store'});
+        const data = await response.json();
+        if (revision !== transferQuoteRevision) return;
+        if (!response.ok) throw new Error(data.error || 'Hisob olinmadi.');
+        transferQuote = data;
+        const money = value => Number(value || 0).toLocaleString() + " so'm";
+        panel.innerHTML = `<div class="text-xs text-zinc-400 mb-3">Tarif: ${money(data.oldRate)}/soat → ${money(data.newRate)}/soat</div>` +
+          (data.isPostpaid ? `<p>Yig'ilgan summa saqlanadi</p><strong class="block text-2xl text-amber-300 mt-2">${money(data.carriedAmount)}</strong><p class="text-xs text-zinc-400 mt-2">Keyingi vaqt yangi tarifda hisoblanadi.</p>` :
+          data.isLiveBalance ? `<p>Mijoz balansi saqlanadi. Keyingi sarf yangi tarifda hisoblanadi.</p>` :
+          `<div class="text-red-400 text-sm" style="text-decoration:line-through;text-decoration-color:#ef4444;text-decoration-thickness:2px">${quoteDurationLabel(data.oldRemainingSeconds)}</div><strong class="block text-3xl text-emerald-300 my-2">${quoteDurationLabel(data.newRemainingSeconds)}</strong><p>Qolgan pul: <b>${money(data.remainingAmount)}</b></p><p class="text-xs text-zinc-400 mt-2">Pul qayta olinmaydi. Qolgan vaqt yangi tarifga moslanadi.</p>`);
+        const destination=computersData.find(pc=>pc.id===pcId);
+        if(destination && !computerState(destination).online) panel.innerHTML += `<p class="text-xs text-amber-300 mt-3">Maqsad kompyuter offline. Seans ulanganda tiklanadi; ulanishgacha ham vaqt hisoblanadi.</p>`;
+        button.disabled = false;
+      } catch(error) { if(revision===transferQuoteRevision) panel.textContent=error.message; }
     }
 
     async function submitPcTransfer() {
@@ -9783,6 +9813,7 @@
         return;
       }
 
+      if (!transferQuote || transferQuote.toComputerId !== toPcId) return;
       const btn = document.getElementById('btnSubmitTransfer');
       if (btn) {
         btn.disabled = true;
@@ -9798,7 +9829,8 @@
           },
           body: JSON.stringify({
             fromComputerId: fromPcId,
-            toComputerId: toPcId
+            toComputerId: toPcId,
+            quoteRevision: transferQuote.quoteRevision
           })
         });
 
@@ -9806,16 +9838,17 @@
           const data = await res.json();
           closeModal('transferModal');
           fetchData();
-          alert(`✓ Seans muvaffaqiyatli ko'chirildi!\nManba: ${fromPcId.toUpperCase()} (Qulflandi)\nYangi kompyuter: ${toPcId.toUpperCase()} (Ochildi)\nQolgan vaqt: ${formatTime(data.remainingSeconds)}`);
+          alert(`Seans ko'chirildi.\n${data.destinationOnline ? 'Yangi kompyuterga ochish buyrugi yuborildi.' : 'Yangi kompyuter offline; ulanganda seans tiklanadi.'}\n${data.isPostpaid ? 'VIP: ' + Number(data.carriedAmount).toLocaleString() + " so'mdan davom etadi" : 'Qolgan vaqt: ' + quoteDurationLabel(data.remainingSeconds)}`);
         } else {
           const err = await res.json();
           alert(err.error || 'Seansni ko\'chirishda xatolik yuz berdi');
+          await selectTransferTarget(toPcId);
         }
       } catch (err) {
         alert('Server bilan bog\'lanishda xatolik: ' + err.message);
       } finally {
         if (btn) {
-          btn.disabled = false;
+          btn.disabled = !transferQuote;
           btn.textContent = 'Ko\'chirish va Ochish ↵';
         }
       }

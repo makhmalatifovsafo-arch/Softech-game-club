@@ -11,6 +11,7 @@ async function synchronizeWrite(callback){
 export function allowedMobileRequest(request){
  if(!request||typeof request.path!=='string'||request.path.length>1000||!['GET','POST','PUT','PATCH','DELETE'].includes(request.method))return false;
  const u=new URL(request.path,'http://localhost');if(u.origin!=='http://localhost'||!request.path.startsWith('/api/')||request.path.includes('%')||request.path.includes('\\')||u.hash||u.pathname!==request.path.split('?')[0])return false;
+ if(u.pathname==='/api/sessions/transfer-preview'&&request.method==='GET')return [...u.searchParams.keys()].every(k=>['fromComputerId','toComputerId'].includes(k))&&!!u.searchParams.get('fromComputerId')&&!!u.searchParams.get('toComputerId');
  if([...u.searchParams.keys()].some(k=>!['from','to','date','category','search','limit'].includes(k)))return false;
  if(mobileManagerSetting(request.path,request.method))return true;
  if(request.method==='GET')return /^\/api\/(auth\/me|computers|tariffs|shifts\/current|reports\/financial|bar\/items|bar\/orders|bookings|admin\/users|audit-logs)$/.test(u.pathname)||/^\/api\/sessions\/[^/]+\/checkout-preview$/.test(u.pathname);

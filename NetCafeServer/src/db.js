@@ -791,6 +791,7 @@ function migrateFinancialSchema() {
       ['sessions','prepaid_rate_plan','TEXT'], ['sessions','prepaid_settled_at','TEXT'],
       ['sessions','client_self_service','INTEGER NOT NULL DEFAULT 0'],
       ['sessions','billing_last_at','TEXT'], ['sessions','billing_remainder','REAL NOT NULL DEFAULT 0'],
+      ['sessions','postpaid_carried_amount','REAL NOT NULL DEFAULT 0'], ['sessions','postpaid_billing_started_at','TEXT'],
       ['client_transactions','session_id','TEXT'], ['bar_orders','request_id','TEXT']
     ]) {
       if (!db.prepare('PRAGMA table_info('+table+')').all().some(c=>c.name===column)) db.exec('ALTER TABLE '+table+' ADD COLUMN '+column+' '+type);

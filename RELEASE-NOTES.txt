@@ -1,3 +1,10 @@
+2026-11-13: 1.1.3
+- Correct VIP Postpaid live billing and preserve accrued charges when moving a session.
+- Convert prepaid remaining value to the destination tariff, with a reviewed time comparison.
+- Preserve transfer refunds and bar debt; reject occupied targets and roll back failed transfers.
+- Use precise duration and amount calculations for individual and group prepaid sessions.
+- Include matching Server/Client ZIP updates and Windows setup installers.
+
 2026-11-12: 1.1.1
 - Server, Client, cloud panels and Windows installers use version 1.1.1.
 - Includes the shared Super Admin controls with the Xabar tab and automatic

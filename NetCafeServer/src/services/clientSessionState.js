@@ -4,18 +4,25 @@ import { canClientCloseSession, isPostpaidSession } from './sessionMode.js';
 
 // Both cashier checkout and the client display use this calculation.
 export function postpaidGameBill(session, now = Date.now()) {
-  const started = Date.parse(session.started_at);
+  return Math.round(postpaidGameAmount(session,now));
+}
+
+// Keep sub-som precision across transfers; round only the displayed/final bill.
+export function postpaidGameAmount(session, now = Date.now()) {
+  const started = Date.parse(session.postpaid_billing_started_at || session.started_at);
   if (!Number.isFinite(started) || !Number.isFinite(now)) throw new Error('Seans vaqti noto‘g‘ri. Hisobni tekshiring.');
+  const carried = Number(session.postpaid_carried_amount || 0);
+  if (!Number.isFinite(carried) || carried<0) throw new Error('Seansning saqlangan summasi noto‘g‘ri.');
   const elapsed = Math.max(0, now - started);
-  if (!elapsed) return 0;
+  if (!elapsed) return carried;
   const settings = getClubSettings(session.club_id);
   if (settings.vip_pricing_mode === 'CUSTOM') {
     const rate = Number(settings.vip_custom_price);
     if (!Number.isFinite(rate) || rate <= 0) throw new Error('VIP soatlik narxi noto‘g‘ri. Tarifni tekshiring.');
-    return Math.round(elapsed / 3600000 * rate);
+    return carried + elapsed / 3600000 * rate;
   }
-  return calculateIntervalPrice(session.started_at,new Date(now),true,session.club_id,
-    resolveZoneIdForComputer(session.computer_id,session.club_id)).totalAmount;
+  return carried + calculateIntervalPrice(new Date(started),new Date(now),true,session.club_id,
+    resolveZoneIdForComputer(session.computer_id,session.club_id)).totalAmountExact;
 }
 
 export function sessionGameAmount(session, now = Date.now()) {
