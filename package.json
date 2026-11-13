@@ -1,6 +1,6 @@
 {
   "name": "softech-game-club",
-  "version": "1.1.11",
+  "version": "1.1.16",
   "type": "module",
   "scripts": {
     "version:set": "node scripts/set-version.mjs",

@@ -193,8 +193,10 @@
                     <TextBlock Text="⚠️" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,12" />
                     <TextBlock Text="Serverni ishga tushirib bo'lmadi" Foreground="#F43F5E" FontWeight="Bold" 
                                FontSize="16" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
                     <TextBlock x:Name="TxtErrorMessage" Text="Xatolik yuz berdi" Foreground="#A1A1AA" FontSize="12" 
                                TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,20" />
+                    </ScrollViewer>
                     
                     <Button x:Name="BtnRetry" Click="BtnRetry_Click"
                             Background="#0EA5E9" Foreground="Black" FontWeight="Bold" FontSize="12"

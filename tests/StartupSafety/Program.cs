@@ -84,6 +84,23 @@ using (var client = new HttpClient(handler))
     Check(!await new NodeProcessManager(client).IsServerHealthyAsync(), "Unavailable backend reported healthy");
 Console.WriteLine("PASS: client installation/reconfiguration validation and launcher health identity checks");
 
+// Error code alone cannot diagnose a failed remote installation.
+var diagnostics = new NodeProcessManager();
+var diagnosticFlags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+var capture = typeof(NodeProcessManager).GetMethod("CaptureError", diagnosticFlags)!;
+var failure = typeof(NodeProcessManager).GetMethod("StartupFailure", diagnosticFlags)!;
+var fixturePath = Path.GetFullPath(Path.Combine(".test-output", "launcher-errors-" + Guid.NewGuid().ToString("N")));
+Directory.CreateDirectory(fixturePath);
+capture.Invoke(diagnostics, new object?[] { null });
+capture.Invoke(diagnostics, new object?[] { new string('x', 20000) });
+capture.Invoke(diagnostics, new object?[] { "Error: ERR_MODULE_NOT_FOUND: fixture-missing-module" });
+var diagnosticText = (string)failure.Invoke(diagnostics, new object[] { 1, fixturePath })!;
+Check(diagnosticText.Contains("fixture-missing-module"), "Actual Node error lost");
+Check(diagnosticText.Length < 13000, "Startup error is unbounded");
+var diagnosticLog = Path.Combine(fixturePath, "logs", "node-startup-error.log");
+Check(File.ReadAllText(diagnosticLog).Contains("ERR_MODULE_NOT_FOUND"), "Startup error not persisted");
+Console.WriteLine("PASS: actual startup error visible and persisted with bounded output");
+
 sealed class HealthHandler(HttpStatusCode status, string body, bool fail = false) : HttpMessageHandler
 {
     public int Calls { get; private set; }

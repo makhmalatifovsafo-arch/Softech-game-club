@@ -23,6 +23,33 @@ public class NodeProcessManager
     public NodeProcessManager(HttpClient? httpClient = null) => _httpClient = httpClient ?? DefaultHttpClient;
 
     private Process? _spawnedProcess;
+    private readonly object _errorLock = new();
+    private string _startupError = "";
+
+    private void CaptureError(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        lock (_errorLock) {
+            _startupError += line + Environment.NewLine;
+            if (_startupError.Length > 12000) _startupError = _startupError[^12000..];
+        }
+    }
+
+    private string StartupFailure(int exitCode, string serverDir)
+    {
+        string details;
+        lock (_errorLock) details = _startupError.Trim();
+        var message = $"Node.js server to'xtadi (Chiqish kodi: {exitCode}).";
+        if (details.Length == 0) return message;
+        var logPath = Path.Combine(serverDir, "logs", "node-startup-error.log");
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+            File.WriteAllText(logPath, DateTimeOffset.Now.ToString("O") + Environment.NewLine + details, System.Text.Encoding.UTF8);
+            message += Environment.NewLine + "Log: " + logPath;
+        } catch { /* The original error must still be visible on a read-only install. */ }
+        return message + Environment.NewLine + details;
+    }
+
     private bool _isSpawnedByThisInstance;
     public string ServerDirectory => ResolveNodeAndServerPaths().serverDir;
 
@@ -99,7 +126,8 @@ public class NodeProcessManager
             UseShellExecute = false,
             WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardOutput = false,
-            RedirectStandardError = false
+            RedirectStandardError = true,
+            StandardErrorEncoding = System.Text.Encoding.UTF8
         };
 
         startInfo.Environment["SOFTECH_COCKPIT_PID"] = Environment.ProcessId.ToString();
@@ -107,12 +135,12 @@ public class NodeProcessManager
 
         try
         {
-            _spawnedProcess = Process.Start(startInfo);
-            if (_spawnedProcess == null || _spawnedProcess.HasExited)
-            {
+            lock (_errorLock) _startupError = "";
+            _spawnedProcess = new Process { StartInfo = startInfo };
+            _spawnedProcess.ErrorDataReceived += (_, e) => CaptureError(e.Data);
+            if (!_spawnedProcess.Start())
                 throw new InvalidOperationException("Node.js jarayonini ishga tushirib bo'lmadi.");
-            }
-
+            _spawnedProcess.BeginErrorReadLine();
             _isSpawnedByThisInstance = true;
             StatusChanged?.Invoke($"Node.js jarayoni ishga tushdi (PID: {_spawnedProcess.Id}). Bog'lanish kutilmoqda...");
         }
@@ -135,7 +163,9 @@ public class NodeProcessManager
 
             if (_spawnedProcess.HasExited)
             {
-                throw new InvalidOperationException($"Node.js server kutilmaganda to'xtadi (Chiqish kodi: {_spawnedProcess.ExitCode}).");
+                // Drain stderr even if Node exited before the first health check.
+                _spawnedProcess.WaitForExit();
+                throw new InvalidOperationException(StartupFailure(_spawnedProcess.ExitCode, serverDir));
             }
 
             if (await IsServerHealthyAsync())
