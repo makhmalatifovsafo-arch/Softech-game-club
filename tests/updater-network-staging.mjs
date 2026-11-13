@@ -10,6 +10,7 @@ import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { waitForUpdatedServer } from './helpers/wait-for-updated-server.mjs';
 const version=process.argv[2];
 const applyBusy=process.argv.includes('--apply-busy');
 const fromIndex=process.argv.indexOf('--from');
@@ -98,14 +99,15 @@ try{
     assert.equal(status.activeSessions,1);assert.equal(status.canApply,false);
     const response=await fetch(url+'/api/updates/apply',{method:'POST',headers,body:'{"force":true}',signal:AbortSignal.timeout(90000)});
     assert.equal(response.status,200,await response.text());
-    const installed=Date.now()+120000;let healthy=false;
-    while(Date.now()<installed){
-      try { const h=await(await fetch(url+'/api/health',{signal:AbortSignal.timeout(1500)})).json();
-        if(h.version===version&&fs.existsSync(path.join(dir,'updates-last-success.json'))){healthy=true;break;}
-      }catch{}
-      await new Promise(r=>setTimeout(r,500));
+    try {
+      status=await waitForUpdatedServer(url,version,()=>{
+        const receipt=path.join(dir,'updates-last-success.json');
+        return fs.existsSync(receipt)?JSON.parse(fs.readFileSync(receipt,'utf8')):null;
+      });
+    } catch(error) {
+      const updaterLog=path.join(dir,'logs/updater.log');
+      throw new Error(error.message+'\n'+(fs.existsSync(updaterLog)?fs.readFileSync(updaterLog,'utf8'):logs),{cause:error});
     }
-    assert.equal(healthy,true,fs.existsSync(path.join(dir,'logs/updater.log'))?fs.readFileSync(path.join(dir,'logs/updater.log'),'utf8'):logs);
     db=new DatabaseSync(dbFile,{readOnly:true});
     const session=db.prepare("SELECT * FROM sessions WHERE id='busy-session'").get();
     assert.equal(session.status,'ACTIVE');assert.equal(session.ends_at,end);
@@ -114,7 +116,6 @@ try{
     assert.equal(db.prepare("SELECT payment_status FROM bar_orders WHERE order_number='UPDATE-TEST'").get().payment_status,'PENDING_AT_CHECKOUT');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM auth_sessions').get().n>0,true);
     db.close();
-    status=await(await fetch(url+'/api/updates/status')).json();
     assert.equal(status.currentVersion,version);assert.equal(status.activeSessions,1);
     console.log('PASS: authenticated administrator installs while busy; native helper restarts healthy; active session, money, bar stock/order and login survive');
   }

@@ -308,6 +308,16 @@ Yangi ZIP/setup relizi tayyorlanib tarqatilmadi, versiya o'zgartirilmadi.
 
 ### Tarqatishdan oldin
 
+1.2.0 packaged OTA testida `currentVersion: undefined`: test yangi versiyali
+health va success fayli mavjudligini yetarli deb hisoblagan. Updater success
+faylini yozgandan keyin server approvalni 250 ms polling bilan qabul qiladi;
+shu oraliqda status endpoint 503 UPDATE_VERIFYING qaytaradi. Test endi health
+`updatePending === false`, shu versiyaga tegishli success yozuvi va HTTP 200
+status javobidagi `currentVersion`ni birgalikda kutadi. Pul yozuvlarini himoya
+qiluvchi production probation blokirovkasi o'zgartirilmadi. 6 ta yo'naltirilgan
+test o'tdi: kechikkan approval, vaqtinchalik 503, eski status/receipt, muddati
+tugagan kutish va haqiqiy serverdagi business blokirovkasi.
+
 1.2.0 SCM keyingi tekshiruv: ServiceBase bilan Node PID yopilgani va
 `SCM shutdown completed` tasdiqlandi. Keyingi HTTP yo'qlik tekshiruvi 2 soniyali
 HttpClient timeoutini xato sanagan (faqat connection-refused ushlangan).
