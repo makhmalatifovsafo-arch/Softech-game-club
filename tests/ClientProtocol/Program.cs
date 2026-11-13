@@ -6,7 +6,7 @@ class ClientProtocolAudit
 {
  [STAThread] static void Main(string[] args)
  {
-  if(args.Length!=1)throw new Exception("Test websocket URL required");
+  if(args.Length!=2)throw new Exception("Test websocket and update URLs required");
   File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"config.json"),JsonSerializer.Serialize(new {serverUrl=args[0],pcNumber="PC-07",heartbeatIntervalSeconds=1}));
   var app=new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
   System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
@@ -120,8 +120,40 @@ class ClientProtocolAudit
   widget.UpdateSessionInfo(new SessionInfo("vip",true,false,infoNow-7200000,infoNow,null,"Tarifni tekshiring"));
   if(!priceText.Text.Contains("aniqlanmadi"))throw new Exception("Missing tariff displayed invented amount");
   widget.StopSession();
+  // A LAN/server outage must neither erase purchased time nor add free time.
+  var expiry=typeof(TimeWidgetWindow).GetField("_expiresAtTimestamp",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+  widget.UpdateTime(1800);var savedDeadline=expiry.GetValue(widget);
+  widget.SetServerConnected(false);tick.Invoke(widget,new object[]{null,EventArgs.Empty});
+  if(!Equals(savedDeadline,expiry.GetValue(widget)))throw new Exception("Disconnect changed the prepaid deadline");
+  expiry.SetValue(widget,System.Diagnostics.Stopwatch.GetTimestamp()-System.Diagnostics.Stopwatch.Frequency);
+  int beforeOfflineExpiry=expirations;tick.Invoke(widget,new object[]{null,EventArgs.Empty});tick.Invoke(widget,new object[]{null,EventArgs.Empty});
+  if(expirations!=beforeOfflineExpiry+1)throw new Exception("Offline prepaid expiry must fire exactly once");
+  widget.UpdateTime(-1);tick.Invoke(widget,new object[]{null,EventArgs.Empty});
+  if(expirations!=beforeOfflineExpiry+1)throw new Exception("Offline VIP was closed without cashier approval");
+  widget.SetServerConnected(true);widget.UpdateTime(900);
+  if(expiry.GetValue(widget)==null)throw new Exception("Reconnected server time did not replace the local deadline");
+  widget.StopSession();
   Console.WriteLine("PASS member-only logout, paid amount, Postpaid elapsed/bill, offline status and local expiry");
   app.Dispatcher.InvokeAsync(async ()=>{
+   // Exercise real update failure paths in an isolated installation.
+   var updaterType=typeof(NetCafeClient.Services.AutoUpdateService);
+   var updateFixture=(NetCafeClient.Services.AutoUpdateService)Activator.CreateInstance(updaterType,true)!;
+   string updateRoot=Path.GetFullPath(Path.Combine(".test-output","client-failed-updates-"+Guid.NewGuid().ToString("N")));
+   Directory.CreateDirectory(updateRoot);
+   updaterType.GetField("root",flags)!.SetValue(updateFixture,updateRoot);
+   updaterType.GetField("staging",flags)!.SetValue(updateFixture,Path.Combine(updateRoot,"updates","staging"));
+   File.WriteAllText(Path.Combine(updateRoot,"updates"),"blocked storage fixture");
+   updateFixture.Initialize(args[1]+"/bad-hash",()=>true,()=>false);
+   if(await updateFixture.CheckForUpdatesAsync())throw new Exception("Blocked storage accepted an update");
+   if(updateFixture.IsChecking||updateFixture.IsDownloading)throw new Exception("Failed update wedged client state");
+   File.Delete(Path.Combine(updateRoot,"updates"));
+   foreach(string route in new[]{"bad-hash","bad-zip"})for(int attempt=0;attempt<3;attempt++){
+    updateFixture.ManifestUrl=args[1]+"/"+route;
+    if(await updateFixture.CheckForUpdatesAsync())throw new Exception("Invalid update was accepted");
+    if(Directory.EnumerateFileSystemEntries(Path.Combine(updateRoot,"updates","staging")).Any())throw new Exception("Failed download accumulated staging files");
+   }
+   updateFixture.Stop();
+   Console.WriteLine("PASS client starts with unavailable update storage; six failed downloads/extractions leave no staging files");
    var service=new WebSocketClientService();var done=new TaskCompletionSource();int adminMessages=0;
    service.OnAdminMessage+=(title,message)=>app.Dispatcher.Invoke(()=>{
     if(title!="Admin"||message!="Hello <b>literal</b>\nSecond line")throw new Exception("Message text changed");
@@ -147,7 +179,7 @@ class ClientProtocolAudit
    service.OnConnectionStatusChanged+=online=>{if(online)connections++;};
    service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;if(id=="cash-session"){cashBlocked=!service.CanSelfClose&&!service.SendLogoutAsync().GetAwaiter().GetResult();return;}zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;logoutCheck=service.SendLogoutAsync();};
    service.OnSessionInfo+=info=>{if(info.SessionId=="stale-session")throw new Exception("Stale billing packet accepted");billReceived|=info.SessionId=="cash-session"&&info.GameAmount==14000;};
-   service.OnUpdateTime+=seconds=>time=seconds==600;
+   service.OnUpdateTime+=seconds=>{if(seconds!=600)throw new Exception("Stale session time packet accepted");time=true;};
    service.OnStopSession+=reason=>stopped=reason=="test-end";
    service.OnLockScreen+=()=>locked=true;
    service.OnPcConfigReceived+=(zone,rate,formatted,qr)=>config=zone=="VIP"&&rate==12000;

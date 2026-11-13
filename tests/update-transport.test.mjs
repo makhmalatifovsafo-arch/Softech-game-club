@@ -45,6 +45,7 @@ test('updater follows GitHub-style redirects with safe DNS and streams large ZIP
     else if(req.url==='/truncated'){res.writeHead(200,{'Content-Length':1000});res.write('short');setImmediate(()=>res.destroy());}
     else if(req.url==='/stall'){res.writeHead(200);res.write('{');}
     else if(req.url==='/html'){res.end('<html>Login</html>');}
+    else if(req.url==='/oversized'){res.writeHead(200,{'Content-Length':2*1024*1024*1024});res.write('x');}
     else{res.writeHead(404);res.end();}
   });
   server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -71,6 +72,8 @@ test('updater follows GitHub-style redirects with safe DNS and streams large ZIP
     assert.equal(fs.existsSync(partial),false);assert.equal(fs.existsSync(partial+'.part'),false);
     await assert.rejects(downloadUpdateFile(base+'/stall',partial,{...options,signal:AbortSignal.timeout(100)}));
     assert.equal(fs.existsSync(partial+'.part'),false);
+    await assert.rejects(downloadUpdateFile(base+'/oversized',partial,options),/too large/);
+    assert.equal(fs.existsSync(partial),false);assert.equal(fs.existsSync(partial+'.part'),false);
     broken=true;
     await assert.rejects(fetchUpdateManifest(base+'/latest',options),/ENOENT; getaddrinfo/);
     broken=false;

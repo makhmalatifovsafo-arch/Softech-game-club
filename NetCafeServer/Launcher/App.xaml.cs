@@ -104,4 +104,10 @@ public partial class App : Application
 
         base.OnExit(e);
     }
+
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        if(MainWindow is SoftechCockpit.MainWindow window)window.SystemShutdown=true;
+        base.OnSessionEnding(e);
+    }
 }

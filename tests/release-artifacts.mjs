@@ -38,6 +38,7 @@ for (const [kind, asset] of [['client', 'SoftechClient.zip'], ['server', 'Softec
   console.log('PASS release archive integrity and native helper: ' + kind);
 }
 const serverDir = path.join(work, 'server');
+assert.ok(fs.existsSync(path.join(serverDir,'SoftechService.exe')),'Server package must include the Windows service host');
 // Reproduce a Windows-saved configuration in the actual extracted release.
 const packagedConfig = path.join(serverDir, 'config.json');
 // OTA archives intentionally exclude per-club config; model the retained file.

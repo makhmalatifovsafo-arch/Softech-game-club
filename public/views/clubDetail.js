@@ -4,10 +4,14 @@
  * Optimized for One-Hand Mobile Drill-Down, Touch Gestures & Real-Time Telemetry
  */
 
+import {renderServerDiagnostics} from './serverDiagnostics.js';
 // Global Inspector State
 export const clubInspectorState = {
   activeClubId: null,
   clubData: null,
+  diagnostic: null,
+  diagnosticLoadState: 'ready',
+  requestGeneration: 0,
   kassaData: null,
   workstations: [],
   selectedPc: null,
@@ -34,6 +38,19 @@ export async function fetchClubInspectorData(clubId) {
 
   clubInspectorState.isLoading = true;
   clubInspectorState.activeClubId = clubId;
+  const generation=++clubInspectorState.requestGeneration;
+  clubInspectorState.diagnostic = null;
+  clubInspectorState.diagnosticLoadState = 'loading';
+  let diagnosticResult=null;
+  void fetch(`/api/clubs/${clubId}/diagnostics`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store',signal:AbortSignal.timeout(8000)})
+    .then(async response=>{if(!response.ok)throw Error();return {state:'ready',data:(await response.json()).diagnostic};})
+    .catch(()=>({state:'unavailable',data:null}))
+    .then(result=>{
+      diagnosticResult=result;
+      if(clubInspectorState.activeClubId!==clubId||generation!==clubInspectorState.requestGeneration)return;
+      clubInspectorState.diagnostic=result.data;clubInspectorState.diagnosticLoadState=result.state;
+      renderDiagnosticSection();
+    });
 
   try {
     const res = await fetch(`/api/telemetry/clubs/${clubId}`, {
@@ -54,6 +71,9 @@ export async function fetchClubInspectorData(clubId) {
 
     const data = await res.json();
     if (data.success) {
+      if(clubInspectorState.activeClubId!==clubId||generation!==clubInspectorState.requestGeneration)return null;
+      clubInspectorState.diagnostic=diagnosticResult?.data||null;
+      clubInspectorState.diagnosticLoadState=diagnosticResult?.state||'loading';
       clubInspectorState.clubData = data.club;
       clubInspectorState.kassaData = data.kassa;
       clubInspectorState.workstations = data.workstations || [];
@@ -63,7 +83,7 @@ export async function fetchClubInspectorData(clubId) {
     console.error('❌ [Club Inspector] Ma\'lumotlarni olishda xatolik:', err);
     showInspectorToast("Filial telemetriyasini yuklab bo'lmadi");
   } finally {
-    clubInspectorState.isLoading = false;
+    if(clubInspectorState.activeClubId===clubId)clubInspectorState.isLoading = false;
   }
 
   return null;
@@ -611,6 +631,7 @@ export function renderClubInspectorView() {
     <div class="space-y-4 pb-24 animate-fade-in">
       <!-- 1. Club Overview Header -->
       ${renderOverviewHeader(club)}
+      <div data-server-diagnostics="${Number(club.id)}">${renderServerDiagnostics(clubInspectorState.diagnostic,clubInspectorState.diagnosticLoadState,Date.now(),club.last_heartbeat_at||club.last_heartbeat)}</div>
 
       <!-- 2. Kunlik Kassa Bo'linishi -->
       ${renderKassaBreakdown(kassa || {})}
@@ -704,6 +725,7 @@ window.closeClubDetailInspector = function() {
   triggerHaptic(10);
   clubInspectorState.activeClubId = null;
   clubInspectorState.clubData = null;
+  clubInspectorState.diagnostic = null;
   clubInspectorState.selectedPc = null;
   
   // Asosiy klublar ro'yxatiga qaytish
@@ -711,6 +733,37 @@ window.closeClubDetailInspector = function() {
     window.switchTab('clubs');
   }
 };
+
+window.downloadServerDiagnostic = function(){
+  if(!clubInspectorState.diagnostic)return;
+  const blob=new Blob([JSON.stringify(clubInspectorState.diagnostic,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download=`Softech-Club-${Number(clubInspectorState.activeClubId)}-Diagnostics.json`;link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+
+function renderDiagnosticSection(){
+  const element=document.querySelector('[data-server-diagnostics]');
+  if(!element||Number(element.dataset.serverDiagnostics)!==Number(clubInspectorState.activeClubId))return;
+  const club=clubInspectorState.clubData;
+  element.innerHTML=renderServerDiagnostics(clubInspectorState.diagnostic,clubInspectorState.diagnosticLoadState,Date.now(),club?.last_heartbeat_at||club?.last_heartbeat);
+}
+
+let diagnosticRefreshing=false;
+setInterval(async()=>{
+  if(document.hidden||diagnosticRefreshing||!document.querySelector('[data-server-diagnostics]'))return;
+  const id=clubInspectorState.activeClubId,generation=clubInspectorState.requestGeneration;
+  const token=localStorage.getItem('softech_access_token');if(!id||!token)return;
+  renderDiagnosticSection(); // Expire old observations even when the request fails.
+  diagnosticRefreshing=true;
+  try{
+    const response=await fetch(`/api/clubs/${id}/diagnostics`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error();const data=await response.json();
+    if(id!==clubInspectorState.activeClubId||generation!==clubInspectorState.requestGeneration)return;
+    clubInspectorState.diagnostic=data.diagnostic;clubInspectorState.diagnosticLoadState='ready';
+  }catch{if(id===clubInspectorState.activeClubId&&generation===clubInspectorState.requestGeneration)clubInspectorState.diagnosticLoadState='unavailable';}
+  finally{diagnosticRefreshing=false;renderDiagnosticSection();}
+},30000);
 
 window.refreshClubDetailInspector = async function() {
   triggerHaptic(15);

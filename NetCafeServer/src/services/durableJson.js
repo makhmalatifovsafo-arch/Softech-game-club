@@ -5,6 +5,14 @@ import crypto from 'node:crypto';
 // ensure the data has reached the disk when power is lost.
 export function writeDurableJson(file,value) {
   const bytes=Buffer.from(JSON.stringify(value,null,2)+'\n');
+  // Cloud polling often saves identical settings. Do not wear the disk or
+  // introduce another replacement window for an unchanged document.
+  try { if(fs.readFileSync(file).equals(bytes))return; }
+  catch(error) { if(error.code!=='ENOENT')throw error; }
+  writeDurableFile(file,bytes);
+}
+
+export function writeDurableFile(file,bytes) {
   const temporary=file+'.'+crypto.randomUUID()+'.tmp';
   try {
     const fd=fs.openSync(temporary,'wx');

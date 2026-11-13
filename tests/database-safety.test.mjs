@@ -28,8 +28,21 @@ test('WAL-aware backups preserve committed balances, survive bad input and recov
   pruneBackups(file);
   assert.equal(fs.readdirSync(backupDirectory(file)).filter(n=>n.startsWith('hourly-')).length,4);
   assert.ok(fs.existsSync(first));
+  const diskStat=fs.statfsSync;
+  const copiesBefore=fs.readdirSync(backupDirectory(file));
+  try {
+   fs.statfsSync=()=>({bavail:0n,bsize:4096n});
+   assert.throws(()=>snapshot(file,'hourly'),{code:'ENOSPC'});
+  } finally { fs.statfsSync=diskStat; }
+  assert.deepEqual(fs.readdirSync(backupDirectory(file)),copiesBefore,'Low disk must keep existing backups without creating a partial copy');
+  assert.equal(db.prepare('SELECT amount FROM balance').get().amount,73000);
   const recovered=path.join(root,'recovered.db');
   const cli='NetCafeServer/src/services/databaseBackup.js';
+  const liveRecovered=path.join(root,'live-recovered.db');
+  assert.equal(spawnSync(process.execPath,[cli,'--recover-copy',file,liveRecovered],{windowsHide:true}).status,0);
+  const liveCheck=new DatabaseSync(liveRecovered,{readOnly:true});
+  try { assert.equal(liveCheck.prepare('SELECT amount FROM balance').get().amount,73000); }
+  finally { liveCheck.close(); }
   assert.equal(spawnSync(process.execPath,[cli,'--recover-copy',first,recovered],{windowsHide:true}).status,0);
   assert.notEqual(spawnSync(process.execPath,[cli,'--recover-copy',first,file],{windowsHide:true}).status,0);
   assert.equal(db.prepare('SELECT amount FROM balance').get().amount,73000);
@@ -69,4 +82,11 @@ test('failed legacy schema migration rolls back original rows and keeps a readab
  }finally{check.close();}
  const backups=fs.readdirSync(backupDirectory(file)).filter(n=>n.endsWith('.db'));
  assert.equal(backups.length,1);verifyDatabase(path.join(backupDirectory(file),backups[0]));
+ for(let attempt=0;attempt<5;attempt++) {
+  const retry=spawnSync(process.execPath,['--input-type=module','-e',`const {initDatabase}=await import(${JSON.stringify(pathToFileURL(path.join(root,'src/db.js')).href)});initDatabase();`],{windowsHide:true,encoding:'utf8',env:{...process.env,NODE_ENV:'test'}});
+  assert.notEqual(retry.status,0);
+ }
+ const retained=fs.readdirSync(backupDirectory(file)).filter(n=>n.startsWith('startup-')&&n.endsWith('.db'));
+ assert.equal(retained.length,3,'Repeated failed migrations must retain only three verified startup copies');
+ for(const name of retained)verifyDatabase(path.join(backupDirectory(file),name));
 });

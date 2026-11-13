@@ -110,6 +110,7 @@ public class WebSocketClientService
     public event Action<MemberSessionSummary>? OnMemberSessionEnded;
     private TaskCompletionSource<bool>? _logoutResponse;
     private string? _activeSessionId;
+    private long _lastSessionAuthority;
     private TaskCompletionSource<JsonElement>? _accountResponse;
     private string? _accountRequestId;
     public async Task<JsonElement> UpdateAccountAsync(string username, string? password, string currentPassword)
@@ -194,6 +195,22 @@ public class WebSocketClientService
         {
             System.Diagnostics.Debug.WriteLine($"[Config] Saqlashda xato: {ex.Message}");
         }
+    }
+
+    private static string ReadSessionId(JsonElement data)
+    {
+        if (!data.TryGetProperty("sessionId", out var value)) return "";
+        return value.ValueKind == JsonValueKind.Number ? value.GetInt64().ToString() : (value.GetString() ?? "");
+    }
+
+    private static long ReadSessionAuthority(JsonElement data)
+    {
+        if (data.TryGetProperty("authoritativeAt", out var direct) && direct.ValueKind == JsonValueKind.Number && direct.TryGetInt64(out long value))
+            return value;
+        if (data.TryGetProperty("sessionInfo", out var info) && info.ValueKind == JsonValueKind.Object &&
+            info.TryGetProperty("asOf", out var asOf) && asOf.ValueKind == JsonValueKind.Number && asOf.TryGetInt64(out value))
+            return value;
+        return 0;
     }
 
     // -----------------------------------------------------------------------
@@ -502,11 +519,25 @@ public class WebSocketClientService
 
                     string customer = data.TryGetProperty("customerName", out var c) ? (c.GetString() ?? "Mijoz") : "Mijoz";
                     double? clientBal = data.TryGetProperty("clientBalance", out var cb) && cb.ValueKind == JsonValueKind.Number ? cb.GetDouble() : null;
+                    long authority = ReadSessionAuthority(data);
 
                     // UI transition strictly inside Dispatcher.Invoke
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
+                        if (authority > 0 && authority < _lastSessionAuthority) return;
+                        if (remaining == 0)
+                        {
+                            if (string.IsNullOrEmpty(_activeSessionId) || _activeSessionId == sessionId)
+                            {
+                                _activeSessionId = null;
+                                _lastSessionAuthority = 0;
+                                CanSelfClose = false;
+                                OnStopSession?.Invoke("TIME_EXPIRED");
+                            }
+                            return;
+                        }
                         _activeSessionId = sessionId;
+                        _lastSessionAuthority = authority;
                         CanSelfClose = data.TryGetProperty("canSelfClose", out var selfClose) && selfClose.ValueKind == JsonValueKind.True && remaining >= 0;
                         OnStartSession?.Invoke(sessionId, remaining, tariff, customer, clientBal);
                         if (SessionInfo.Parse(data) is { } info && info.SessionId == sessionId) OnSessionInfo?.Invoke(info);
@@ -533,6 +564,7 @@ public class WebSocketClientService
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
                         _activeSessionId = sessionId;
+                        _lastSessionAuthority = ReadSessionAuthority(data);
                         CanSelfClose = data.TryGetProperty("canSelfClose", out var selfClose) && selfClose.ValueKind == JsonValueKind.True;
                         OnMemberLoginSuccess?.Invoke(sessionId, balance, remaining, username);
                         if (SessionInfo.Parse(data) is { } info && info.SessionId == sessionId) OnSessionInfo?.Invoke(info);
@@ -573,8 +605,13 @@ public class WebSocketClientService
                     if (data.TryGetProperty("remainingSeconds", out var r) && r.ValueKind == JsonValueKind.Number)
                     {
                         int secs = r.GetInt32();
+                        string updateSessionId = ReadSessionId(data);
+                        long authority = ReadSessionAuthority(data);
                         System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                         {
+                            if (!string.IsNullOrEmpty(updateSessionId) && updateSessionId != _activeSessionId) return;
+                            if (authority > 0 && authority < _lastSessionAuthority) return;
+                            if (authority > 0) _lastSessionAuthority = authority;
                             OnUpdateTime?.Invoke(secs);
                         });
                     }
@@ -598,10 +635,13 @@ public class WebSocketClientService
                 case "STOP_SESSION":
                 {
                     string reason = data.TryGetProperty("reason", out var r) ? (r.GetString() ?? "Tugadi") : "Tugadi";
+                    string stoppedSessionId = ReadSessionId(data);
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
+                        if (!string.IsNullOrEmpty(stoppedSessionId) && !string.IsNullOrEmpty(_activeSessionId) && stoppedSessionId != _activeSessionId) return;
                         OnStopSession?.Invoke(reason);
                         _activeSessionId = null;
+                        _lastSessionAuthority = 0;
                         CanSelfClose = false;
                         _logoutResponse?.TrySetResult(true);
                         if (data.TryGetProperty("memberSummary", out var summaryValue) && MemberSessionSummary.Parse(summaryValue) is { } summary)

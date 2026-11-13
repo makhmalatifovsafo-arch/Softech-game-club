@@ -25,6 +25,8 @@ function Publish-App([string]$Project,[string]$Output,[bool]$SingleFile = $true)
 Publish-App 'SoftechUpdater/SoftechUpdater.csproj' $helper
 Publish-App 'NetCafeClient/NetCafeClient.csproj' $client $false
 Publish-App 'NetCafeServer/Launcher/SoftechCockpit.csproj' $server $false
+Publish-App 'NetCafeServer/Service/SoftechService.csproj' (Join-Path $work 'service')
+Copy-Item -LiteralPath (Join-Path $work 'service/SoftechService.exe') -Destination $server -Force
 Copy-Item -LiteralPath (Join-Path $helper 'SoftechUpdater.exe') -Destination $client -Force
 Copy-Item -LiteralPath (Join-Path $helper 'SoftechUpdater.exe') -Destination $server -Force
 foreach ($item in @('src','public','schema.sql','start_server.bat','start-server.bat','start_server_background.vbs','diagnose-connection.mjs','diagnose-connection.cmd')) {
@@ -78,7 +80,7 @@ $manifest = @{
     version=$Version; releaseDate=(Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
     client=@{ downloadUrl="$assetBase/SoftechClient.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechClient.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
     server=@{ downloadUrl="$assetBase/SoftechServer.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechServer.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
-    changelog='Precise prepaid and VIP billing; session transfers preserve accrued charges and convert remaining credit at the destination tariff; reviewed desktop/mobile transfer previews; protected refunds and bar debt.'
+    changelog='Server resilience, paid session continuity, safe settings recovery, diagnostics, emergency timed sessions and bounded update storage. Install ServerSetup once for the independent Windows service. Cloud diagnostics require the 20261113_server_diagnostics.sql migration.'
 }
 [IO.File]::WriteAllText((Join-Path $releaseDir 'version.json'), ($manifest | ConvertTo-Json -Depth 10), $utf8)
 # Build bootstrap installers from the exact same versioned payloads.

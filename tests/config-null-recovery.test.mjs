@@ -68,15 +68,30 @@ test('durable replacement flushes before rename and leaves original intact when 
   assert.deepEqual(JSON.parse(fs.readFileSync(file)),{clubId:73,custom:'preserved'});
 });
 
-test('recovered all-NUL config starts a real licensed server and retains database records', {timeout:30000},async()=>{
+for (const {damagedLicense,automaticBackup} of [{damagedLicense:false,automaticBackup:false},{damagedLicense:true,automaticBackup:false},{damagedLicense:false,automaticBackup:true}]) {
+test(`recovered all-NUL config starts a real server and retains database records; damaged license=${damagedLicense}, automatic backup=${automaticBackup}`, {timeout:30000},async()=>{
   const dir=fixture();
+  const signed=JSON.parse(fs.readFileSync(path.join(dir,'data/softech_license.sig')));
+  if(damagedLicense){
+    signed.payload.clubId=10;
+    signed.signature=crypto.createHmac('sha256',process.env.SOFTECH_CLOUD_KEY||'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026').update(JSON.stringify(signed.payload)).digest('hex');
+    fs.writeFileSync(path.join(dir,'data/softech_license.sig'),Buffer.alloc(240));
+  }
   for(const name of ['src','public','schema.sql','package.json'])fs.cpSync(path.join('NetCafeServer',name),path.join(dir,name),{recursive:true});
   const dbfile=path.join(dir,'netcafe.db'),db=new DatabaseSync(dbfile);
   db.exec('CREATE TABLE preserved_money(amount INTEGER);INSERT INTO preserved_money VALUES(5320)');db.close();
-  restoreEmptyConfig(dir);
+  restoreEmptyConfig(dir,damagedLicense?{confirmedClubId:10}:{});
+  if(automaticBackup){
+    fs.copyFileSync(path.join(dir,'config.json'),path.join(dir,'config.json.last-good'));
+    fs.writeFileSync(path.join(dir,'config.json'),Buffer.alloc(99));
+  }
   const preload=path.join(dir,'fixture-hwid.mjs');
   fs.writeFileSync(preload,"import {HwidService} from './src/services/hwidService.js';HwidService.getHardwareFingerprint=()=> 'RECOVERY-FIXTURE-HWID';");
-  const cloud=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end('{"status":"PENDING"}');});
+  const cloud=http.createServer((req,res)=>{
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify(damagedLicense&&req.url.startsWith('/api/telemetry/activation-status')
+      ?{status:'APPROVED',signedLicense:signed}:{success:true,status:'PENDING'}));
+  });
   cloud.listen(0,'127.0.0.1');await once(cloud,'listening');
   const reserve=http.createServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');
   const port=reserve.address().port;await new Promise(resolve=>reserve.close(resolve));
@@ -88,12 +103,13 @@ test('recovered all-NUL config starts a real licensed server and retains databas
     let status;
     for(let i=0;i<150;i++) {
       assert.equal(child.exitCode,null,logs);
-      try{status=await(await fetch('http://127.0.0.1:'+port+'/api/license/status',{signal:AbortSignal.timeout(500)})).json();break;}catch{}
+      try{status=await(await fetch('http://127.0.0.1:'+port+'/api/license/status',{signal:AbortSignal.timeout(500)})).json();if(status.state==='ACTIVE')break;}catch{}
       await new Promise(resolve=>setTimeout(resolve,100));
     }
-    assert.equal(status?.state,'ACTIVE',JSON.stringify(status)+logs);assert.equal(status.clubId,73);
+    assert.equal(status?.state,'ACTIVE',JSON.stringify(status)+logs);assert.equal(status.clubId,damagedLicense?10:73);
     assert.equal(status.isOperational,true);
   }finally{if(child.exitCode===null)child.kill();await exit;cloud.closeAllConnections();await new Promise(resolve=>cloud.close(resolve));}
   const check=new DatabaseSync(dbfile,{readOnly:true});
   try{assert.equal(check.prepare('SELECT amount FROM preserved_money').get().amount,5320);}finally{check.close();}
 });
+}

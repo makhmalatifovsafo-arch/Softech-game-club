@@ -18,8 +18,8 @@ import { WebSocket } from 'ws';
 import { HwidService } from './hwidService.js';
 import { resolveCloudUrl } from './cloudUrl.js';
 import { requestCloudJson } from './cloudConnection.js';
-import { readServerConfig, configError } from './serverConfig.js';
-import { writeDurableJson } from './durableJson.js';
+import { readServerConfig, recoverServerConfig, configError } from './serverConfig.js';
+import { writeDurableJson, writeDurableFile } from './durableJson.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,7 +66,13 @@ export class LicenseManager {
     this.onLicenseActivated = onLicenseActivated;
 
     const configFile = path.resolve(__dirname, '../../config.json');
-    const config = readServerConfig(configFile);
+    let config;
+    try { config = readServerConfig(configFile); }
+    catch(error) {
+      if(error.code!=='INVALID_SERVER_CONFIG')throw error;
+      recoverServerConfig(configFile);
+      config = readServerConfig(configFile);
+    }
     try { this.cloudUrl = resolveCloudUrl(config); }
     catch { throw configError(configFile); }
     this.cloudWsUrl = process.env.SOFTECH_CLOUD_WS || (new URL(this.cloudUrl).hostname.endsWith('.vercel.app') ? null : this.cloudUrl.replace(/^http/, 'ws') + '/cloud-ws');
@@ -355,7 +361,7 @@ export class LicenseManager {
     try {
       const now = Date.now().toString();
       const hmac = crypto.createHmac('sha256', CLOUD_MASTER_KEY).update(now).digest('hex').slice(0, 16);
-      fs.writeFileSync(CLOCK_GUARD_FILE, `${now}:${hmac}`, 'utf8');
+      writeDurableFile(CLOCK_GUARD_FILE, `${now}:${hmac}`);
     } catch (err) {}
   }
 
@@ -443,11 +449,15 @@ export class LicenseManager {
    * 6. REMOTE KILL-SWITCH IJROSI (Majburiy to'xtatish va barcha mijozlarni qulflash)
    */
   static enforceLockdown(reason, message) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(LOCK_FILE, JSON.stringify({ reason, message }), 'utf8');
     this.state = 'LOCKED_BY_ADMIN';
     this.lockReason = reason || 'PAYMENT_OVERDUE';
     this.lockMessage = message || "DIQQAT: Dastur litsenziyasi to'xtatildi. Qayta faollashtirish uchun ta'minotchi bilan bog'laning: +998 95 222 06 44, +998 99 563 45 16";
+    // Storage failure must not abort the timer callback or prevent the in-memory
+    // block from being enforced. Keep any existing persisted lock intact.
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      writeDurableJson(LOCK_FILE, {reason:this.lockReason,message:this.lockMessage});
+    } catch(error) { console.error('[License] Lock persistence failed:', error.code || 'WRITE_FAILED'); }
 
     console.error('================================================================');
     console.error(`🚫 [Anti-Piracy] EMERGENCY KILL-SWITCH FAOL! Sabab: ${this.lockReason}`);

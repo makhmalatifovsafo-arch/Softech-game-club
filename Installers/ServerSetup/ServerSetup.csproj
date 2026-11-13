@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AssemblyName>SoftechServerSetup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -17,7 +18,11 @@
 
   <ItemGroup>
     <Compile Include="../../Shared/Updates/UpdatePlan.cs" Link="Updates/UpdatePlan.cs" />
+    <Compile Include="../../Shared/Updates/ServerService.cs" Link="Updates/ServerService.cs" />
+    <Compile Include="../../Shared/Updates/UpdateJournal.cs" Link="Updates/UpdateJournal.cs" />
+    <Compile Include="../../Shared/Updates/UpdateCleanup.cs" Link="Updates/UpdateCleanup.cs" />
     <Compile Include="../../Shared/Updates/SafePackageExtraction.cs" Link="Updates/SafePackageExtraction.cs" />
+    <Compile Include="../../Shared/Updates/UpdateStorage.cs" Link="Updates/UpdateStorage.cs" />
     <EmbeddedResource Include="payload.zip">
       <LogicalName>payload.zip</LogicalName>
     </EmbeddedResource>

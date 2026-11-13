@@ -8,6 +8,8 @@ import { fetchUpdateManifest, downloadUpdateFile } from './updateTransport.js';
 import { db } from '../db.js';
 import { canApplyUpdate, validateRelease } from './updatePolicy.js';
 import { readServerConfig } from './serverConfig.js';
+import { serviceCockpits } from './serviceCockpits.js';
+import { writeDurableJson } from './durableJson.js';
 
 const execute = promisify(execFile);
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -92,6 +94,15 @@ export class ServerUpdater {
     const extracted = path.join(candidate, 'package');
     let staged = false;
     try {
+      try {
+        const {stdout} = await execute(path.join(ROOT_DIR,'SoftechUpdater.exe'),
+          ['--find-staged',ROOT_DIR,release.version,'server',release.sha256],{windowsHide:true,timeout:30000});
+        const cached = stdout.trim();
+        if (cached && path.resolve(cached).startsWith(path.resolve(this.stagingDir)+path.sep) && fs.existsSync(path.join(cached,'update-package.json'))) {
+          this.state.source=cached;this.state.stagedVersion=release.version;this.state.isStaged=true;this.state.error=null;
+          return;
+        }
+      } catch { /* An older helper has no cache command; downloading still works. */ }
       fs.mkdirSync(candidate, { recursive: true });
       await this.downloadFile(release.url, zip);
       if (await this.calculateSha256(zip) !== release.sha256) throw new Error('Release SHA256 mismatch');
@@ -100,6 +111,7 @@ export class ServerUpdater {
       if (metadata.kind !== 'server' || metadata.version !== release.version ||
           !fs.existsSync(path.join(extracted, 'SoftechUpdater.exe')) || !fs.existsSync(path.join(extracted, 'src/server.js')))
         throw new Error('Incomplete server update package');
+      writeDurableJson(path.join(candidate,'download-receipt.json'),{sha256:release.sha256});
       fs.unlinkSync(zip);
       this.state.source = extracted;
       this.state.stagedVersion = release.version;
@@ -133,6 +145,10 @@ export class ServerUpdater {
   static broadcastUpdateNotice() { /* Silent updates do not interrupt the cashier. */ }
 
   static async probeIdle() {
+    if(process.env.SOFTECH_SERVICE_ROOT) {
+      const screens=serviceCockpits(ROOT_DIR);
+      return screens.length?Math.min(...screens.map(s=>s.idleSeconds)):-1;
+    }
     if (process.platform !== 'win32') return -1;
     try {
       const { stdout } = await execute(path.join(ROOT_DIR, 'SoftechUpdater.exe'), ['--probe-idle'],
@@ -170,9 +186,10 @@ export class ServerUpdater {
       const cockpitPid = Number(process.env.SOFTECH_COCKPIT_PID);
       const cockpitExe = process.env.SOFTECH_COCKPIT_EXE;
       const useCockpit = Number.isInteger(cockpitPid) && cockpitPid > 0 && cockpitExe && fs.existsSync(cockpitExe);
+      const service=!!process.env.SOFTECH_SERVICE_ROOT;
       const plan = {
         Source: source, Target: ROOT_DIR, Version: restartOnly ? this.currentVersion : this.state.stagedVersion, Kind: 'server', RestartOnly:restartOnly,
-        ParentPids: useCockpit ? [process.pid, cockpitPid] : [process.pid],
+        ParentPids: service ? [process.pid,...serviceCockpits(ROOT_DIR).map(s=>s.pid)] : useCockpit ? [process.pid, cockpitPid] : [process.pid],
         RestartExecutable: useCockpit ? cockpitExe : process.execPath,
         RestartArguments: useCockpit ? [] : ['src/server.js'],
         ReadyFile: path.join(handover, 'ready'), CommitFile: path.join(handover, 'commit'),
@@ -203,6 +220,7 @@ export class ServerUpdater {
       fs.writeFileSync(plan.CommitFile, plan.Version);
       if (useCockpit) fs.writeFileSync(path.join(this.updatesDir, 'cockpit-exit.json'),
         JSON.stringify({ pid: cockpitPid, at: Date.now() }));
+      if(service)fs.writeFileSync(path.join(this.updatesDir,'cockpit-exit.json'),JSON.stringify({service:true,at:Date.now()}));
       committed = true;
       setTimeout(() => this.onShutdown(), 100);
       return { success: true, message: 'Yangilanish o‘rnatilmoqda. Server qayta ishga tushadi.' };

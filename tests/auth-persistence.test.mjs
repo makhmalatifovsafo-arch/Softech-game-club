@@ -13,6 +13,9 @@ test('cashier session survives restart and logout revokes the persisted token', 
   fs.mkdirSync(path.join(dir,'src/services'));
   fs.copyFileSync('NetCafeServer/src/services/localOwnerSetup.js',path.join(dir,'src/services/localOwnerSetup.js'));
   fs.copyFileSync('NetCafeServer/src/services/databaseBackup.js',path.join(dir,'src/services/databaseBackup.js'));
+  fs.copyFileSync('NetCafeServer/src/services/storageBudget.js',path.join(dir,'src/services/storageBudget.js'));
+  fs.copyFileSync('NetCafeServer/src/services/durableJson.js',path.join(dir,'src/services/durableJson.js'));
+  fs.copyFileSync('NetCafeServer/src/services/serverInstance.js',path.join(dir,'src/services/serverInstance.js'));
   fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
   const auth = JSON.stringify(pathToFileURL(path.join(dir, 'src/auth.js')).href);
   function run(code) {

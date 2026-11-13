@@ -55,7 +55,8 @@ export class BarLedgerService {
 
     // 1. O'yin vaqti narxi hisob-kitobi
     let gameBill = 0;
-    if (isPostpaid) gameBill = postpaidGameBill(session,now);
+    if (session.status === 'COMPLETED') gameBill = Number(session.total_amount ?? session.paid_amount ?? 0);
+    else if (isPostpaid) gameBill = postpaidGameBill(session,now);
     else gameBill = Number(session.paid_amount || session.total_amount || 0);
     if (refund) gameBill = refund.usedAmount;
 
@@ -101,7 +102,8 @@ export class BarLedgerService {
     // Postpaid bo'lsa: GameBill + BarBill. 
     // Prepaid bo'lsa: Game allaqachon to'langan, mijoz faqat BarBill to'laydi (yoki jami kassa formulasi bilan ko'rsatiladi).
     const totalSessionCost = gameBill + barBill;
-    const amountToCollect = isPostpaid ? totalSessionCost : barBill;
+    const gameAmountToCollect = !isPostpaid ? 0 : session.status === 'ACTIVE' ? gameBill : Math.max(0,gameBill-Number(session.paid_amount || 0));
+    const amountToCollect = gameAmountToCollect + barBill;
 
     // Formula matni
     const durationLabel = playedHours >= 1 ? `${playedHours} soat` : `${playedMinutes} daqiqa`;
@@ -127,6 +129,7 @@ export class BarLedgerService {
       member: member ? { accountId:member.id, username:member.username, balance:Number(member.balance), refundAmount:refund?.amount || 0 } : null,
       tariffName: session.tariff_name || (isPostpaid ? 'VIP Postpaid' : 'Standart'),
       gameBill,
+      gameAmountToCollect,
       barBill,
       finalBill: totalSessionCost,
       amountToCollect,
@@ -151,7 +154,7 @@ export class BarLedgerService {
       const targetClubId = clubId || 1;
 
       // 1. O'yin vaqti tranzaksiyasi (agar Postpaid bo'lsa va to'lov olinayotgan bo'lsa)
-      if (preview.isPostpaid && preview.gameBill > 0) {
+      if (preview.gameAmountToCollect > 0) {
         db.prepare(`
           INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by, notes)
           VALUES (?, ?, ?, ?, ?, ?, 'POSTPAID_SETTLEMENT', ?, ?)
@@ -159,7 +162,7 @@ export class BarLedgerService {
           `tx_game_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
           targetClubId,
           preview.sessionId,
-          preview.gameBill,
+          preview.gameAmountToCollect,
           validPayMethod,
           validPayMethod,
           String(cashierUserId || 'system'),
@@ -194,8 +197,10 @@ export class BarLedgerService {
         UPDATE sessions 
         SET status = 'COMPLETED', ends_at = CASE WHEN status='ACTIVE' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE ends_at END,
           total_amount = ?, paid_amount = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
+        WHERE id = ? AND status = 'ACTIVE'
       `).run(preview.gameBill, preview.gameBill, preview.sessionId);
+      if(preview.sessionStatus==='COMPLETED'&&preview.gameAmountToCollect>0)
+        db.prepare("UPDATE sessions SET paid_amount=? WHERE id=? AND club_id=? AND status='COMPLETED'").run(preview.gameBill,preview.sessionId,targetClubId);
 
       // 4. Kompyuterni qulflash
       const locked = db.prepare(`
@@ -236,7 +241,8 @@ export class BarLedgerService {
       });
 
       if (typeof broadcastUpdate === 'function') {
-        broadcastUpdate();
+        try { broadcastUpdate(); }
+        catch (error) { console.warn('[Checkout notification]', error.message); }
       }
 
       return {

@@ -1,4 +1,8 @@
 import { deliverScreenMessage } from './services/screenMessages.js';
+import { UpdateProbation } from './services/updateProbation.js';
+import { stopService } from './services/serviceLifecycle.js';
+import { readServerConfig, recoverServerConfig } from './services/serverConfig.js';
+import { resolveCloudUrl } from './services/cloudUrl.js';
 import { updateCustomerCredentials } from './services/customerCredentials.js';
 import { transferSession, previewSessionTransfer } from './services/sessionTransfer.js';
 import { frozenPriceSegments } from './services/prepaidTransferPlan.js';
@@ -62,12 +66,19 @@ const ROOT_DIR = path.resolve(__dirname, '../');
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
+const updateProbation=new UpdateProbation(path.resolve(__dirname,'..'));
+if(updateProbation.pending){
+  const file=path.resolve(__dirname,'../config.json');
+  let config;try{config=readServerConfig(file);}catch{recoverServerConfig(file);config=readServerConfig(file);}
+  resolveCloudUrl(config);
+}
 
 // 1. Bazani initsializatsiya qilish
 initDatabase();
 
 // OTA Avtomatik yangilanish tizimi
-ServerUpdater.startPeriodicChecks();
+if(updateProbation.pending)ServerUpdater.init();
+else ServerUpdater.startPeriodicChecks();
 
 // Cloud synchronization starts after the local license has been loaded.
 
@@ -77,6 +88,15 @@ const server = http.createServer((req,res)=>{
   catch(error){console.error('[HTTP]',error.message);if(!res.headersSent)sendJson(res,500,{error:'So‘rovni bajarib bo‘lmadi.'});else res.destroy();}
 });
 function handleRequest(req, res) {
+  if(req.method==='POST'&&(req.url||'').split('?')[0]==='/api/internal/service-stop') {
+    void stopService(req,res,ServerUpdater,process.env.SOFTECH_SERVICE_CONTROL_SECRET).catch(error=>{
+      console.error('[Service stop]',error.message);if(!res.headersSent)sendJson(res,500,{error:'STOP_FAILED'});
+    });return;
+  }
+  if(updateProbation.pending&&(req.method!=='GET'||(req.url||'').split('?')[0]!=='/api/health')) {
+    res.writeHead(503,{'Content-Type':'application/json; charset=utf-8','Retry-After':'2'});
+    res.end(JSON.stringify({error:'UPDATE_VERIFYING',message:'Yangilanish tekshirilmoqda. Bir oz kuting.'}));return;
+  }
   req.res = res; // Body-parser callbacks need the response on Node IncomingMessage.
   const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
   if (ServerUpdater.applying && mutating) {
@@ -111,7 +131,7 @@ function handleRequest(req, res) {
 
   // 0. GET /api/health (Cockpit Desktop App Health-Check)
   if (url.pathname === '/api/health' && req.method === 'GET') {
-    sendJson(res, 200, { status: 'ok', app: 'NetCafeServer', version: ServerUpdater.currentVersion, uptime: process.uptime() });
+    sendJson(res, 200, { status: 'ok', app: 'NetCafeServer', processId:process.pid, version: ServerUpdater.currentVersion, uptime: process.uptime(),updateToken:updateProbation.token,updatePending:updateProbation.pending });
     return;
   }
 
@@ -2006,6 +2026,7 @@ function handleRequest(req, res) {
           tariffName: isPostpaid ? 'VIP Postpaid (Ochiq)' : (tariff?.name || 'Standart'),
           startedAt: startedAt.getTime(),
           endsAt: finalEndsAt.getTime(),
+          authoritativeAt: Date.now(),
           remainingSeconds: isPostpaid ? -1 : Math.round(finalDuration * 60),
           customerName: customerName || 'Mijoz',
           clientBalance: paymentType === 'BALANCE' ? db.prepare('SELECT balance FROM users WHERE id=? AND club_id=?').get(customerId,clubId)?.balance : null,
@@ -4155,15 +4176,20 @@ CloudLicenseService.init().catch(error => console.warn('[CloudLicense]', error.m
   console.warn('[Server settings]', error.message);
 }
 }
-initializeLicense();
+if(!updateProbation.pending)initializeLicense();
 
 wss.on('connection', (socket, req) => {
+  if(updateProbation.pending){
+    socket.on('error',()=>{});
+    socket.close(1013,'Update verification; reconnect');
+    return;
+  }
   const remoteIp = req.socket?.remoteAddress?.replace('::ffff:', '') || '127.0.0.1';
   socket._remoteAddress = remoteIp;
   console.log(`📡 [WS Connection] Yangi aloqa: ${remoteIp} (Port ${req.socket?.remotePort})`);
 
   socket.on('message', (data) => {
-    if (ServerUpdater.applying) return;
+    if (ServerUpdater.applying || updateProbation.pending) return;
     let message;
     try { message = JSON.parse(data.toString()); } catch { return; }
     if(!message||typeof message!=='object'||Array.isArray(message))return;
@@ -4212,6 +4238,9 @@ const mobileAgent = new OptionalService('Mobile relay', () => new MobileAgent({.
 }}));
 const mobileSnapshots=new OptionalService('Mobile reports', () => new MobileSnapshotSync({...mobileOptions,createSession:createSessionToken,destroySession:mobileLogout}));
 server.listen(PORT, '0.0.0.0', () => {
+  const verifying=updateProbation.pending;
+  updateProbation.start(()=>{
+  if(verifying){initializeLicense();ServerUpdater.startPeriodicChecks();}
   mobileAgent.start();
   mobileSnapshots.start();
   const lanIps = getLocalLanIps();
@@ -4233,6 +4262,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
   HeartbeatMonitor.start();
   SessionScheduler.start();
+  });
 });
 
 ServerUpdater.onShutdown = () => {

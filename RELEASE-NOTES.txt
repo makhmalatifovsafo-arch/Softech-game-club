@@ -1,3 +1,24 @@
+2026-11-13: 1.2.0 server resilience and session continuity
+- Preserve paid session deadlines, balances and receipts across server restarts;
+  clients continue their purchased time during a temporary connection loss.
+- Recover valid local settings safely, retain damaged originals and show actionable
+  startup diagnostics instead of silently resetting club identity or financial data.
+- Server setup installs an independent Windows service: closing the cashier window
+  no longer stops the backend. Existing installations need ServerSetup once for this
+  service; an OTA ZIP alone does not register or replace the installed service host.
+- Add restricted emergency timed sessions when repeated backend failures prevent
+  normal operation. Requires valid local license verification and records a separate
+  emergency journal; it does not create a replacement database or financial reports.
+- Add Super Admin server diagnostics and disk/backup health indicators. Apply
+  migrations/20261113_server_diagnostics.sql in Supabase and deploy the cloud sources
+  to enable persisted diagnostics; publication alone does not apply that migration.
+- Strengthen transactional updates, rollback and restart checks. Reuse verified
+  staged packages, clean failed downloads and bound updater/service log growth.
+- Check free space before backups/downloads/extraction; retain a 256 MB reserve.
+  Keep financial history and recovery evidence; total disk usage can still grow.
+- Includes version-matched Server/Client OTA ZIPs and Windows setup installers.
+  A stopped old backend needs manual ServerSetup installation in its existing folder.
+
 2026-11-13: 1.1.18 settings recovery
 - Read Windows UTF-8 BOM and UTF-16 configuration files without losing settings.
 - Unreadable settings no longer crash startup: show a dedicated recovery screen,

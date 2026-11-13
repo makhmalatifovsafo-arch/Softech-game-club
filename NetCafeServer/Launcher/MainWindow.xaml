@@ -119,6 +119,7 @@
                 <!-- Right: Window Caption Controls (Minimize, Maximize, Close) -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Stretch">
                     <!-- Minimize Button -->
+                    <Button Content="Diagnostika" Click="BtnDiagnostics_Click" Padding="10,0" Background="Transparent" Foreground="#A1A1AA" BorderThickness="0" Cursor="Hand" />
                     <Button x:Name="BtnMinimize"
                             Style="{StaticResource WindowCaptionButtonStyle}"
                             Click="BtnMinimize_Click"
@@ -138,7 +139,7 @@
                     <Button x:Name="BtnClose"
                             Style="{StaticResource WindowCloseButtonStyle}"
                             Click="BtnClose_Click"
-                            ToolTip="Yopish">
+                            ToolTip="Kassani kichraytirish — server ishlashda davom etadi">
                         <TextBlock Text="✕" FontSize="12" FontFamily="Segoe UI" VerticalAlignment="Center" />
                     </Button>
                 </StackPanel>
@@ -211,9 +212,13 @@
                             <TextBlock Text="Qayta urinish" />
                         </StackPanel>
                     </Button>
+                    <Button x:Name="BtnEmergencyMode" Content="Faqat vaqtli seanslar — favqulodda rejim" Click="BtnEmergencyMode_Click"
+                            Visibility="Collapsed" Margin="0,12,0,0" Padding="14,9" HorizontalAlignment="Center"
+                            Background="#B45309" Foreground="White" FontWeight="Bold" BorderThickness="0" Cursor="Hand" />
                     <Button Content="Kassani brauzerda ochish" Click="BtnBrowser_Click"
                             Margin="0,12,0,0" Padding="14,8" HorizontalAlignment="Center"
                             Background="#27272A" Foreground="White" BorderThickness="0" Cursor="Hand" />
+                    <Button Content="Diagnostikani saqlash" Click="BtnDiagnostics_Click" Margin="0,8,0,0" Padding="14,8" HorizontalAlignment="Center" Background="#27272A" Foreground="White" BorderThickness="0" Cursor="Hand" />
                 </StackPanel>
             </Grid>
         </Grid>

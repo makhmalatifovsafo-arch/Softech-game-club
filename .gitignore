@@ -60,3 +60,14 @@ $RECYCLE.BIN/
 
 # Per-install manager credentials (never distribute with source or updates)
 **/manager-credentials.txt
+
+# Per-install configuration recovery copies may contain club credentials.
+**/config.json.last-good
+**/config.json.corrupt-*.bak
+**/config.json.before-*.bak
+**/config.json.*.tmp
+**/data/backup-health.json
+**/data/backup-health.json.*.tmp
+**/.service/
+**/data/service-status.json*
+**/data/cockpit-*.json*

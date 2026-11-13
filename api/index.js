@@ -1,4 +1,5 @@
 import { handleMobileRoute } from '../src/services/mobileRelay.js';
+import { handleServerDiagnostics } from '../src/services/serverDiagnostics.js';
 import { handleMobileDashboard } from '../src/services/mobileDashboard.js';
 import { appVersion } from '../src/services/appVersion.js';
 import { requireRemoteMaintenance } from '../src/services/maintenanceVersion.js';
@@ -83,6 +84,10 @@ export default async function handler(req, res) {
   try {
     // Mobile and other routers must see the same resolved path, including query filters.
     req.url = pathname + url.search;
+    if(await handleServerDiagnostics(req,res,{client:SupabaseCloudService.getClient()},(request,response)=>{
+      if(getAuthUser(request))return true;
+      sendJson(response,401,{success:false,error:'Ruxsat berilmagan'});return false;
+    }))return;
     if (pathname === '/api/version' && method === 'GET') {
       res.setHeader('Cache-Control', 'no-store');
       return sendJson(res, 200, { app: 'Softech Cloud', version: appVersion });

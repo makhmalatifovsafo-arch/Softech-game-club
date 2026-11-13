@@ -13,6 +13,7 @@ public sealed class UpdatePlan
     public string Version { get; set; } = "";
     public string Kind { get; set; } = "";
     public bool RestartOnly { get; set; }
+    public bool RecoveryOnly { get; set; }
     public int[] ParentPids { get; set; } = Array.Empty<int>();
     public string RestartExecutable { get; set; } = "";
     public string[] RestartArguments { get; set; } = Array.Empty<string>();
@@ -37,10 +38,12 @@ public sealed class PackageManifest
         var normalized = relative.Replace('\\', '/');
         var name = Path.GetFileName(normalized);
         return normalized.StartsWith(".ota/", StringComparison.OrdinalIgnoreCase) ||
+            normalized.StartsWith(".service/", StringComparison.OrdinalIgnoreCase) ||
             normalized.StartsWith("data/", StringComparison.OrdinalIgnoreCase) ||
             normalized.StartsWith("updates/", StringComparison.OrdinalIgnoreCase) ||
             normalized.StartsWith("logs/", StringComparison.OrdinalIgnoreCase) ||
             name.Equals("config.json", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("config.json.", StringComparison.OrdinalIgnoreCase) ||
             name.StartsWith(".env", StringComparison.OrdinalIgnoreCase) ||
             name.StartsWith(".graceful_exit", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||

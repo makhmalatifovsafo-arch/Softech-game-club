@@ -4,6 +4,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { writeDurableJson } from './durableJson.js';
+import { requireStorageSpace } from './storageBudget.js';
 
 const ownFile = fileURLToPath(import.meta.url);
 export const backupDirectory = database => path.join(path.dirname(database), 'data', 'backups');
@@ -42,6 +44,9 @@ export function snapshot(database, kind = 'hourly') {
   const source = new DatabaseSync(database, { readOnly: true });
   try {
     source.exec('PRAGMA busy_timeout=10000; PRAGMA synchronous=FULL;');
+    const pages = Number(source.prepare('PRAGMA page_count').get().page_count);
+    const pageSize = Number(source.prepare('PRAGMA page_size').get().page_size);
+    requireStorageSpace(directory, pages * pageSize);
     source.prepare('VACUUM INTO ?').run(partial);
     verifyDatabase(partial);
     const fd = fs.openSync(partial, 'r+');
@@ -52,6 +57,28 @@ export function snapshot(database, kind = 'hourly') {
     if (fs.existsSync(partial)) fs.unlinkSync(partial);
   }
   return destination;
+}
+
+export function recoverDatabaseCopy(database, output) {
+  if(!output || fs.existsSync(output))throw Error('Recovery output must be a new file.');
+  verifyDatabase(database);
+  const partial=output+'.'+crypto.randomUUID()+'.partial';
+  const source=new DatabaseSync(database,{readOnly:true});
+  try {
+    source.exec('PRAGMA busy_timeout=10000; PRAGMA synchronous=FULL;');
+    // A raw file copy omits committed WAL transactions. SQLite produces one
+    // consistent standalone image including the committed journal contents.
+    source.prepare('VACUUM INTO ?').run(partial);
+    verifyDatabase(partial);
+    const fd=fs.openSync(partial,'r+');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    // Publish only a completed file, with exclusive creation even if another
+    // process created the output after the initial existence check.
+    fs.linkSync(partial,output);
+  } finally {
+    source.close();
+    if(fs.existsSync(partial))fs.unlinkSync(partial);
+  }
 }
 
 // Prune only verified generated snapshots, after another snapshot was completed.
@@ -83,6 +110,17 @@ export function startDatabaseBackups(database) {
   return () => clearInterval(timer);
 }
 
+export function recordBackupHealth(database,error=null) {
+  const file=path.join(path.dirname(database),'data','backup-health.json');
+  let previous={};try{previous=JSON.parse(fs.readFileSync(file,'utf8'));}catch{}
+  const text=String(error?.message||'');
+  const code=String(error?.code||'');
+  const errorCode=!error?'NONE':code==='ENOSPC'||/SQLITE_FULL|database or disk is full/i.test(text)?'DISK_FULL'
+    :['EACCES','EPERM'].includes(code)?'ACCESS_DENIED':/malformed|not a database|yaxlitligi/.test(text)?'DATABASE_INVALID':'BACKUP_FAILED';
+  try{writeDurableJson(file,{checkedAt:new Date().toISOString(),lastSuccessAt:!error?new Date().toISOString():previous.lastSuccessAt||null,errorCode});}
+  catch{console.error('[Database backup] BACKUP_HEALTH_WRITE_FAILED');}
+}
+
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   try {
     const [action, database, output] = process.argv.slice(2);
@@ -90,8 +128,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     else if (action === '--recover-copy') {
       // Never overwrite a live database: recovery first produces a separate, reviewable file.
       if (!output || fs.existsSync(output)) throw Error('Tiklash uchun yangi, mavjud bo‘lmagan fayl yo‘lini kiriting.');
-      verifyDatabase(database);
-      fs.copyFileSync(database, output, fs.constants.COPYFILE_EXCL);
+      recoverDatabaseCopy(database, output);
       verifyDatabase(output); console.log('Recovered copy: ' + output);
     } else if (action === '--scheduled') {
       snapshot(database, 'hourly');
@@ -99,6 +136,10 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
       const dailyExists = fs.readdirSync(backupDirectory(database)).some(n => owned.test(n) && n.startsWith('daily-') && new Date(Number(n.split('-')[1])).toISOString().slice(0, 10) === today);
       if (!dailyExists) snapshot(database, 'daily');
       pruneBackups(database);
+      recordBackupHealth(database);
     } else throw Error('Use --verify FILE, --recover-copy BACKUP NEW_FILE, or --scheduled DATABASE');
-  } catch (error) { console.error(error.message); process.exitCode = 1; }
+  } catch (error) {
+    if(process.argv[2]==='--scheduled'&&process.argv[3])recordBackupHealth(process.argv[3],error);
+    console.error(error.message); process.exitCode = 1;
+  }
 }

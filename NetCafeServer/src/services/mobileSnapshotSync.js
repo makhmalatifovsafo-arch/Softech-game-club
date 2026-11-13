@@ -14,16 +14,16 @@ export class MobileSnapshotSync {
  }
  async flush(){
   if(this.inFlight)await this.inFlight;
-  await this.tick();return !this.lastError;
+  return await this.tick() === true;
  }
  requestSoon(){
   if(this.stopped||this.soonTimer)return;
   this.soonTimer=setTimeout(()=>{this.soonTimer=null;this.flush();},1000);this.soonTimer.unref();
  }
  async runSync(){
-  if(!this.isOperational())return;this.running=true;let token;
+  if(!this.isOperational())return false;this.running=true;let token;
   try{
-   const signedLicense=this.getLicense();if(!signedLicense?.payload)return;
+   const signedLicense=this.getLicense();if(!signedLicense?.payload)return false;
    const owner=this.db.prepare("SELECT * FROM users WHERE club_id=1 AND role IN ('club_owner','manager') ORDER BY id LIMIT 1").get();
    if(!owner)throw Error('Menejer akkaunti topilmadi.');
    token=this.createSession(owner).token;
@@ -77,8 +77,8 @@ export class MobileSnapshotSync {
    let day=this.db.prepare('SELECT day FROM mobile_snapshot_cursor WHERE id=1').get()?.day;
    if(!day||day<oldest||day>=today||(this.lastDay&&this.lastDay!==today))day=previous(today);
    if(day>=oldest){await sendDay(day);this.db.prepare('INSERT INTO mobile_snapshot_cursor VALUES(1,?) ON CONFLICT(id) DO UPDATE SET day=excluded.day').run(previous(day));}
-   this.lastDay=today;this.lastError=null;
-  }catch(error){this.lastError=error.message;console.warn('[Mobile reports]',error.message);}
+   this.lastDay=today;this.lastError=null;return true;
+  }catch(error){this.lastError=error.message;console.warn('[Mobile reports]',error.message);return false;}
   finally{if(token)this.destroySession(token);this.running=false;}
  }
  start(){this.stopped=false;const run=async()=>{await this.tick();if(!this.stopped){this.timer=setTimeout(run,process.env.NODE_ENV==='test'?500:30000);this.timer.unref();}};run();}

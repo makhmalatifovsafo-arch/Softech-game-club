@@ -74,7 +74,9 @@ public static class UpdateCleanup
                 var plan = JsonSerializer.Deserialize<UpdatePlan>(File.ReadAllText(planPath), PackageManifest.JsonOptions);
                 if (plan == null || !Path.GetFullPath(plan.Target).TrimEnd(Path.DirectorySeparatorChar).Equals(
                     Path.GetFullPath(target).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) continue;
-                if (Version.TryParse(plan.Version, out var handover) && handover <= installed)
+                bool cancelled = !string.IsNullOrEmpty(plan.CancelFile) && Path.GetFullPath(plan.CancelFile).Equals(Path.Combine(dir,"cancel"),StringComparison.OrdinalIgnoreCase) &&
+                    File.Exists(PackageManifest.ChildPath(target,"updates/staging/"+name+"/cancel"));
+                if (cancelled || (Version.TryParse(plan.Version, out var handover) && handover <= installed))
                     DeleteOwnedTree(target, "updates/staging/" + name, log);
             }
             catch (Exception error) { log?.Invoke("Cleanup skipped unknown handover: " + error.Message); }
@@ -90,6 +92,7 @@ public static class UpdateCleanup
             string lockPath = PackageManifest.ChildPath(target, ".ota/update.lock");
             Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
             using var guard = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            if(UpdateJournal.HasPending(target))return; // Keep all interrupted recovery evidence.
             CleanStaging(target, version, log);
         }
         catch (Exception error) { log?.Invoke("Cleanup deferred: " + error.Message); }

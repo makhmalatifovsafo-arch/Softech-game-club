@@ -7,6 +7,7 @@ public static class SafePackageExtraction
 {
     public static void Extract(string zip, string target)
     {
+        UpdateStorage.CheckExtractionSpace(zip, target);
         using var archive = ZipFile.OpenRead(zip);
         // Check every destination before replacing any application file.
         foreach (var entry in archive.Entries)

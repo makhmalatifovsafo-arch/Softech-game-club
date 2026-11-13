@@ -230,7 +230,6 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const searched=await api('/api/customers?q=gamer1');
   assert.equal(searched.status,200,JSON.stringify(searched.body));
   assert.equal(searched.body.find(c=>c.id===member.id)?.name,'gamer1','Cashier search must use the same account as kiosk login');
-  const authoritative=(await api('/api/tariffs/calculate','POST',{computerId:pc.id,durationHours:2})).body.price;
   assert.equal((await api('/api/clients/topup','POST',{userId:member.id,amount:200000,paymentMethod:'CARD'})).status,200);
   for(const batch of [false,true])for(const paymentType of ['CASH','BALANCE']){
     const memberStart=await api(batch?'/api/sessions/batch-start':'/api/sessions/start','POST',{
@@ -238,6 +237,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
     assert.equal(memberStart.status,201,JSON.stringify(memberStart.body));
     const auditDb=new DatabaseSync(databasePath,{readOnly:true});
     const row=auditDb.prepare("SELECT * FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id);auditDb.close();
+    const authoritative=(await api('/api/tariffs/calculate','POST',{computerId:pc.id,durationHours:2,startTime:row.started_at})).body.price;
     assert.equal(row.total_amount,authoritative,'Single and batch member starts must ignore stale/browser supplied prices');
     if(paymentType==='BALANCE')assert.equal(JSON.parse(row.prepaid_rate_plan).length,120,'Cashier-opened member session freezes its agreed rates for refunds');
     assert.equal((await api('/api/sessions/stop','POST',{computerId:pc.id})).status,200);

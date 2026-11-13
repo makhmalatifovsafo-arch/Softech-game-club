@@ -6,6 +6,7 @@ using System.Net.NetworkInformation;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Softech.Updates;
 
 namespace SoftechCockpit;
 
@@ -30,6 +31,7 @@ public class NodeProcessManager
         IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners(), endpoint => endpoint.Port == 5000);
     private readonly object _errorLock = new();
     private string _startupError = "";
+    public string DiagnosticCode { get; private set; } = "NONE";
 
     private void CaptureError(string? line)
     {
@@ -44,6 +46,8 @@ public class NodeProcessManager
     {
         string details;
         lock (_errorLock) details = _startupError.Trim();
+        DiagnosticCode = ServerDiagnostics.Classify(details);
+        if (DiagnosticCode == "UNKNOWN") DiagnosticCode = "PROCESS_EXIT";
         var message = $"Node.js server to'xtadi (Chiqish kodi: {exitCode}).";
         if (details.Length == 0) return message;
         var logPath = Path.Combine(serverDir, "logs", "node-startup-error.log");
@@ -57,6 +61,7 @@ public class NodeProcessManager
 
     private bool _isSpawnedByThisInstance;
     public string ServerDirectory => ResolvePaths().serverDir;
+    public bool ServiceInstalled => ServerService.Installed(ServerDirectory);
 
     public const string ServerUrl = "http://127.0.0.1:5000";
     public const string HealthCheckUrl = "http://127.0.0.1:5000/api/health";
@@ -84,7 +89,12 @@ public class NodeProcessManager
             if (!response.IsSuccessStatusCode) return false;
             using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = payload.RootElement;
-            return root.TryGetProperty("app", out var app) && app.GetString() == "NetCafeServer" &&
+            if(root.TryGetProperty("updatePending",out var pending)&&pending.ValueKind==JsonValueKind.True)return false;
+            if(ServiceInstalled) {
+                if(!root.TryGetProperty("processId",out var pid)||!pid.TryGetInt32(out int id))return false;
+                if(!string.Equals(ServerService.ProcessPath(id),Path.Combine(ServerDirectory,"runtime","node.exe"),StringComparison.OrdinalIgnoreCase))return false;
+            }
+            return root.TryGetProperty("app", out var app) && (app.GetString() is "NetCafeServer" or "NetCafeEmergency") &&
                 root.TryGetProperty("status", out var status) && status.GetString() == "ok";
         }
         catch
@@ -100,13 +110,47 @@ public class NodeProcessManager
     public async Task<bool> EnsureServerRunningAsync(CancellationToken cancellationToken = default)
     {
         await _startupGate.WaitAsync(cancellationToken);
-        try { return await StartOrWaitAsync(cancellationToken); }
+        try {
+            DiagnosticCode = "NONE";
+            bool ready = await StartOrWaitAsync(cancellationToken);
+            if (ready) DiagnosticCode = "NONE";
+            return ready;
+        }
+        catch(Exception error) {
+            if (DiagnosticCode == "NONE") DiagnosticCode = ServerDiagnostics.Classify(error.Message);
+            throw;
+        }
         finally { _startupGate.Release(); }
     }
 
     private async Task<bool> StartOrWaitAsync(CancellationToken cancellationToken)
     {
         StatusChanged?.Invoke("Server holati tekshirilmoqda...");
+        if(ServiceInstalled) {
+            var wait=Stopwatch.StartNew();
+            while(wait.Elapsed<StartupTimeout) {
+                cancellationToken.ThrowIfCancellationRequested();
+                if(await IsServerHealthyAsync())return true;
+                StatusChanged?.Invoke("Windows xizmati bilan ulanish kutilmoqda...");
+                await Task.Delay(500,cancellationToken);
+            }
+            throw new IOException("Windows xizmati javob bermadi. logs/service.log faylida sabab saqlanadi. Kassa oynasi xizmatni takroran ishga tushirmaydi.");
+        }
+        // The updater-launched cockpit must start its probationary backend while
+        // the helper owns the transaction. Ordinary launches recover first.
+        if(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SOFTECH_UPDATE_TOKEN"))&&Environment.GetEnvironmentVariable("SOFTECH_UPDATER_RESTART")!="1") {
+            var recoveryWait=Stopwatch.StartNew();
+            bool recovered;
+            do {
+                try { recovered=await Task.Run(()=>UpdateJournal.Recover(ServerDirectory),cancellationToken); }
+                catch(Exception error)when(error is IOException or JsonException or InvalidDataException) {
+                    throw new IOException("UPDATE_RECOVERY_REQUIRED: Yangilanishni xavfsiz tiklab bo'lmadi. Fayllar saqlandi. " + error.Message,error);
+                }
+                if(recovered)break;
+                if(recoveryWait.Elapsed>TimeSpan.FromSeconds(30))throw new IOException("Yangilanish davom etmoqda. Biroz kutib qayta urining.");
+                await Task.Delay(200,cancellationToken);
+            }while(!recovered);
+        }
 
         // 1. Agar server allaqachon ishlab turgan bo'lsa, qayta ishga tushirmaymiz
         if (await IsServerHealthyAsync())
@@ -290,6 +334,9 @@ public class NodeProcessManager
     public void StopNodeServer(bool forUpdate = false)
     {
         if (_spawnedProcess == null || !_isSpawnedByThisInstance) return;
+        // Node drains writes and checkpoints its own database. The helper waits
+        // for both PIDs; closing the cockpit must not force-kill that handover.
+        if(forUpdate)return;
 
         try
         {

@@ -17,6 +17,7 @@ function run(body) {
     import {ProtocolDispatcher} from './src/handlers/protocolDispatcher.js';
     import {startMemberSession} from './src/services/memberBilling.js';
     import {clientSessionState,postpaidGameBill} from './src/services/clientSessionState.js';
+    import {LicenseManager} from './src/services/licenseManager.js';
     import {hashPassword} from './src/auth.js';
     try { ${body} } finally {db.close();}`);
   const result=spawnSync(process.execPath,['case.mjs'],{cwd:root,env:{...process.env,NODE_ENV:'test'},windowsHide:true,encoding:'utf8',timeout:20000});
@@ -56,6 +57,34 @@ test('one failing session does not prevent another computer from expiring',()=>r
   SessionScheduler.checkActiveSessions();
   assert.equal(db.prepare("SELECT status FROM sessions WHERE id='good'").get().status,'COMPLETED');
   assert.equal(db.prepare("SELECT status FROM sessions WHERE id='bad'").get().status,'ACTIVE');
+`));
+
+test('server restart preserves paid deadline and reconnect resumes only the remaining time',()=>run(`
+  const now=new Date('2026-11-13T10:20:00.000Z');
+  const started=new Date(now.getTime()-20*60000);
+  const ends=new Date(now.getTime()+40*60000);
+  db.prepare("INSERT INTO computers(id,club_id,pc_number,name,current_session_id,status) VALUES('resume-pc',1,7,'PC-07','resume-session','OCCUPIED')").run();
+  db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,customer_name,started_at,ends_at,total_amount,paid_amount,status,notes) VALUES('resume-session',1,'resume-pc','trf_standard_1h','Mijoz',?,?,7000,7000,'ACTIVE','duration')")
+    .run(started.toISOString(),ends.toISOString());
+  db.prepare("INSERT INTO transactions(id,club_id,session_id,amount,payment_type,payment_method,transaction_type,created_by) VALUES('resume-payment',1,'resume-session',7000,'CASH','CASH','PREPAID','1')").run();
+
+  const recovery=SessionScheduler.reconcileAfterStartup(now);
+  assert.deepEqual(recovery,{preserved:1,expired:0,invalid:0});
+  const saved=db.prepare("SELECT status,started_at,ends_at,paid_amount,total_amount FROM sessions WHERE id='resume-session'").get();
+  assert.equal(saved.status,'ACTIVE');assert.equal(saved.started_at,started.toISOString());assert.equal(saved.ends_at,ends.toISOString());
+  assert.equal(saved.paid_amount,7000);assert.equal(saved.total_amount,7000);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM transactions WHERE session_id='resume-session' AND amount=7000").get().n,1);
+
+  const sent=[];ClientManager.send=(pc,type,payload)=>{sent.push({pc,type,payload});return true;};ClientManager.broadcast=()=>{};
+  LicenseManager.state='ACTIVE';LicenseManager.licenseData={maxPcs:100};
+  const socket={readyState:1,_remoteAddress:'127.0.0.1',send:()=>{},terminate:()=>{}};
+  const realNow=Date.now;Date.now=()=>now.getTime();
+  try { ProtocolDispatcher.handleClientHello(socket,{type:'CLIENT_HELLO',payload:{pcNumber:'PC-07',ipAddress:'127.0.0.1',agentVersion:'test'}}); }
+  finally { Date.now=realNow; }
+  const resumed=sent.find(item=>item.type==='START_SESSION'&&item.payload.sessionId==='resume-session');
+  assert.ok(resumed,'Reconnect must resume the persisted session');
+  assert.equal(resumed.payload.remainingSeconds,2400);assert.equal(resumed.payload.endsAt,ends.getTime());assert.equal(resumed.payload.authoritativeAt,now.getTime());
+  assert.equal(db.prepare("SELECT paid_amount FROM sessions WHERE id='resume-session'").get().paid_amount,7000);
 `));
 
 test('VIP remains open until cashier checkout and closes without bar-reminder windows',()=>run(`

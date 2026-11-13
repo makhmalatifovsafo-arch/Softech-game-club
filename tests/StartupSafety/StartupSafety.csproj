@@ -6,5 +6,9 @@
     <Compile Include="../../Installers/ClientSetup/ClientSetupConfiguration.cs" Link="ClientSetupConfiguration.cs" />
     <Compile Include="../../NetCafeServer/Launcher/NodeProcessManager.cs" Link="NodeProcessManager.cs" />
     <Compile Include="../../NetCafeServer/Launcher/BackendRecovery.cs" Link="BackendRecovery.cs" />
+    <Compile Include="../../NetCafeServer/Launcher/ServerDiagnostics.cs" Link="ServerDiagnostics.cs" />
+    <Compile Include="../../Shared/Updates/UpdateJournal.cs" Link="Updates/UpdateJournal.cs" />
+    <Compile Include="../../Shared/Updates/UpdatePlan.cs" Link="Updates/UpdatePlan.cs" />
+    <Compile Include="../../Shared/Updates/ServerService.cs" Link="Updates/ServerService.cs" />
   </ItemGroup>
 </Project>

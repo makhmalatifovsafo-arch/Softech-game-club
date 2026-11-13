@@ -13,6 +13,11 @@ export class SessionScheduler {
   static start() {
     if (this.timer) return;
 
+    // Reconcile persisted deadlines before waiting for the first interval.
+    // Valid paid/postpaid sessions survive; only already expired prepaid rows
+    // are settled.
+    this.reconcileAfterStartup();
+
     this.timer = setInterval(() => {
       this.checkActiveSessions();
     }, this.INTERVAL_MS);
@@ -25,6 +30,30 @@ export class SessionScheduler {
       clearInterval(this.timer);
       this.timer = null;
     }
+  }
+
+  static reconcileAfterStartup(now = new Date()) {
+    const result = { preserved: 0, expired: 0, invalid: 0 };
+    const sessions = db.prepare("SELECT * FROM sessions WHERE status='ACTIVE'").all();
+    for (const session of sessions) {
+      try {
+      if (isPostpaidSession(session)) { result.preserved++; continue; }
+      const deadline = Date.parse(session.ends_at);
+      if (!Number.isFinite(deadline)) {
+        result.invalid++;
+        console.error(`[SessionScheduler] Session ${session.id}: ends_at noto'g'ri; avtomatik yopilmadi.`);
+        continue;
+      }
+      if (deadline <= now.getTime()) {
+        this.finishSession(session, { reason: 'TIME_EXPIRED', now });
+        result.expired++;
+      } else result.preserved++;
+      } catch (error) {
+        result.invalid++;
+        console.error(`[SessionScheduler] Restart reconciliation ${session.id}:`, error);
+      }
+    }
+    return result;
   }
 
   static checkActiveSessions() {
@@ -63,6 +92,7 @@ export class SessionScheduler {
             sessionId: session.id,
             remainingSeconds: diffSeconds,
             endsAt: endsAtEpoch,
+            authoritativeAt: now.getTime(),
           };
           ClientManager.send(session.computer_id, 'UPDATE_REMAINING_TIME', payload);
         }

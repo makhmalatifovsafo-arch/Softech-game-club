@@ -111,7 +111,7 @@
                 <!-- Options -->
                 <TextBlock Text="Qo'shimcha parametrlar:" FontSize="13" FontWeight="SemiBold" Foreground="#D1D5DB" Margin="0,0,0,10"/>
                 <CheckBox x:Name="ChkDesktopShortcut" Content="Ish stolida 'Softech Server' yorlig'ini yaratish" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,8"/>
-                <CheckBox x:Name="ChkAutoStart" Content="Windows yoqilganda server avtomatik fonda ishga tushsin (Startup)" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,18"/>
+                <CheckBox x:Name="ChkAutoStart" Content="Windowsga kirganda kassa oynasi ham ochilsin (server doim fon xizmatida)" IsChecked="True" Foreground="#E5E7EB" Margin="0,0,0,18"/>
 
                 <!-- Progress & Status -->
                 <ProgressBar x:Name="PbProgress" Height="8" Minimum="0" Maximum="100" Value="0" Foreground="#3B82F6" Background="#1F2937" BorderThickness="0" Margin="0,10,0,6" Visibility="Collapsed"/>

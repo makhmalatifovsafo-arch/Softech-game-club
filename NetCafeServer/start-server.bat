@@ -1,6 +1,10 @@
 @echo off
 title Softech NetCafe Pro Server
 cd /d "%~dp0"
+if exist ".service\SoftechService.exe" if exist "SoftechCockpit.exe" (
+    start "" "%~dp0SoftechCockpit.exe"
+    exit /b 0
+)
 echo ===================================================
 echo   Softech NetCafe Pro - Core Engine Server
 echo ===================================================

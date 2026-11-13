@@ -4,6 +4,16 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const code=fs.readFileSync(new URL('../public/mobile/app.js',import.meta.url),'utf8');
 const storage=()=>{const values=new Map();return {getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)}};
+test('failed refresh retains the actual snapshot time and never invents a fresh timestamp',()=>{
+ const node={classList:{toggle(){}},textContent:''};
+ const state={meta:{serverOnline:false},stamp:'2026-11-13T13:00:00Z'};
+ const ctx=vm.createContext({state,$:()=>node,Date});
+ vm.runInContext(code.slice(code.indexOf('function status('),code.indexOf('\n',code.indexOf('function status('))),ctx);
+ ctx.status();const normal=node.textContent;ctx.status(true);
+ assert.ok(node.textContent.endsWith(normal.slice(normal.indexOf('Bulutdagi nusxa:'))));
+ assert.match(node.textContent,/Yangilab bo‘lmadi/);
+ state.stamp=null;ctx.status(true);assert.match(node.textContent,/hali sinxronlanmagan/);assert.ok(!node.textContent.includes('1970'));
+});
 test('mobile session survives a new browser window and migrates old tab storage without retaining passwords',()=>{
  const localStorage=storage(),sessionStorage=storage();
  const state={clubId:7,token:'mbl_'+'a'.repeat(64),user:{username:'owner',role:'club_owner'},name:'Club',password:'never-store',grant:{secret:'short-lived'}};

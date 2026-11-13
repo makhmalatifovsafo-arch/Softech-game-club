@@ -53,7 +53,8 @@ public sealed class AutoUpdateService
         }
         catch { }
         ManifestUrl ??= "https://github.com/makhmalatifovsafo-arch/Softech-game-club/releases/latest/download/version.json";
-        Directory.CreateDirectory(staging);
+        // Update storage is optional at startup; create it inside the guarded
+        // download operation so disk/permission failures cannot stop the kiosk.
     }
 
     public void StartPeriodicChecks(TimeSpan? interval = null)
@@ -90,8 +91,11 @@ public sealed class AutoUpdateService
     {
         if (!await checkLock.WaitAsync(0)) return false;
         IsChecking = true;
+        string? candidate = null;
+        bool published = false;
         try
         {
+            if (applyLock.CurrentCount == 0) return false;
             await Task.Run(() => UpdateCleanup.OnStartup(root, CurrentVersion));
             using var response = await http.GetAsync(ManifestUrl, stopping.Token);
             if (!response.IsSuccessStatusCode) return false;
@@ -108,16 +112,18 @@ public sealed class AutoUpdateService
             var uri = new Uri(url);
             if (uri.Scheme != "https" && !(uri.IsLoopback && uri.Scheme == "http")) throw new InvalidDataException("HTTPS download required.");
 
+            string? cached = await Task.Run(() => UpdateStorage.FindStaged(root,version,"client",hash));
+            if (cached != null) { staged = cached; stagedVersion = version; return true; }
+
             IsDownloading = true;
-            string candidate = Path.Combine(staging, "v" + version + "-" + Guid.NewGuid().ToString("N"));
+            candidate = PackageManifest.ChildPath(root, "updates/staging/v" + version + "-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(candidate);
             string zip = Path.Combine(candidate, "download.zip");
             using (var downloadResponse = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, stopping.Token))
             {
                 downloadResponse.EnsureSuccessStatusCode();
                 await using var stream = await downloadResponse.Content.ReadAsStreamAsync(stopping.Token);
-                await using var destination = File.Create(zip);
-                await stream.CopyToAsync(destination, stopping.Token);
+                await UpdateStorage.DownloadAsync(stream, zip, downloadResponse.Content.Headers.ContentLength, stopping.Token);
             }
             using (var stream = File.OpenRead(zip))
             {
@@ -125,16 +131,26 @@ public sealed class AutoUpdateService
                     throw new InvalidDataException("Downloaded package SHA256 mismatch.");
             }
             string extracted = Path.Combine(candidate, "package");
+            UpdateStorage.CheckExtractionSpace(zip, extracted);
             ZipFile.ExtractToDirectory(zip, extracted);
             PackageManifest.Validate(extracted, version, "client");
+            UpdateJournal.Write(Path.Combine(candidate,"download-receipt.json"),new {sha256=hash});
             File.Delete(zip);
             // Publish the staged state only after the whole package is validated.
             staged = extracted;
             stagedVersion = version;
+            published = true;
             return true;
         }
         catch (Exception ex) { Log(ex.Message); return false; }
-        finally { IsChecking = false; IsDownloading = false; checkLock.Release(); }
+        finally
+        {
+            // Only this failed attempt is disposable. Keep the last verified
+            // package and all rollback/financial data.
+            if (!published && candidate != null)
+                UpdateCleanup.DeleteOwnedTree(root, Path.GetRelativePath(root, candidate), Log);
+            IsChecking = false; IsDownloading = false; checkLock.Release();
+        }
     }
 
     private bool IsFailedVersion(string version)
@@ -158,7 +174,7 @@ public sealed class AutoUpdateService
     private async Task TryApplyAsync()
     {
         if (staged == null || stagedVersion == null || DateTime.UtcNow < nextApplyAttempt ||
-            IsDownloading || !await applyLock.WaitAsync(0)) return;
+            IsChecking || IsDownloading || !await applyLock.WaitAsync(0)) return;
         string? cancel = null;
         try
         {

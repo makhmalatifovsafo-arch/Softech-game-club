@@ -1,4 +1,5 @@
 import { ensureLocalOwner } from './services/localOwnerSetup.js';
+import { claimServerInstance } from './services/serverInstance.js';
 import { guardDatabase, markDatabase, snapshot, pruneBackups, verifyDatabase, startDatabaseBackups } from './services/databaseBackup.js';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
@@ -12,6 +13,9 @@ const __dirname = path.dirname(__filename);
 const DB_FILE = path.resolve(__dirname, '../netcafe.db');
 const SCHEMA_FILE = path.resolve(__dirname, '../schema.sql');
 
+if(process.argv[1]&&path.resolve(process.argv[1]).toLowerCase()===path.join(__dirname,'server.js').toLowerCase())
+  process.once('exit',claimServerInstance(path.resolve(__dirname,'../data/server-instance.db')));
+
 guardDatabase(DB_FILE);
 const existingDatabase = fs.existsSync(DB_FILE) && fs.statSync(DB_FILE).size > 0;
 if (existingDatabase) verifyDatabase(DB_FILE);
@@ -24,7 +28,12 @@ db.exec('PRAGMA synchronous = FULL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
 export function initDatabase() {
-  if (existingDatabase) snapshot(DB_FILE, 'startup');
+  if (existingDatabase) {
+    snapshot(DB_FILE, 'startup');
+    // Even a repeatedly failing migration must not accumulate a full database
+    // copy on every restart. Prune only after a new verified copy exists.
+    try { pruneBackups(DB_FILE); } catch (error) { console.warn('[Database backup cleanup]', error.message); }
+  }
   db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;');
   try {
   migrateSchemaToMultiTenant();

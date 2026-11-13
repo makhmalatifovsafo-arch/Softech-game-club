@@ -2,6 +2,10 @@ Set WshShell = CreateObject("WScript.Shell")
 Set FSO = CreateObject("Scripting.FileSystemObject")
 currentDir = FSO.GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = currentDir
+If FSO.FileExists(currentDir & "\.service\SoftechService.exe") And FSO.FileExists(currentDir & "\SoftechCockpit.exe") Then
+    WshShell.Run """" & currentDir & "\SoftechCockpit.exe""", 1, False
+    WScript.Quit
+End If
 
 If FSO.FileExists(currentDir & "\runtime\node.exe") Then
     WshShell.Run """" & currentDir & "\runtime\node.exe"" src/server.js", 0, False

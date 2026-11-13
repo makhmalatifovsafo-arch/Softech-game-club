@@ -73,6 +73,14 @@ namespace ServerSetup
                         Directory.CreateDirectory(targetDir);
                     }
 
+                    ServiceInstallation.EnsureEmergencySessionsClosed();
+                    Softech.Updates.ServerService.StopAndWait(targetDir);
+                    // Close only this installation's legacy launcher before its backend.
+                    foreach(var cockpit in Process.GetProcessesByName("SoftechCockpit"))using(cockpit) {
+                        if(string.Equals(cockpit.MainModule?.FileName,Path.Combine(Path.GetFullPath(targetDir),"SoftechCockpit.exe"),StringComparison.OrdinalIgnoreCase)) {
+                            cockpit.Kill(true);if(!cockpit.WaitForExit(10000))throw new IOException("Kassa oynasi yopilmadi. O'rnatish to'xtatildi.");
+                        }
+                    }
                     // 1. Agar server (node.exe) ishlab turgan bo'lsa, xavfsiz to'xtatamiz
                     foreach (var proc in Process.GetProcessesByName("node"))
                     {
@@ -82,16 +90,18 @@ namespace ServerSetup
                             if (procPath != null && procPath.StartsWith(Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                             {
                                 proc.Kill();
-                                proc.WaitForExit(3000);
+                                if(!proc.WaitForExit(10000))throw new IOException("Eski server to'xtamadi.");
                             }
                         }
-                        catch { }
+                        catch (System.ComponentModel.Win32Exception) { /* Unrelated protected Windows processes. */ }
                     }
 
+                    if(!Softech.Updates.UpdateJournal.Recover(targetDir))throw new IOException("Yangilovchi hali ishlamoqda. Setup fayllarni almashtirmadi.");
+                    string maintenanceFile=Softech.Updates.PackageManifest.ChildPath(targetDir,".ota/update.lock");
+                    Directory.CreateDirectory(Path.GetDirectoryName(maintenanceFile)!);
+                    using var maintenance=new FileStream(maintenanceFile,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
+                    using var backendGuard=Softech.Updates.UpdateJournal.AcquireServerLock(targetDir);
                     DatabaseSafety.Backup(targetDir);
-
-                    string? previousConfiguration = File.Exists(Path.Combine(targetDir, "config.json"))
-                        ? File.ReadAllText(Path.Combine(targetDir, "config.json")) : null;
 
                     // Extract embedded payload.zip
                     var assembly = Assembly.GetExecutingAssembly();
@@ -111,10 +121,23 @@ namespace ServerSetup
                             }
 
                             Softech.Updates.SafePackageExtraction.Extract(tempZipPath, targetDir);
-                            if (previousConfiguration != null)
-                                File.WriteAllText(Path.Combine(targetDir, "config.json"), previousConfiguration);
-                            else if (!File.Exists(Path.Combine(targetDir, "config.json")))
-                                File.WriteAllText(Path.Combine(targetDir, "config.json"), "{\"updateIdleSeconds\":10}");
+                            // SafePackageExtraction preserves existing configuration.
+                            // Do not truncate and rewrite a club's settings during repair.
+                            string configFile = Path.Combine(targetDir, "config.json");
+                            if (!File.Exists(configFile))
+                            {
+                                string temporaryConfig = configFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                                try
+                                {
+                                    using (var stream = new FileStream(temporaryConfig, FileMode.CreateNew, FileAccess.Write))
+                                    {
+                                        stream.Write(System.Text.Encoding.UTF8.GetBytes("{\"updateIdleSeconds\":10}"));
+                                        stream.Flush(flushToDisk: true);
+                                    }
+                                    File.Move(temporaryConfig, configFile, overwrite: false);
+                                }
+                                finally { if (File.Exists(temporaryConfig)) File.Delete(temporaryConfig); }
+                            }
                         }
                         finally
                         {
@@ -144,16 +167,19 @@ namespace ServerSetup
                             iconPath: File.Exists(iconPath) ? iconPath : null);
                     }
 
+                    string startupPath = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+                    string oldShortcut=Path.Combine(startupPath,"SoftechServerBackground.lnk");
+                    if(File.Exists(oldShortcut))File.Delete(oldShortcut);
                     if (enableAutoStart)
                     {
-                        string startupPath = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
                         CreateShortcut(
                             shortcutPath: Path.Combine(startupPath, "SoftechServerBackground.lnk"),
-                            targetPath: File.Exists(vbsPath) ? vbsPath : primaryExe,
+                            targetPath: primaryExe,
                             workingDir: targetDir,
                             description: "Softech Server Background Service",
                             iconPath: File.Exists(iconPath) ? iconPath : null);
                     }
+                    ServiceInstallation.Install(targetDir);
                 });
 
                 PbProgress.IsIndeterminate = false;

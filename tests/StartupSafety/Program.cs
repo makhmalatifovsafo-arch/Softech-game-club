@@ -70,6 +70,7 @@ var cases = new (HttpStatusCode Status, string Body, bool Expected)[]
     (HttpStatusCode.OK, """{"app":1,"status":"ok"}""", false),
     (HttpStatusCode.OK, "[]", false),
     (HttpStatusCode.OK, """{"app":"NetCafeServer","status":"ok"}""", true),
+    (HttpStatusCode.OK, """{"app":"NetCafeServer","status":"ok","updatePending":true}""", false),
     (HttpStatusCode.ServiceUnavailable, """{"app":"NetCafeServer","status":"ok"}""", false)
 };
 foreach (var item in cases)
@@ -148,6 +149,16 @@ var processManager = new NodeProcessManager(fixtureHttp) {
     StartupTimeout = TimeSpan.FromMilliseconds(100)
 };
 try {
+    Directory.CreateDirectory(Path.Combine(processFixture,".ota"));
+    using(var updateLock=new FileStream(Path.Combine(processFixture,".ota","update.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)) {
+        var previousRestart=Environment.GetEnvironmentVariable("SOFTECH_UPDATER_RESTART");
+        try {
+            Environment.SetEnvironmentVariable("SOFTECH_UPDATER_RESTART","1");
+            using var readyHttp=new HttpClient(new HealthHandler(HttpStatusCode.OK,"{\"app\":\"NetCafeServer\",\"status\":\"ok\"}"));
+            var restarting=new NodeProcessManager(readyHttp){ResolvePaths=()=> (nodeExe,processFixture)};
+            Check(await restarting.EnsureServerRunningAsync(),"Updater restart deadlocked on its own transaction lock");
+        } finally {Environment.SetEnvironmentVariable("SOFTECH_UPDATER_RESTART",previousRestart);}
+    }
     bool timedOut = false;
     try { await processManager.EnsureServerRunningAsync(); }
     catch (TimeoutException) { timedOut = true; }
@@ -156,6 +167,8 @@ try {
     var waits = await Task.WhenAll(processManager.EnsureServerRunningAsync(), processManager.EnsureServerRunningAsync());
     Check(waits.All(result => result), "Retry did not wait for existing initialization");
     Check(File.ReadAllLines(Path.Combine(processFixture,"starts.txt")).Length == 1, "Retry spawned a duplicate backend");
+    processManager.StopNodeServer(forUpdate:true);
+    Check(processManager.IsRunning,"Cockpit force-killed Node during graceful update handover");
     File.WriteAllText(Path.Combine(processFixture,"crash"), "1");
     for(int i=0;i<200&&!processManager.HasUnexpectedExit;i++) await Task.Delay(20);
     Check(processManager.HasUnexpectedExit, "Backend exit was not detected");
@@ -167,6 +180,65 @@ try {
         "Backend did not recover exactly once");
 } finally { processManager.StopNodeServer(); }
 Console.WriteLine("PASS: real slow startup survives timeout and concurrent retries; crashed backend restarts with actual diagnostics");
+
+var diagnosticFixture = Path.GetFullPath(Path.Combine(".test-output", "launcher-diagnostic-" + Guid.NewGuid().ToString("N")));
+Directory.CreateDirectory(Path.Combine(diagnosticFixture,"data","backups"));
+File.WriteAllText(Path.Combine(diagnosticFixture,"config.json"), """{"cloudUrl":"https://diagnostic.test","clubToken":"PRIVATE_CONFIG_SECRET"}""");
+File.WriteAllText(Path.Combine(diagnosticFixture,"package.json"), """{"version":"1.1.18"}""");
+File.WriteAllText(Path.Combine(diagnosticFixture,"data","softech_license.sig"), """{"payload":{"clubId":10},"signature":"fixture-only"}""");
+File.WriteAllText(Path.Combine(diagnosticFixture,"data","backup-health.json"), """{"errorCode":"DISK_FULL","rawError":"PRIVATE_LOG_SECRET"}""");
+var safeDiagnostic = ServerDiagnostics.Collect(diagnosticFixture,"FAILED",ServerDiagnostics.Classify("SyntaxError: JSON at LicenseManager.init PRIVATE_LOG_SECRET"));
+var exported = ServerDiagnostics.Export(safeDiagnostic);
+Check(!exported.Contains("PRIVATE") && !exported.Contains("signature") && !exported.Contains(diagnosticFixture),"Diagnostic export leaked sensitive values");
+Check((string)safeDiagnostic["errorCode"]! == "CONFIG_INVALID" && (string)safeDiagnostic["backupError"]! == "DISK_FULL","Diagnostic classification failed");
+Check(ServerDiagnostics.Classify("EADDRINUSE") == "PORT_BUSY" && ServerDiagnostics.Classify("ENOSPC") == "DISK_FULL","Known failures not classified");
+foreach(string code in new[]{"SERVER_ALREADY_RUNNING","SERVER_INSTANCE_LOCK_FAILED","UPDATE_RECOVERY_REQUIRED"})
+    Check(ServerDiagnostics.Classify(code)==code,"Lifecycle failure not classified: "+code);
+var previousCloud = Environment.GetEnvironmentVariable("SOFTECH_CLOUD_URL");
+Environment.SetEnvironmentVariable("SOFTECH_CLOUD_URL",null);
+try {
+    using var diagnosticHandler = new DiagnosticHandler();
+    using var diagnosticHttp = new HttpClient(diagnosticHandler);
+    var reporter = new ServerDiagnostics(diagnosticHttp);
+    await reporter.SendAsync(diagnosticFixture,safeDiagnostic);
+    Check(reporter.DeliveryState == "SENT" && diagnosticHandler.Calls == 1,"Failed backend could not report independently");
+    var envelope = JsonNode.Parse(diagnosticHandler.Body)!;
+    Check(envelope["clubId"]!.GetValue<int>() == 10 && !envelope["report"]!.ToJsonString().Contains("PRIVATE"),"Transport mixed authority and diagnostic export");
+    await reporter.SendAsync(diagnosticFixture,safeDiagnostic);Check(diagnosticHandler.Calls==1,"Diagnostics retry storm");
+    File.Copy(Path.Combine(diagnosticFixture,"config.json"),Path.Combine(diagnosticFixture,"config.json.last-good"));
+    File.WriteAllBytes(Path.Combine(diagnosticFixture,"config.json"),new byte[99]);
+    Check((string)ServerDiagnostics.Collect(diagnosticFixture,"RUNNING","NONE")["errorCode"]! == "CONFIG_INVALID","Running HTTP server hid corrupted configuration");
+    var damaged = new ServerDiagnostics(diagnosticHttp);
+    await damaged.SendAsync(diagnosticFixture,ServerDiagnostics.Collect(diagnosticFixture,"FAILED","CONFIG_INVALID"));
+    Check(damaged.DeliveryState=="SENT","Damaged config prevented use of last-good cloud address");
+    File.WriteAllBytes(Path.Combine(diagnosticFixture,"data","softech_license.sig"),new byte[99]);
+    var noIdentity = new ServerDiagnostics(diagnosticHttp);
+    await noIdentity.SendAsync(diagnosticFixture,safeDiagnostic);
+    Check(noIdentity.DeliveryState=="IDENTITY_UNAVAILABLE" && diagnosticHandler.Calls==2,"Unidentified installation sent a guessed club identity");
+    File.WriteAllText(Path.Combine(diagnosticFixture,"data","softech_license.sig"), """{"payload":{"clubId":10},"signature":"fixture-only"}""");
+    diagnosticHandler.Fail = true;
+    var offlineReporter = new ServerDiagnostics(diagnosticHttp);
+    await offlineReporter.SendAsync(diagnosticFixture,safeDiagnostic);
+    Check(offlineReporter.DeliveryState=="NETWORK_UNAVAILABLE","Network failure escaped launcher diagnostics");
+    Environment.SetEnvironmentVariable("SOFTECH_CLOUD_URL","http://diagnostic.test");
+    int callsBefore = diagnosticHandler.Calls;
+    var insecureReporter = new ServerDiagnostics(diagnosticHttp);
+    await insecureReporter.SendAsync(diagnosticFixture,safeDiagnostic);
+    Check(insecureReporter.DeliveryState=="CLOUD_ADDRESS_UNAVAILABLE" && diagnosticHandler.Calls==callsBefore,"License sent over insecure transport");
+} finally { Environment.SetEnvironmentVariable("SOFTECH_CLOUD_URL",previousCloud); }
+Console.WriteLine("PASS: independent launcher diagnostics, safe export, throttling, damaged config and missing identity");
+
+sealed class DiagnosticHandler : HttpMessageHandler
+{
+    public int Calls; public string Body = ""; public bool Fail;
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken cancellationToken)
+    {
+        if(request.RequestUri!.ToString()!="https://diagnostic.test/api/telemetry/diagnostics")throw new Exception("Unexpected diagnostic target");
+        Calls++;Body=await request.Content!.ReadAsStringAsync(cancellationToken);
+        if(Fail)throw new HttpRequestException("fixture unavailable");
+        return new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent("{\"success\":true}")};
+    }
+}
 
 sealed class FileHealthHandler(string readyFile) : HttpMessageHandler
 {

@@ -2,9 +2,11 @@ import http from 'node:http';
 import https from 'node:https';
 import { lookup } from 'node:dns';
 import fs from 'node:fs';
+import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { describeCloudError } from './cloudConnection.js';
+import { requireStorageSpace, MAX_UPDATE_BYTES } from './storageBudget.js';
 
 function validateUrl(address) {
   const url = new URL(address);
@@ -75,18 +77,29 @@ export async function downloadUpdateFile(address, destination, options = {}) {
   }
   const part = destination + '.part';
   let bytes = 0;
+  let lastSpaceCheck = 0;
   const total = Number(response.headers['content-length']) || null;
   const progress = new Transform({ transform(chunk, _encoding, callback) {
-    bytes += chunk.length;
-    options.onProgress?.(bytes, total);
-    callback(null, chunk);
+    try {
+      bytes += chunk.length;
+      if (bytes > MAX_UPDATE_BYTES || (total !== null && bytes > total)) throw Object.assign(new Error('Update download exceeds its size limit'), {code:'UPDATE_SIZE_LIMIT'});
+      if (lastSpaceCheck === 0 || bytes - lastSpaceCheck >= 4 * 1024 * 1024) {
+        requireStorageSpace(path.dirname(destination), total === null ? chunk.length : Math.max(chunk.length, total - bytes + chunk.length));
+        lastSpaceCheck = bytes;
+      }
+      options.onProgress?.(bytes, total);
+      callback(null, chunk);
+    } catch (error) { callback(error); }
   } });
   try {
+    if (total !== null && (!Number.isSafeInteger(total) || total < 0 || total > MAX_UPDATE_BYTES)) throw Object.assign(new Error('Update download is too large'), {code:'UPDATE_SIZE_LIMIT'});
+    requireStorageSpace(path.dirname(destination), total || 0);
     await pipeline(response, progress, fs.createWriteStream(part), { signal });
     if (total !== null && bytes !== total) throw new Error('Yangilanish paketi to‘liq yuklanmadi.');
     fs.renameSync(part, destination);
   } catch (error) {
     fs.rmSync(part, { force: true });
+    if (['ENOSPC','UPDATE_SIZE_LIMIT'].includes(error.code)) throw error;
     throw describeCloudError(signal.aborted ? signal.reason : error, address);
   } finally { response.destroy(); }
 }

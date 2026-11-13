@@ -1,4 +1,5 @@
 import { handleMobileRoute } from './services/mobileRelay.js';
+import { handleServerDiagnostics } from './services/serverDiagnostics.js';
 import { handleMobileDashboard } from './services/mobileDashboard.js';
 import { appVersion } from './services/appVersion.js';
 import { handleStaffSyncRoute } from './services/staffAccountSync.js';
@@ -65,6 +66,7 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer(async (req, res) => {
+  if(await handleServerDiagnostics(req,res,{db:managerDb},requireSuperAdminAuth))return;
   if (req.method === 'GET' && new URL(req.url, 'http://localhost').pathname === '/api/version') {
     res.setHeader('Cache-Control', 'no-store');
     return sendJson(res, 200, { app: 'Softech Cloud', version: appVersion });

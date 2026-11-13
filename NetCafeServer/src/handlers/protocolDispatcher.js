@@ -1,7 +1,7 @@
 import { acknowledgeScreenMessage } from '../services/screenMessages.js';
 import { updateCustomerCredentials } from '../services/customerCredentials.js';
 import { clientSessionState } from '../services/clientSessionState.js';
-import { canClientCloseSession } from '../services/sessionMode.js';
+import { canClientCloseSession, isPostpaidSession } from '../services/sessionMode.js';
 import { startMemberSession, isMemberSession } from '../services/memberBilling.js';
 import { SessionScheduler } from '../services/sessionScheduler.js';
 import { createClientBarOrder } from '../services/clientBarOrders.js';
@@ -210,8 +210,8 @@ export class ProtocolDispatcher {
     } catch {}
 
     // Check if active session exists to resume on client
-    const activeSession = db.prepare(`
-      SELECT s.id, s.user_id, s.started_at, s.ends_at, s.notes, s.customer_name, t.name as tariff_name
+    let activeSession = db.prepare(`
+      SELECT s.*, t.name as tariff_name
       FROM sessions s
       LEFT JOIN tariffs t ON s.tariff_id = t.id
       WHERE s.computer_id = ? AND s.status = 'ACTIVE'
@@ -220,21 +220,38 @@ export class ProtocolDispatcher {
     if (activeSession) {
       const now = Date.now();
       const endsAt = new Date(activeSession.ends_at).getTime();
-      const remainingSeconds = Math.max(0, Math.floor((endsAt - now) / 1000));
+      const postpaid = isPostpaidSession(activeSession);
+      if (!postpaid && Number.isFinite(endsAt) && endsAt <= now) {
+        // The deadline may have passed while the server was offline. Settle it
+        // before HELLO can briefly unlock the kiosk with an expired row.
+        SessionScheduler.finishSession(activeSession, { reason: 'TIME_EXPIRED', now: new Date(now) });
+        activeSession = null;
+      } else if (!postpaid && !Number.isFinite(endsAt)) {
+        // Preserve the row for recovery, but fail closed on the workstation.
+        ClientManager.send(pcId, 'LOCK_SCREEN', {
+          reason: 'SESSION_DATA_INVALID',
+          message: 'Seans vaqti buzilgan. Kassir yoki texnik yordamga murojaat qiling.'
+        });
+        activeSession = null;
+      }
+      if (activeSession) {
+      const remainingSeconds = postpaid ? -1 : Math.max(0, Math.ceil((endsAt - now) / 1000));
       ClientManager.send(pcId, 'START_SESSION', {
         sessionId: activeSession.id,
-        durationMinutes: Math.round(remainingSeconds / 60),
+        durationMinutes: postpaid ? -1 : Math.ceil(remainingSeconds / 60),
         tariffName: activeSession.tariff_name || 'Standart',
         startedAt: new Date(activeSession.started_at).getTime(),
         endsAt,
         endTime: activeSession.ends_at,
-        remainingSeconds: activeSession.notes?.includes('POSTPAID') ? -1 : remainingSeconds,
+        remainingSeconds,
+        authoritativeAt: now,
         customerName: activeSession.customer_name || 'Mijoz',
         clientBalance: isMemberSession(activeSession) ? db.prepare('SELECT balance FROM users WHERE id=?').get(activeSession.user_id)?.balance : null,
         zoneName,
         pricePerHour,
         ...clientSessionState(activeSession.id)
       });
+      }
     }
 
     // Broadcast updated workstation state to Cashier Dashboard via WebSocket

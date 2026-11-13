@@ -9,11 +9,33 @@ public static class Program
 {
     private static string? logFile;
     private static readonly JsonSerializerOptions Json = PackageManifest.JsonOptions;
+    private static async Task WaitForParent(int pid)
+    {
+        try {
+            using var parent=Process.GetProcessById(pid);
+            await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        }catch(ArgumentException) { }
+        catch(System.ComponentModel.Win32Exception error)when(error.NativeErrorCode==5) {
+            // LocalService may not obtain a SYNCHRONIZE handle to an interactive
+            // cashier process. Observe its disappearance; never kill or elevate.
+            var deadline=DateTime.UtcNow.AddSeconds(30);
+            while(DateTime.UtcNow<deadline){
+                try{using var parent=Process.GetProcessById(pid);}catch(ArgumentException){return;}
+                await Task.Delay(100);
+            }
+            throw new IOException("Cashier process did not exit; update cancelled.");
+        }
+    }
 
     public static async Task<int> Main(string[] args)
     {
         try
         {
+            if(args.Length==5&&args[0]=="--find-staged") {
+                Console.WriteLine(UpdateStorage.FindStaged(Path.GetFullPath(args[1]),args[2],args[3],args[4])??"");
+                return 0;
+            }
+            if(args.Length==2&&args[0]=="--recover")return UpdateJournal.Recover(Path.GetFullPath(args[1]),Log)?0:3;
             if (args.Length == 3 && args[0] == "--cleanup")
             {
                 UpdateCleanup.OnStartup(Path.GetFullPath(args[1]), args[2], Log);
@@ -27,13 +49,14 @@ public static class Program
             if (args.Length == 3 && args[0] == "--extract")
             {
                 // .NET rejects ZIP traversal; package validation also rejects reparse points.
+                UpdateStorage.CheckExtractionSpace(args[1], args[2]);
                 ZipFile.ExtractToDirectory(args[1], args[2], overwriteFiles: false);
                 return 0;
             }
             if (args.Length != 2 || args[0] != "--plan") return 2;
             var plan = JsonSerializer.Deserialize<UpdatePlan>(File.ReadAllText(args[1]), Json)
                 ?? throw new InvalidDataException("Missing update plan.");
-            return plan.RestartOnly ? await RestartOnly(plan) : await Apply(plan);
+            return plan.RestartOnly || plan.RecoveryOnly ? await RestartOnly(plan) : await Apply(plan);
         }
         catch (Exception ex)
         {
@@ -59,9 +82,13 @@ public static class Program
         var originals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var databases = new Dictionary<string, string>();
         Process? restarted = null;
+        FileStream? serverGuard=null;
         bool committed = false;
         bool healthy = false;
         bool restored = false;
+        var journal=new UpdateJournal {Version=plan.Version,Kind=plan.Kind,Token=Path.GetFileName(transaction)};
+        string helperRelative=Path.GetRelativePath(target,Environment.ProcessPath??"").Replace('\\','/');
+        if(helperRelative.StartsWith("updates/staging/handover-",StringComparison.OrdinalIgnoreCase))journal.HelperRelativePath=helperRelative;
         Directory.CreateDirectory(Path.Combine(target, ".ota"));
         FileStream transactionLock;
         try
@@ -71,23 +98,34 @@ public static class Program
         }
         catch (IOException) { return 3; } // Another transaction still owns preparation/health/rollback.
         using var exclusiveTransaction = transactionLock;
+        if(UpdateJournal.HasPending(target))throw new IOException("An interrupted update requires startup recovery first.");
         Directory.CreateDirectory(transaction);
         try
         {
             var package = PackageManifest.Validate(source, plan.Version, plan.Kind);
             var files = package.Files.Keys.Append("update-package.json").ToArray();
+            journal.Files=files;
+            if(plan.Kind=="server") {
+                if(!Uri.TryCreate(plan.HealthUrl,UriKind.Absolute,out var healthUri)||!healthUri.IsLoopback||healthUri.Scheme!="http")throw new InvalidDataException("Server health URL must be local HTTP.");
+                journal.Port=healthUri.Port;
+            }
             foreach (string relative in files)
             {
                 string destination = PackageManifest.ChildPath(target, relative);
                 string staged = PackageManifest.ChildPath(prepared, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
+                UpdateStorage.EnsureFreeSpace(target, new FileInfo(PackageManifest.ChildPath(source,relative)).Length);
                 File.Copy(PackageManifest.ChildPath(source, relative), staged, true);
+                UpdateJournal.Flush(staged);
                 if (File.Exists(destination))
                 {
                     string old = PackageManifest.ChildPath(backup, relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(old)!);
+                    UpdateStorage.EnsureFreeSpace(target, new FileInfo(destination).Length);
                     File.Copy(destination, old, true);
+                    UpdateJournal.Flush(old);
                     originals.Add(relative);
+                    journal.Originals[relative]=UpdateJournal.Hash(old);
                 }
             }
             // All slow copying and access checks finish while the application still runs.
@@ -100,17 +138,14 @@ public static class Program
             }
             foreach (int pid in plan.ParentPids.Distinct())
             {
-                try
-                {
-                    using var parent = Process.GetProcessById(pid);
-                    await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
-                }
-                catch (ArgumentException) { } // The exact parent already exited.
+                await WaitForParent(pid);
             }
             // No process-name scans, force-kills or runas/UAC prompts.
             // Snapshot databases after parent exit so a failing schema migration can roll back.
+            if(UpdateJournal.PortBusy(journal.Port))throw new IOException("Server port is still busy; application files were not switched.");
             if (plan.Kind == "server")
             {
+                serverGuard=UpdateJournal.AcquireServerLock(target);
                 var candidates = Directory.GetFiles(target, "*.db*").AsEnumerable();
                 if (Directory.Exists(Path.Combine(target, "data")))
                     candidates = candidates.Concat(Directory.GetFiles(Path.Combine(target, "data"), "*.db*", SearchOption.AllDirectories));
@@ -120,12 +155,18 @@ public static class Program
                     // Independent recovery snapshots are not live databases and must
                     // never be copied again or rolled back with application files.
                     if (relative.Replace('\\', '/').StartsWith("data/backups/", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (relative.Replace('\\', '/').StartsWith("data/server-instance.db", StringComparison.OrdinalIgnoreCase)) continue;
+                    if(!new[]{".db",".db-wal",".db-shm",".db-journal"}.Any(suffix=>relative.EndsWith(suffix,StringComparison.OrdinalIgnoreCase)))continue;
                     string snapshot = PackageManifest.ChildPath(Path.Combine(transaction, "databases"), relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(snapshot)!);
+                    UpdateStorage.EnsureFreeSpace(target, new FileInfo(db).Length);
                     File.Copy(db, snapshot, true);
+                    UpdateJournal.Flush(snapshot);
                     databases[db] = snapshot;
+                    journal.Databases[relative]=UpdateJournal.Hash(snapshot);
                 }
             }
+            journal.Save(transaction); // Durable intent precedes the first replacement.
             committed = true;
             var downtime = Stopwatch.StartNew();
             foreach (string relative in files)
@@ -135,9 +176,14 @@ public static class Program
                 applied.Add(relative);
                 File.Move(PackageManifest.ChildPath(prepared, relative), destination, true);
             }
-            restarted = Launch(plan);
+            serverGuard?.Dispose();serverGuard=null;
+            restarted = Launch(plan,plan.Kind=="server"?journal.Token:null);
             Log($"v{plan.Version}: files switched and process started in {downtime.ElapsedMilliseconds} ms.");
             if (restarted == null) throw new IOException("Could not restart application.");
+            journal.RestartedPid=restarted.Id;
+            journal.RestartedStartTicks=restarted.StartTime.ToUniversalTime().Ticks;
+            journal.RestartedExecutable=Path.GetFullPath(plan.RestartExecutable);
+            journal.Save(transaction);
 
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
             bool ready = false;
@@ -155,7 +201,10 @@ public static class Program
                     {
                         var data = await http.GetStringAsync(plan.HealthUrl);
                         using var health = JsonDocument.Parse(data);
-                        ready = health.RootElement.GetProperty("version").GetString() == plan.Version;
+                        var root=health.RootElement;
+                        ready = root.GetProperty("app").GetString()=="NetCafeServer"&&root.GetProperty("status").GetString()=="ok"&&
+                            root.GetProperty("version").GetString()==plan.Version&&root.GetProperty("updateToken").GetString()==journal.Token&&
+                            root.GetProperty("updatePending").GetBoolean();
                     }
                     catch { ready = false; }
                 }
@@ -164,8 +213,9 @@ public static class Program
                 await Task.Delay(100);
             }
             if (!healthy) throw new IOException("Updated application did not become healthy.");
-            File.WriteAllText(Path.Combine(target, "updates-last-success.json"),
-                JsonSerializer.Serialize(new { version = plan.Version, at = DateTimeOffset.UtcNow }));
+            journal.Phase="ACCEPTED";journal.Save(transaction);
+            if(plan.Kind=="server")UpdateJournal.Write(Path.Combine(transaction,"approved.json"),new{token=journal.Token});
+            UpdateJournal.Write(Path.Combine(target, "updates-last-success.json"),new { version = plan.Version, at = DateTimeOffset.UtcNow });
             Log("Update health verified.");
             // Cleanup failure must never turn a healthy update into a rollback.
             try { UpdateCleanup.AfterSuccess(target, plan.Version, transaction, Log); }
@@ -175,6 +225,7 @@ public static class Program
         catch (Exception ex)
         {
             Log(ex.ToString());
+            if(journal.Phase=="ACCEPTED") { Log("Update accepted; activation/cleanup retry required. Database rollback prohibited."); return 6; }
             if (!committed)
             {
                 File.WriteAllText(plan.ReadyFile + ".error", ex.Message);
@@ -186,20 +237,13 @@ public static class Program
                 restarted.Kill(entireProcessTree: true);
                 await restarted.WaitForExitAsync();
             }
-            foreach (string relative in applied.AsEnumerable().Reverse())
-            {
-                string destination = PackageManifest.ChildPath(target, relative);
-                if (originals.Contains(relative))
-                    File.Copy(PackageManifest.ChildPath(backup, relative), destination, true);
-                else if (File.Exists(destination)) File.Delete(destination);
-            }
-            foreach (var db in databases.Keys.Where(file => file.EndsWith(".db", StringComparison.OrdinalIgnoreCase)))
-                foreach (var suffix in new[] { "-wal", "-shm" })
-                    if (File.Exists(db + suffix)) File.Delete(db + suffix);
-            foreach (var db in databases) File.Copy(db.Value, db.Key, true);
+            var stopDeadline=DateTime.UtcNow.AddSeconds(10);
+            while(UpdateJournal.PortBusy(journal.Port)&&DateTime.UtcNow<stopDeadline)await Task.Delay(100);
+            if(UpdateJournal.PortBusy(journal.Port))throw new IOException("Rollback postponed: server still owns its port. Recovery files preserved.");
+            if(plan.Kind=="server")serverGuard??=UpdateJournal.AcquireServerLock(target);
+            journal.Restore(target,transaction);
             restored = true;
-            File.WriteAllText(Path.Combine(target, "updates-failed-version.json"),
-                JsonSerializer.Serialize(new { version = plan.Version, error = ex.Message, at = DateTimeOffset.UtcNow }));
+            serverGuard?.Dispose();serverGuard=null;
             // Old client must not retain the new readiness marker.
             if (File.Exists(plan.HealthFile)) File.Delete(plan.HealthFile);
             Launch(plan);
@@ -208,6 +252,7 @@ public static class Program
         }
         finally
         {
+            serverGuard?.Dispose();
             restarted?.Dispose();
             // Aborted preparation and completed rollback do not need duplicate
             // snapshots. An interrupted/failed rollback keeps recovery evidence.
@@ -225,8 +270,11 @@ public static class Program
             throw new InvalidDataException("Invalid restart plan.");
         string relativeExe = Path.GetRelativePath(target, plan.RestartExecutable);
         if (!File.Exists(PackageManifest.ChildPath(target, relativeExe))) throw new FileNotFoundException("Restart application missing.");
+        Directory.CreateDirectory(Path.Combine(target,"logs"));logFile=Path.Combine(target,"logs","updater.log");
         Directory.CreateDirectory(Path.Combine(target, ".ota"));
         using var transactionLock = new FileStream(Path.Combine(target, ".ota", "update.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        if(!plan.RecoveryOnly&&UpdateJournal.HasPending(target))throw new IOException("An interrupted update requires startup recovery first.");
+        if(!Uri.TryCreate(plan.HealthUrl,UriKind.Absolute,out var healthUri)||!healthUri.IsLoopback||healthUri.Scheme!="http")throw new InvalidDataException("Server health URL must be local HTTP.");
         try
         {
             File.WriteAllText(plan.ReadyFile, "ready");
@@ -238,14 +286,34 @@ public static class Program
             }
             foreach (int pid in plan.ParentPids.Distinct())
             {
-                try { using var parent = Process.GetProcessById(pid); await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
-                catch (ArgumentException) { }
+                await WaitForParent(pid);
+            }
+            if(plan.RecoveryOnly) {
+                transactionLock.Dispose();
+                if(!UpdateJournal.Recover(target,Log))throw new IOException("Recovery is owned by another updater.");
+                using var package=JsonDocument.Parse(File.ReadAllText(Path.Combine(target,"package.json")));
+                plan.Version=package.RootElement.GetProperty("version").GetString()??"";
             }
             using var restarted = Launch(plan);
             if (restarted == null) throw new IOException("Server could not restart.");
-            return 0;
+            using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(1)};
+            var healthDeadline=DateTime.UtcNow.AddSeconds(120);
+            while(DateTime.UtcNow<healthDeadline) {
+                if(restarted.HasExited)throw new IOException("Restarted server exited before readiness.");
+                try {
+                    using var health=JsonDocument.Parse(await http.GetStringAsync(plan.HealthUrl));
+                    var root=health.RootElement;
+                    if(root.GetProperty("app").GetString()=="NetCafeServer"&&root.GetProperty("status").GetString()=="ok"&&root.GetProperty("version").GetString()==plan.Version)return 0;
+                }catch(Exception error)when(error is HttpRequestException or JsonException or TaskCanceledException or InvalidOperationException or KeyNotFoundException){}
+                await Task.Delay(100);
+            }
+            throw new IOException("Restarted server readiness timed out; process left running for diagnostics.");
         }
-        catch (Exception error) { File.WriteAllText(plan.ReadyFile + ".error", error.Message); return 4; }
+        catch (Exception error) {
+            Log(error.ToString());File.WriteAllText(plan.ReadyFile + ".error", error.Message);
+            if(plan.RecoveryOnly)try{Launch(plan,recoveryFailed:true);}catch(Exception launchError){Log(launchError.ToString());}
+            return 4;
+        }
         finally
         {
             foreach (string file in new[] { plan.ReadyFile, plan.CommitFile, plan.CancelFile })
@@ -253,7 +321,7 @@ public static class Program
         }
     }
 
-    private static Process? Launch(UpdatePlan plan)
+    private static Process? Launch(UpdatePlan plan,string? updateToken=null,bool recoveryFailed=false)
     {
         var info = new ProcessStartInfo
         {
@@ -261,6 +329,12 @@ public static class Program
             UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
         };
         foreach (string arg in plan.RestartArguments) info.ArgumentList.Add(arg);
+        info.Environment.Remove("SOFTECH_UPDATE_TOKEN");
+        info.Environment.Remove("SOFTECH_UPDATER_RESTART");
+        info.Environment.Remove("SOFTECH_RECOVERY_FAILED");
+        if(recoveryFailed)info.Environment["SOFTECH_RECOVERY_FAILED"]="1";
+        if(plan.RestartOnly)info.Environment["SOFTECH_UPDATER_RESTART"]="1";
+        if(updateToken!=null)info.Environment["SOFTECH_UPDATE_TOKEN"]=updateToken;
         if (plan.Kind == "client")
         {
             info.ArgumentList.Add("--update-health");
@@ -271,7 +345,6 @@ public static class Program
 
     private static void Log(string message)
     {
-        try { if (logFile != null) File.AppendAllText(logFile, $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}"); }
-        catch { }
+        if (logFile != null) BoundedLog.Append(logFile, message);
     }
 }

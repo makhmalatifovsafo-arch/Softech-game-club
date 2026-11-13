@@ -88,6 +88,16 @@ jobs:
       - run: dotnet build SoftechUpdater/SoftechUpdater.csproj
       - run: dotnet build tests/FixtureClient/FixtureClient.csproj
       - run: node tests/updater-transaction.mjs
+      - run: node tests/updater-server-transaction.mjs
+      - run: dotnet build NetCafeServer/Service/SoftechService.csproj
+      - run: node tests/server-service.mjs
+      - run: node tests/service-emergency-fallback.mjs
+      - name: Publish and verify real Windows service on disposable runner
+        run: |
+          dotnet publish NetCafeServer/Service/SoftechService.csproj -c Release -p:PublishDir=../../.test-output/service-publish/ -p:NuGetAudit=false
+          if ($LASTEXITCODE -ne 0) { throw 'Service publish failed' }
+          dotnet run --project tests/ServerService/ServerService.csproj -- .test-output/service-publish/SoftechService.exe (Get-Command node).Source
+          if ($LASTEXITCODE -ne 0) { throw 'Windows service lifecycle test failed' }
       - name: Build complete payloads and bootstrap installers
         run: ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION -Repository $env:GITHUB_REPOSITORY
       - name: Verify packaged applications
