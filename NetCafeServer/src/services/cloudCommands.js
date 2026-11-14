@@ -22,11 +22,11 @@ export function commandResults(db, {currentVersion, bootId=commandBootId, uptime
     id:r.id,status:['EXECUTED','FAILED'].includes(r.status)?r.status:'PENDING',message:r.message || '',version:r.expected_version || null
   }));
 }
-export async function applyCloudCommands(db,envelopes,license,{broadcast,maintain,hasActiveSessions,bootId=commandBootId}) {
+export async function applyCloudCommands(db,envelopes,license,{broadcast,updateClients,maintain,hasActiveSessions,bootId=commandBootId}) {
   init(db);
   for (const envelope of Array.isArray(envelopes)?envelopes.slice(0,50):[]) {
     const p=envelope?.payload;
-    if(!p||p.clubId!==Number(license?.clubId)||p.hardwareFingerprint!==license?.hardwareFingerprint||!Number.isSafeInteger(p.id)||p.id<1||!['RESTART_SERVER','FORCE_UPDATE','BROADCAST_ANNOUNCEMENT'].includes(p.action)||!/^[a-f0-9]{64}$/.test(envelope.signature||''))continue;
+    if(!p||p.clubId!==Number(license?.clubId)||p.hardwareFingerprint!==license?.hardwareFingerprint||!Number.isSafeInteger(p.id)||p.id<1||!['RESTART_SERVER','FORCE_UPDATE','FORCE_CLIENT_UPDATE','BROADCAST_ANNOUNCEMENT'].includes(p.action)||!/^[a-f0-9]{64}$/.test(envelope.signature||''))continue;
     const signature=crypto.createHmac('sha256',process.env.SOFTECH_CLOUD_KEY||'SOFTECH_CLOUD_RSA_HMAC_MASTER_SIGNING_KEY_2026').update('remote-command:'+JSON.stringify(p)).digest();
     if(!crypto.timingSafeEqual(signature,Buffer.from(envelope.signature,'hex')))continue;
     const previous=db.prepare('SELECT status FROM cloud_command_receipts WHERE id=? AND club_id=?').get(p.id,p.clubId);
@@ -47,6 +47,12 @@ export async function applyCloudCommands(db,envelopes,license,{broadcast,maintai
       // Only an invalidation signal goes to workstation sockets; the text is
       // fetched through the authenticated staff API on the server screen.
       if(message)try{broadcast({id:p.id});}catch{}
+      continue;
+    }
+    if(p.action==='FORCE_CLIENT_UPDATE') {
+      const count=Number(updateClients?.(options)||0);
+      db.prepare('INSERT INTO cloud_command_receipts(id,club_id,status,message) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,message=excluded.message')
+        .run(p.id,p.clubId,'EXECUTED',count>0?`${count} ta onlayn clientga yangilanish buyrug‘i yuborildi.`:'Onlayn client topilmadi. U ulanganda avtomatik yangilanishni tekshiradi.');
       continue;
     }
     db.prepare("INSERT OR IGNORE INTO cloud_command_receipts(id,club_id,status) VALUES (?,?,'WAITING')").run(p.id,p.clubId);

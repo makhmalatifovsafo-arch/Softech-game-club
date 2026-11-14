@@ -244,7 +244,7 @@ export class TelemetryService {
    * 4. Klub serveriga masofaviy boshqaruv buyrug'ini navbatga qo'yish
    */
   static queueRemoteCommand(clubId, commandType, payload = {}) {
-    const validCommands = ['RESET_ADMIN_PASSWORD', 'LOCK_CLUB_LICENSE', 'UNLOCK_CLUB_LICENSE', 'FORCE_UPDATE', 'RESTART_SERVER', 'BROADCAST_ANNOUNCEMENT'];
+    const validCommands = ['RESET_ADMIN_PASSWORD', 'LOCK_CLUB_LICENSE', 'UNLOCK_CLUB_LICENSE', 'FORCE_UPDATE', 'FORCE_CLIENT_UPDATE', 'RESTART_SERVER', 'BROADCAST_ANNOUNCEMENT'];
     if (!validCommands.includes(commandType)) {
       throw new Error(`Noto'g'ri buyruq turi: ${commandType}`);
     }

@@ -471,13 +471,12 @@
           </button>
 
           <!-- 2. Band qilingan -->
-          <button type="button" onclick="switchView('bookings')" data-view="bookings" title="Tez orada..."
+          <button type="button" onclick="switchView('bookings')" data-view="bookings"
                   class="sidebar-nav-btn relative z-10 w-full flex items-center justify-between px-3.5 py-3.5 rounded-xl text-sm font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer group">
             <div class="flex items-center gap-3">
               <span class="nav-icon text-lg">📅</span>
               <span class="nav-label">Band qilingan</span>
             </div>
-            <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 whitespace-nowrap">Tez orada...</span>
           </button>
 
           <!-- 3. Otchyot -->
@@ -859,6 +858,15 @@
   <!-- VIEW 2: BOOKINGS (BAND QILINGANLAR VA REZERVATSIYA MATRITSASI)          -->
   <!-- ===================================================================== -->
   <section id="view-bookings" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-5">
+    <div class="min-h-[55vh] flex items-center justify-center">
+      <div class="w-full max-w-lg rounded-3xl border border-sky-500/20 bg-[var(--card-bg)] px-8 py-12 text-center shadow-2xl shadow-sky-950/20">
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-sky-500/25 bg-sky-500/10 text-3xl">📅</div>
+        <h2 class="text-2xl font-bold text-white">Band qilingan</h2>
+        <p class="mt-3 text-sm text-[var(--text-muted)]">Bu bo‘lim hozir tayyorlanmoqda.</p>
+        <div class="mt-6 inline-flex items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-300">Tez orada...</div>
+      </div>
+    </div>
+    <div class="hidden" aria-hidden="true">
     <!-- Header with Date Navigator & Controls -->
     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
       <div>
@@ -1016,6 +1024,7 @@
           </table>
         </div>
       </div>
+    </div>
     </div>
   </section>
 
@@ -2101,7 +2110,7 @@
         </div>
 
         <!-- TAB 2: TARIFFS & DYNAMIC SCHEDULES -->
-        <div id="tabContent-tariffs" class="space-y-6 hidden">
+        <div id="tabContent-tariffs" class="flex flex-col gap-6 hidden">
           <!-- 0. VIP POSTPAID BOSHQARUV BLOKI -->
           <div class="p-5 rounded-2xl border border-amber-500/30 bg-gradient-to-br from-[#121217] via-[#16141c] to-[#09090b] shadow-xl relative overflow-hidden">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#27272a]/80">
@@ -2177,13 +2186,13 @@
             </div>
           </div>
 
-          <section id="roomPricingSettings" class="p-4 rounded-xl border border-sky-500/30 bg-sky-500/5"></section>
-          <div id="generalTariffSettings" hidden>
+          <section id="roomPricingSettings" class="order-2 p-4 rounded-xl border border-sky-500/30 bg-sky-500/5"></section>
+          <div id="generalTariffSettings" class="order-1 space-y-4">
           <p class="text-xs text-amber-300">Tarif belgilanmagan kun yoki vaqtga seans ochilmaydi. Xonaga alohida tarif kiritilgan bo‘lsa, o‘sha xona tariflari ishlaydi. Boshlanish va tugash bir xil bo‘lsa, tarif tanlangan kunlarda 24 soat amal qiladi.</p>
           <!-- 1. Yangi Dinamik Jadval Qo'shish -->
           <form onsubmit="handleCreateSchedule(event)" class="p-4 rounded-xl border border-[#27272a] bg-[#09090b] space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-white uppercase tracking-wider">+ Vaqt va Kun Tarifini Qo'shish</span>
+              <span class="text-xs font-bold text-white uppercase tracking-wider">+ Yangi vaqt oralig'i qo'shish</span>
               <span class="text-[11px] text-[#71717a]">Soat oralig'i va kunlar bo'yicha narxlash</span>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -2207,11 +2216,15 @@
               </div>
               <div>
                 <label class="block text-[11px] text-[#71717a] mb-1">Hafta Kunlari</label>
-                <select id="schedDays" class="w-full bg-[#141418] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white">
-                  <option value="[1,2,3,4,5]">Dush - Juma (Ish kunlari)</option>
-                  <option value="[6,7]">Shanba - Yakshanba (Dam olish)</option>
-                  <option value="[1,2,3,4,5,6,7]">Barcha kunlar (Har kuni)</option>
-                </select>
+                <div id="schedDays" class="grid grid-cols-4 sm:grid-cols-7 gap-1">
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="1" checked><span>Du</span></label>
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="2" checked><span>Se</span></label>
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="3" checked><span>Ch</span></label>
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="4" checked><span>Pa</span></label>
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="5" checked><span>Ju</span></label>
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="6" checked><span>Sh</span></label>
+                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="7" checked><span>Ya</span></label>
+                </div>
               </div>
             </div>
             <div class="flex justify-end pt-1">
@@ -2225,7 +2238,7 @@
           <!-- 2. Mavjud Dinamik Jadval Qoidalari -->
           <div>
             <div class="flex items-center justify-between mb-2">
-              <h4 class="text-xs font-bold text-white uppercase tracking-wider">Faol Dinamik Tarif Qoidalari (Schedules)</h4>
+              <h4 class="text-xs font-bold text-white uppercase tracking-wider">Amaldagi dinamik tariflar</h4>
               <span class="text-[11px] text-zinc-500">Avtomatik vaqt kesish va narx hisoblash</span>
             </div>
             <div id="dynamicSchedulesList" class="space-y-2">
@@ -7999,9 +8012,19 @@
     }
 
     let editingScheduleId = null;
+    function setScheduleDays(values = [1,2,3,4,5,6,7]) {
+      let parsed = values;
+      if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch { parsed = parsed.split(',').map(Number); } }
+      const selected = new Set((Array.isArray(parsed) ? parsed : []).map(Number));
+      document.querySelectorAll('[data-schedule-day]').forEach(input => { input.checked = selected.has(Number(input.value)); });
+    }
     function cancelScheduleEdit() {
       editingScheduleId = null;
       document.getElementById('schedName').value = '';
+      document.getElementById('schedStart').value = '10:00';
+      document.getElementById('schedEnd').value = '17:00';
+      document.getElementById('schedRate').value = '7000';
+      setScheduleDays();
       document.getElementById('schedSave').textContent = '+ Qoidani Saqlash';
       document.getElementById('schedCancel').classList.add('hidden');
     }
@@ -8013,10 +8036,7 @@
       document.getElementById('schedStart').value = schedule.start_time;
       document.getElementById('schedEnd').value = schedule.end_time;
       document.getElementById('schedRate').value = schedule.price_per_hour;
-      const select = document.getElementById('schedDays');
-      const days = typeof schedule.days_of_week === 'string' ? schedule.days_of_week : JSON.stringify(schedule.days_of_week);
-      if (![...select.options].some(option => option.value === days)) select.add(new Option('Tanlangan kunlar: '+days, days));
-      select.value = days;
+      setScheduleDays(schedule.days_of_week);
       document.getElementById('schedSave').textContent = 'O‘zgarishlarni saqlash';
       document.getElementById('schedCancel').classList.remove('hidden');
       document.getElementById('schedName').focus();
@@ -8028,10 +8048,14 @@
       const startTime = document.getElementById('schedStart').value;
       const endTime = document.getElementById('schedEnd').value;
       const pricePerHour = parseFloat(document.getElementById('schedRate').value);
-      const daysOfWeek = document.getElementById('schedDays').value;
+      const daysOfWeek = [...document.querySelectorAll('[data-schedule-day]:checked')].map(input => Number(input.value));
 
       if (!name) {
         alert('Iltimos, tarif nomini kiriting.');
+        return;
+      }
+      if (!daysOfWeek.length) {
+        alert('Kamida bitta hafta kunini tanlang.');
         return;
       }
 

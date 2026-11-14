@@ -13,6 +13,36 @@ import { LicenseManager } from '../services/licenseManager.js';
 import { normalizeMacAddress } from '../services/macAddress.js';
 
 export class ProtocolDispatcher {
+  static getClientRateConfig(pcId, clubId = 1, pcName = '') {
+    const zoneId = resolveZoneIdForComputer(pcId, clubId);
+    let zoneName = 'STANDARD';
+    if (zoneId) {
+      const zone = db.prepare('SELECT name FROM zones WHERE id = ? AND club_id = ?').get(zoneId, clubId);
+      if (zone?.name) zoneName = zone.name;
+    }
+
+    const currentRate = getActiveRateForMoment(new Date(), false, clubId, zoneId);
+    const pricePerHour = Number(currentRate?.pricePerHour || 0);
+    return {
+      pricePerHour,
+      rateFormatted: currentRate?.configured
+        ? `${pricePerHour.toLocaleString('uz-UZ').replace(/,/g, ' ')} UZS / soat`
+        : 'Tarif belgilanmagan',
+      zoneName,
+      pcNumber: pcName
+    };
+  }
+
+  static syncClientRate(pcId, clubId = 1, pcName = '', { force = false } = {}) {
+    const client = ClientManager.getClientByPcId(pcId);
+    if (!client) return null;
+    const config = this.getClientRateConfig(pcId, clubId, pcName || client.name);
+    const signature = `${config.pricePerHour}|${config.zoneName}|${config.rateFormatted}`;
+    if (!force && client.rateSignature === signature) return config;
+    if (ClientManager.send(pcId, 'CONFIG_UPDATE', config)) client.rateSignature = signature;
+    return config;
+  }
+
   static handleMessage(socket, rawMessage) {
     let message;
     try {
@@ -178,36 +208,11 @@ export class ProtocolDispatcher {
       return;
     }
 
-    // Calculate dynamic pricing based on zone and current server time
-    const zoneId = resolveZoneIdForComputer(pcId, clubId || 1);
-    let zoneName = 'STANDARD';
-    if (zoneId) {
-      const zRow = db.prepare('SELECT name FROM zones WHERE id = ?').get(zoneId);
-      if (zRow) zoneName = zRow.name;
-    }
-
-    const currentRate = getActiveRateForMoment(new Date(), false, clubId || 1, zoneId);
-    const pricePerHour = Number(currentRate?.pricePerHour || 0);
-    const rateFormatted = currentRate.configured ? `${pricePerHour.toLocaleString('uz-UZ').replace(/,/g, ' ')} UZS / soat` : 'Tarif belgilanmagan';
-
-    // Push CONFIG_UPDATE down to the client immediately
-    const configUpdateMsg = {
-      type: 'CONFIG_UPDATE',
-      event: 'CONFIG_UPDATE',
-      pricePerHour,
-      rateFormatted,
-      zoneName,
-      pcNumber: pcName,
-      payload: {
-        pricePerHour,
-        rateFormatted,
-        zoneName,
-        pcNumber: pcName
-      }
-    };
-    try {
-      socket.send(JSON.stringify(configUpdateMsg));
-    } catch {}
+    // Send the current dynamic rate on connect. Heartbeats below keep it live
+    // when a time boundary is crossed or a cashier edits the tariff.
+    const rateConfig = this.syncClientRate(pcId, clubId || 1, pcName, { force: true })
+      || this.getClientRateConfig(pcId, clubId || 1, pcName);
+    const { pricePerHour, zoneName } = rateConfig;
 
     // Check if active session exists to resume on client
     let activeSession = db.prepare(`
@@ -263,6 +268,8 @@ export class ProtocolDispatcher {
     const pcId = ClientManager.socketToPcId.get(socket);
     if (pcId) {
       ClientManager.recordHeartbeat(pcId);
+      const computer = db.prepare('SELECT club_id, name FROM computers WHERE id = ?').get(pcId);
+      this.syncClientRate(pcId, Number(computer?.club_id || 1), computer?.name || '');
     }
   }
 

@@ -124,10 +124,6 @@ function initLiquidSidebar() {
  * @param {'workstations'|'bookings'|'reports'|'stats'|'bar'|'history'} viewName 
  */
 function switchView(viewName) {
-  if (viewName === 'bookings') {
-    if (typeof showToast === 'function') showToast('Band qilingan — Tez orada...', 'info');
-    return;
-  }
   const validViews = ['workstations', 'bookings', 'reports', 'stats', 'bar', 'history'];
   if (!validViews.includes(viewName)) viewName = 'workstations';
 
@@ -203,7 +199,7 @@ function switchView(viewName) {
       fetchData();
     }
   } else if (viewName === 'bookings') {
-    renderBookingsView();
+    // Bron funksiyasi tayyor bo'lguncha bo'lim ichidagi placeholder ko'rsatiladi.
   } else if (viewName === 'reports') {
     renderReportsView();
   } else if (viewName === 'stats') {

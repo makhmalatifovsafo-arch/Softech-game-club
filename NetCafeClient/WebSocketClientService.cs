@@ -102,6 +102,7 @@ public class WebSocketClientService
     public event Action<SessionInfo>?                          OnSessionInfo;
     public bool CanSelfClose { get; private set; }
     public event Action<string>?                               OnPowerCommand;       // SHUTDOWN | REBOOT | LOCK | UNLOCK
+    public event Action?                                       OnForceClientUpdate;
     public event Action<string, double, string, string>?       OnPcConfigReceived;   // zoneName, pricePerHour, formattedRate, qrToken
     public event Action<string, string>?                       OnEmergencyLockdown;  // reason, message (SaaS Remote Kill-Switch)
 
@@ -680,6 +681,10 @@ public class WebSocketClientService
                     }
                     break;
                 }
+
+                case "FORCE_CLIENT_UPDATE":
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() => OnForceClientUpdate?.Invoke());
+                    break;
 
                 // ---- BUG 3: Dynamic Pricing CONFIG_UPDATE ----
                 case "CONFIG_UPDATE":

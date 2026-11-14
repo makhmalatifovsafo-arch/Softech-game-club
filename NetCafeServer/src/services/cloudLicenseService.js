@@ -358,6 +358,11 @@ export class CloudLicenseService {
       const result=await response.json();
       this.commandTask ??= applyCloudCommands(db,result.signedCommands,LicenseManager.licenseData,{
         broadcast:message=>ClientManager.broadcast('CLOUD_ANNOUNCEMENT',message),
+        updateClients:options=>{
+          const clients=ClientManager.getAllClients().filter(client=>ClientManager.isConnected(client.pcId));
+          for(const client of clients)ClientManager.send(client.pcId,'FORCE_CLIENT_UPDATE',{reason:String(options?.reason||'Super Admin buyrug‘i').slice(0,200)});
+          return clients.length;
+        },
         hasActiveSessions:()=>Boolean(db.prepare("SELECT id FROM sessions WHERE status='ACTIVE' LIMIT 1").get()),
         maintain:(action,options,callbacks)=>{
           if(process.env.NODE_ENV==='test'||process.platform!=='win32')throw Error('Masofaviy o‘rnatish test/platformada o‘chirilgan.');

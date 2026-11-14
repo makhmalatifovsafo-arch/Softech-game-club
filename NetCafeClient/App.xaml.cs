@@ -252,7 +252,7 @@ public partial class App : WpfApplication
         });
 
         _wsService.OnSessionBarNotice += (sessionId, message, amount) =>
-            Dispatcher.Invoke(() => _lockWindow?.ShowSessionBarNotice(sessionId, message, amount));
+            _ = ShowSessionBarNoticeAfterLockAsync(sessionId, message, amount);
         _wsService.OnMemberSessionEnded += summary =>
             Dispatcher.Invoke(() => _lockWindow?.ShowMemberSessionSummary(summary));
 
@@ -260,6 +260,11 @@ public partial class App : WpfApplication
         {
             Dispatcher.Invoke(() => HandlePowerCommand(action));
         };
+        _wsService.OnForceClientUpdate += () =>
+        {
+            _ = AutoUpdateService.Instance.ForceCheckAsync();
+        };
+        _wsService.OnForceClientUpdate += () => _ = AutoUpdateService.Instance.ForceCheckAsync();
 
         // ---- 10.5. SaaS Anti-Piracy & Remote Kill-Switch Enforcer ----
         _wsService.OnEmergencyLockdown += (reason, message) =>
@@ -408,6 +413,19 @@ public partial class App : WpfApplication
         {
             System.Diagnostics.Debug.WriteLine($"[PowerCmd] xato: {ex.Message}");
         }
+    }
+
+    private async System.Threading.Tasks.Task ShowSessionBarNoticeAfterLockAsync(string sessionId, string message, double amount)
+    {
+        // STOP_SESSION and LOCK_SCREEN arrive back-to-back. Let the lock screen
+        // finish resetting first, otherwise its redraw can immediately hide the
+        // checkout notice. A newly-started session must never receive an old notice.
+        await System.Threading.Tasks.Task.Delay(250);
+        await Dispatcher.InvokeAsync(() =>
+        {
+            if (!_isSessionActive)
+                _lockWindow?.ShowSessionBarNotice(sessionId, message, amount);
+        });
     }
 
     // -----------------------------------------------------------------------

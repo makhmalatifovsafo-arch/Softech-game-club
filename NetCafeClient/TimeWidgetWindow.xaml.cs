@@ -1,8 +1,10 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
 
 namespace NetCafeClient;
@@ -16,6 +18,32 @@ public partial class TimeWidgetWindow : Window
     private SessionInfo? _sessionInfo;
     private long _infoTimestamp;
     private bool _serverConnected = true;
+    private bool _sessionActive;
+    private bool _hiddenForFullscreen;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public NativeRect Monitor;
+        public NativeRect WorkArea;
+        public uint Flags;
+    }
+
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    private static readonly string[] NonGameShellProcesses =
+    {
+        "explorer", "dwm", "shellexperiencehost", "startmenuexperiencehost",
+        "searchhost", "lockapp", "softechcockpit", "netcafeclient"
+    };
 
     public Func<string, string?, string, System.Threading.Tasks.Task<System.Text.Json.JsonElement>>? UpdateAccount;
     private string _memberUsername = "";
@@ -73,6 +101,8 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            _sessionActive = true;
+            _hiddenForFullscreen = false;
             _canSelfClose = true;
             _memberUsername = username;
             BtnAccount.Visibility = Visibility.Visible;
@@ -99,6 +129,8 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            _sessionActive = true;
+            _hiddenForFullscreen = false;
             _canSelfClose = false;
             BtnAccount.Visibility = Visibility.Collapsed;
             _accountWindow?.Close();
@@ -138,6 +170,8 @@ public partial class TimeWidgetWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
+            _sessionActive = false;
+            _hiddenForFullscreen = false;
             _timer.Stop();
             _expiresAtTimestamp = null;
             _sessionInfo = null;
@@ -151,6 +185,7 @@ public partial class TimeWidgetWindow : Window
 
     private void Timer_Tick(object? sender, EventArgs e)
     {
+        UpdateFullscreenVisibility();
         if (_expiresAtTimestamp is long deadline)
         {
             _remainingSeconds = (int)Math.Max(0, Math.Ceiling((deadline - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency));
@@ -163,6 +198,56 @@ public partial class TimeWidgetWindow : Window
             }
         }
         else UpdateDisplay();
+    }
+
+    private void UpdateFullscreenVisibility()
+    {
+        if (!_sessionActive) return;
+        var fullscreen = IsForeignFullscreenWindowActive();
+        if (fullscreen && !_hiddenForFullscreen)
+        {
+            _hiddenForFullscreen = true;
+            Hide();
+        }
+        else if (!fullscreen && _hiddenForFullscreen)
+        {
+            _hiddenForFullscreen = false;
+            Show(); // ShowActivated=False: boshqa oynadan fokusni tortib olmaydi.
+        }
+    }
+
+    private bool IsForeignFullscreenWindowActive()
+    {
+        try
+        {
+            var foreground = GetForegroundWindow();
+            if (foreground == IntPtr.Zero) return false;
+            var own = new WindowInteropHelper(this).Handle;
+            if (foreground == own) return false;
+
+            GetWindowThreadProcessId(foreground, out var processId);
+            if (processId == 0 || processId == Environment.ProcessId) return false;
+            using var process = Process.GetProcessById((int)processId);
+            var name = process.ProcessName.ToLowerInvariant();
+            if (Array.Exists(NonGameShellProcesses, item => item == name)) return false;
+
+            if (!GetWindowRect(foreground, out var windowRect)) return false;
+            var monitor = MonitorFromWindow(foreground, 2); // MONITOR_DEFAULTTONEAREST
+            if (monitor == IntPtr.Zero) return false;
+            var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (!GetMonitorInfo(monitor, ref info)) return false;
+
+            const int tolerance = 2;
+            return windowRect.Left <= info.Monitor.Left + tolerance
+                && windowRect.Top <= info.Monitor.Top + tolerance
+                && windowRect.Right >= info.Monitor.Right - tolerance
+                && windowRect.Bottom >= info.Monitor.Bottom - tolerance;
+        }
+        catch
+        {
+            // Aniqlash xatosida vidjetni yashirib qo'ymaymiz.
+            return false;
+        }
     }
 
     public void UpdateSessionInfo(SessionInfo info)

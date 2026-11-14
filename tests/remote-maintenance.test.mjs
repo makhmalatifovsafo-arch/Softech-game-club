@@ -52,3 +52,16 @@ test('rollback or interrupted command is never acknowledged as a successful upda
   for(const version of ['1.0.33','1.0.9','',undefined])assert.throws(()=>requireRemoteMaintenance({server_version:version}));
   for(const version of ['1.0.34','1.0.100','1.1.0','2.0.0'])requireRemoteMaintenance({server_version:version});
 });
+test('signed client update command reaches every connected kiosk without restarting the server',async()=>{
+  const db=new DatabaseSync(':memory:'),cloud=new DatabaseSync(':memory:');
+  cloud.exec("CREATE TABLE remote_commands(id INTEGER PRIMARY KEY,club_id INTEGER,command_type TEXT,payload TEXT,status TEXT,executed_at TEXT);INSERT INTO remote_commands VALUES(8,7,'FORCE_CLIENT_UPDATE','{\"reason\":\"fixture\"}','PENDING',NULL)");
+  const club={id:7,hardware_fingerprint:'fixture'},license={clubId:7,hardwareFingerprint:'fixture'};
+  let options;
+  try {
+    const envelopes=await deliverCommands({db:cloud},club);
+    await applyCloudCommands(db,envelopes,license,{broadcast(){},hasActiveSessions:()=>false,maintain(){throw Error('Server maintenance must not run');},updateClients:value=>{options=value;return 4;}});
+    assert.deepEqual(options,{reason:'fixture'});
+    const result=commandResults(db)[0];assert.equal(result.status,'EXECUTED');assert.match(result.message,/4 ta onlayn client/);
+    assert.equal((await deliverCommands({db:cloud},club,[result])).length,0);
+  } finally { db.close();cloud.close(); }
+});

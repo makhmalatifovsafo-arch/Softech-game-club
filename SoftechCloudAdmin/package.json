@@ -1,6 +1,6 @@
 {
   "name": "softech-cloud-admin",
-  "version": "1.3.0",
+  "version": "1.3.2",
   "description": "Softech Game Club — Multi-Club Central SaaS & Telemetry Core Engine",
   "main": "src/local-server.js",
   "type": "module",

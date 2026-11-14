@@ -86,6 +86,14 @@ public sealed class AutoUpdateService
     public void Stop() => stopping.Cancel();
     public void OnSessionEnded() { /* The one-second safety loop makes the decision. */ }
     public void ApplyStagedUpdate() => _ = TryApplyAsync(); // Manual callers cannot bypass safety.
+    public async Task<bool> ForceCheckAsync()
+    {
+        // A remote request accelerates download/staging, but applying still waits
+        // for the kiosk to have no active session and no maintenance window.
+        bool found = await CheckForUpdatesAsync();
+        if (found || IsUpdateStaged) _ = TryApplyAsync();
+        return found || IsUpdateStaged;
+    }
 
     public async Task<bool> CheckForUpdatesAsync()
     {
@@ -178,8 +186,10 @@ public sealed class AutoUpdateService
         string? cancel = null;
         try
         {
+            // Third-party kiosk shells (RunPad and similar) intentionally stay
+            // open while the PC is locked. Session/maintenance state is the
+            // authority; treating the shell as a game postponed updates forever.
             if (!SafeOnUiThread(false, IdleSafety.IdleSeconds())) return;
-            if (IdleSafety.HasUserPrograms(root)) return;
             string handover = Path.Combine(staging, "handover-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(handover);
             string updater = Path.Combine(handover, "SoftechUpdater.exe");
@@ -209,12 +219,11 @@ public sealed class AutoUpdateService
                 await Task.Delay(100, stopping.Token);
             }
             // Recheck after all disk I/O. A newly started game or mouse movement cancels handover.
-            bool programsOpen = IdleSafety.HasUserPrograms(root);
             var app = System.Windows.Application.Current;
             app.Dispatcher.Invoke(() =>
             {
                 if (!IdleSafety.CanApply(sessionActive?.Invoke() ?? true, maintenance?.Invoke() ?? true,
-                    IdleSafety.IdleSeconds(), programsOpen, idleSeconds))
+                    IdleSafety.IdleSeconds(), false, idleSeconds))
                     throw new InvalidOperationException("Computer became busy; update postponed.");
                 WatchdogService.PrepareForUpdate();
                 File.WriteAllText(plan.CommitFile, stagedVersion);

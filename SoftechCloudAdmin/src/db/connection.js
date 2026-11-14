@@ -84,14 +84,14 @@ export function initDatabase() {
   // remote_commands jadvali constraint migratsiyasi
   try {
     const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='remote_commands'").get();
-    if (tableSql && tableSql.sql && !tableSql.sql.includes('BROADCAST_ANNOUNCEMENT')) {
+    if (tableSql && tableSql.sql && !tableSql.sql.includes('FORCE_CLIENT_UPDATE')) {
       db.exec(`
         PRAGMA foreign_keys = OFF;
         CREATE TABLE remote_commands_v2 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             club_id INTEGER NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
             command_type TEXT NOT NULL 
-                CHECK(command_type IN ('RESET_ADMIN_PASSWORD', 'LOCK_CLUB_LICENSE', 'UNLOCK_CLUB_LICENSE', 'FORCE_UPDATE', 'RESTART_SERVER', 'BROADCAST_ANNOUNCEMENT')),
+                CHECK(command_type IN ('RESET_ADMIN_PASSWORD', 'LOCK_CLUB_LICENSE', 'UNLOCK_CLUB_LICENSE', 'FORCE_UPDATE', 'FORCE_CLIENT_UPDATE', 'RESTART_SERVER', 'BROADCAST_ANNOUNCEMENT')),
             payload TEXT NOT NULL DEFAULT '{}',
             status TEXT NOT NULL DEFAULT 'PENDING' 
                 CHECK(status IN ('PENDING', 'EXECUTED', 'FAILED')),

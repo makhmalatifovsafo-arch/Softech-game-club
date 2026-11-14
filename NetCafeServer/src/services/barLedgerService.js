@@ -242,9 +242,9 @@ export class BarLedgerService {
         refundAmount: preview.refundAmount,
         checkoutMessage: preview.barBill > 0
           ? `Siz ${preview.barSummaryText} olgansiz.\n${preview.refundAmount > 0
-            ? 'Qaytimingizni kassadan olishni unutmang 😊'
+            ? `Kassadan ${preview.refundAmount.toLocaleString('uz-UZ')} so‘m qaytim olishni unutmang 😊`
             : preview.amountToCollect > 0
-              ? 'Kassaga quyidagi summani to‘lashni unutmang 😊'
+              ? `Kassaga ${preview.amountToCollect.toLocaleString('uz-UZ')} so‘m to‘lashni unutmang 😊`
               : 'Hisob-kitob teng: qo‘shimcha to‘lov yo‘q 😊'}`
           : null,
         forceKillApps: true,

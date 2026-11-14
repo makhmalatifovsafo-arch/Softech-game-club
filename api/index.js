@@ -316,7 +316,7 @@ export default async function handler(req, res) {
       }
 
       if(action==='RESET_ADMIN_PASSWORD')return sendJson(res,400,{success:false,error:'Menejer akkaunti oynasidan login va parolni belgilang.'});
-      if(!['RESTART_SERVER','FORCE_UPDATE','BROADCAST_ANNOUNCEMENT'].includes(action))return sendJson(res,400,{success:false,error:'Buyruq turi qo‘llab-quvvatlanmaydi.'});
+      if(!['RESTART_SERVER','FORCE_UPDATE','FORCE_CLIENT_UPDATE','BROADCAST_ANNOUNCEMENT'].includes(action))return sendJson(res,400,{success:false,error:'Buyruq turi qo‘llab-quvvatlanmaydi.'});
       if(action==='BROADCAST_ANNOUNCEMENT') {
         try {options=announcementPayload(options);}catch(error){return sendJson(res,400,{success:false,error:error.message});}
       }
