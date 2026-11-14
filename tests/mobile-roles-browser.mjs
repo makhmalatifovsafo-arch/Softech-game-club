@@ -95,7 +95,8 @@ try{
   assert.equal(await page.locator('[name=minutes]').isVisible(),mode==='hours');
   assert.equal(await page.locator('[name=amount]').isVisible(),mode==='price');
   assert.equal(await page.locator('[name=paymentType]').isVisible(),mode!=='postpaid');
-  await page.locator('#sessionCalculate').click();await page.waitForFunction(()=>!document.querySelector('#actionSubmit').disabled);
+  // Editing the input must quote automatically, without a separate calculate click.
+  await page.waitForFunction(()=>!document.querySelector('#actionSubmit').disabled);
   if(legacyPreview)assert.match(await page.locator('#sessionQuote').innerText(),/server versiyasi/);
   if(mode==='price')assert.match(await page.locator('#sessionQuote').innerText(),/1 soat 25 daqiqa 43 soniya/);
   if(mode==='postpaid')assert.match(await page.locator('#sessionQuote').innerText(),/VIP Postpaid/);

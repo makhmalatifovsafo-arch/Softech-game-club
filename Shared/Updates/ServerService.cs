@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Text;
 using System.ComponentModel;
+using System.Text.Json;
 
 namespace Softech.Updates;
 
@@ -18,6 +19,30 @@ public static class ServerService
     public static string ProcessPath(int pid) {
         IntPtr handle=OpenProcess(0x1000,false,pid);if(handle==IntPtr.Zero)return "";
         try{var name=new StringBuilder(32768);int size=name.Capacity;return QueryFullProcessImageName(handle,0,name,ref size)?name.ToString():"";}finally{CloseHandle(handle);}
+    }
+    public static bool OwnsBackend(string root,int backendPid)
+    {
+        if(!OperatingSystem.IsWindows()||backendPid<=0||!Installed(root))return false;
+        root=Path.GetFullPath(root);
+        string expected=Path.Combine(root,"runtime","node.exe"),actual=ProcessPath(backendPid);
+        // A readable, different executable is positive evidence of a foreign
+        // process. Only use the service receipt when Windows denied the query.
+        if(actual.Length>0)return string.Equals(actual,expected,StringComparison.OrdinalIgnoreCase);
+        int hostPid=RunningProcessId();
+        if(hostPid<=0)return false;
+        return ReceiptMatches(root,backendPid,hostPid,DateTimeOffset.UtcNow);
+    }
+    internal static bool ReceiptMatches(string root,int backendPid,int hostPid,DateTimeOffset now)
+    {
+        try {
+            string receipt=Path.Combine(root,"data","service-status.json");
+            using var json=JsonDocument.Parse(File.ReadAllText(receipt));var state=json.RootElement;
+            if(state.GetProperty("hostPid").GetInt32()!=hostPid||state.GetProperty("backendPid").GetInt32()!=backendPid)return false;
+            string? mode=state.GetProperty("state").GetString();
+            if(mode is not ("RUNNING" or "EMERGENCY"))return false;
+            DateTimeOffset observed=state.GetProperty("observedAt").GetDateTimeOffset();
+            return observed<=now.AddSeconds(5)&&now-observed<=TimeSpan.FromSeconds(30);
+        } catch(Exception error)when(error is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException) { return false; }
     }
     public static bool Installed(string root)
     {
@@ -38,11 +63,25 @@ public static class ServerService
         if(process.ExitCode!=0)throw new IOException("Windows xizmat buyrug'i bajarilmadi: "+output.GetAwaiter().GetResult()+error.GetAwaiter().GetResult());
     }
     [StructLayout(LayoutKind.Sequential)] private struct Status { public uint Type,State,Accepted,ExitCode,Specific,Checkpoint,WaitHint; }
+    [StructLayout(LayoutKind.Sequential)] private struct ProcessStatus { public uint Type,State,Accepted,ExitCode,Specific,Checkpoint,WaitHint,ProcessId,Flags; }
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern IntPtr OpenSCManager(string? machine,string? database,uint access);
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] private static extern IntPtr OpenService(IntPtr manager,string name,uint access);
     [DllImport("advapi32.dll",SetLastError=true)] private static extern bool QueryServiceStatus(IntPtr service,out Status status);
+    [DllImport("advapi32.dll",SetLastError=true)] private static extern bool QueryServiceStatusEx(IntPtr service,int level,out ProcessStatus status,int size,out int needed);
     [DllImport("advapi32.dll",SetLastError=true)] private static extern bool ControlService(IntPtr service,uint control,out Status status);
     [DllImport("advapi32.dll")] private static extern bool CloseServiceHandle(IntPtr handle);
+    private static int RunningProcessId()
+    {
+        IntPtr manager=OpenSCManager(null,null,1),service=IntPtr.Zero;
+        try {
+            if(manager==IntPtr.Zero)return 0;
+            service=OpenService(manager,Name,0x0004);if(service==IntPtr.Zero)return 0;
+            int size=Marshal.SizeOf<ProcessStatus>();
+            if(!QueryServiceStatusEx(service,0,out var status,size,out _)||status.State!=4)return 0;
+            return checked((int)status.ProcessId);
+        } catch(OverflowException) { return 0; }
+        finally {if(service!=IntPtr.Zero)CloseServiceHandle(service);if(manager!=IntPtr.Zero)CloseServiceHandle(manager);}
+    }
     public static bool Exists {
         get {if(!OperatingSystem.IsWindows())return false;using var key=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\"+Name);return key!=null;}
     }

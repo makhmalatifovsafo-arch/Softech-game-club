@@ -30,6 +30,9 @@ async function health(){try{const h=await(await fetch(base+'/api/health',{signal
 async function stopNode(secret){return fetch(base+'/api/internal/service-stop',{method:'POST',headers:{'X-Softech-Service-Key':secret}});}
 try {
   launchHost();const first=await until(health);assert.ok(first.processId);
+  const serviceLog=fs.readFileSync(path.join(root,'logs','service.log'),'utf8');
+  assert.match(serviceLog,/Boshlang'ich "Demo Game Club"/, 'Service decoded Node UTF-8 output incorrectly');
+  assert.doesNotMatch(serviceLog,/СЂ|РІ/, 'Service log contains mojibake');
   const secret=JSON.parse(fs.readFileSync(path.join(root,'.service/private/control.key'))).secret;
   assert.equal(secret.length,64);assert.ok(fs.readdirSync(path.join(root,'.service/private')).some(n=>n.startsWith('control.key.corrupt-')));
   assert.equal((await stopNode('wrong')).status,403);

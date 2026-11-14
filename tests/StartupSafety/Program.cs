@@ -83,6 +83,21 @@ foreach (var item in cases)
 using (var handler = new HealthHandler(HttpStatusCode.OK, "", fail: true))
 using (var client = new HttpClient(handler))
     Check(!await new NodeProcessManager(client).IsServerHealthyAsync(), "Unavailable backend reported healthy");
+using (var handler = new HealthHandler(HttpStatusCode.OK, "{\"app\":\"NetCafeServer\",\"status\":\"ok\",\"processId\":4321}"))
+using (var client = new HttpClient(handler)) {
+    var serviceManager = new NodeProcessManager(client) {
+        ServiceInstallCheck = _ => true,
+        ServiceBackendCheck = (_,pid) => pid == 4321
+    };
+    Check(await serviceManager.IsServerHealthyAsync(), "Authenticated Windows service backend was rejected");
+    serviceManager.ServiceBackendCheck = (_,_) => false;
+    Check(!await serviceManager.IsServerHealthyAsync(), "Foreign process on the server port was trusted");
+}
+using (var handler = new HealthHandler(HttpStatusCode.OK, "{\"app\":\"NetCafeServer\",\"status\":\"ok\"}"))
+using (var client = new HttpClient(handler)) {
+    var serviceManager = new NodeProcessManager(client) { ServiceInstallCheck = _ => true, ServiceBackendCheck = (_,_) => true };
+    Check(!await serviceManager.IsServerHealthyAsync(), "Service health without a process identity was trusted");
+}
 Console.WriteLine("PASS: client installation/reconfiguration validation and launcher health identity checks");
 
 // Error code alone cannot diagnose a failed remote installation.

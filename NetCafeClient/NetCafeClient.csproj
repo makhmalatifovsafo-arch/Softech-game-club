@@ -9,6 +9,7 @@
     <!-- Ko'p monitor va Screen uchun zarur -->
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>NetCafeClient</AssemblyName>
     <RootNamespace>NetCafeClient</RootNamespace>
     <!-- Optimizatsiyalar -->
@@ -26,6 +27,7 @@
 
   <!-- config.json va SoftechUpdater.exe fayllarini har doim exe yoniga ko'chirish -->
   <ItemGroup>
+    <Resource Include="app.ico" />
     <Compile Include="../Shared/Networking/ServerAddress.cs" Link="Networking/ServerAddress.cs" />
     <None Update="config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

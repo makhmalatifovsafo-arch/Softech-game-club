@@ -706,7 +706,7 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     }
     public void ShowSessionBarNotice(string sessionId, string message, double amount)
     {
-        if (_lastSessionBarNotice == sessionId || amount <= 0) return;
+        if (_lastSessionBarNotice == sessionId || amount < 0) return;
         _lastSessionBarNotice = sessionId;
         SessionBarNoticeMessage.Text = message;
         SessionBarNoticeAmount.Text = amount.ToString("N0", CultureInfo.GetCultureInfo("uz-UZ")) + " so‘m";

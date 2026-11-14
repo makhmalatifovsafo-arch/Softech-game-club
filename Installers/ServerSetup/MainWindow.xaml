@@ -121,11 +121,6 @@
 
         <!-- Footer / Action Buttons -->
         <Grid Grid.Row="2" Margin="0,18,0,0">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                <Button x:Name="BtnStartServer" Content="▶️ Serverni Ishga Tushirish" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,10,0" Visibility="Collapsed" Click="BtnStartServer_Click"/>
-                <Button x:Name="BtnOpenBrowser" Content="🌐 Admin Panelni Ochish" Style="{StaticResource OutlineButtonStyle}" Visibility="Collapsed" Click="BtnOpenBrowser_Click"/>
-            </StackPanel>
-
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="BtnInstall" Content="🚀 O'RNATISHNI BOSHLASH" Style="{StaticResource NeonButtonStyle}" Margin="0,0,10,0" Click="BtnInstall_Click"/>
                 <Button x:Name="BtnClose" Content="Chiqish" Style="{StaticResource OutlineButtonStyle}" Click="BtnClose_Click"/>

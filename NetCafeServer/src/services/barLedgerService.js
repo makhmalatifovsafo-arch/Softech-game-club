@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { postpaidGameBill } from './clientSessionState.js';
 import { isMemberSession, isPrepaidMember, prepaidRefund, settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
@@ -51,7 +52,8 @@ export class BarLedgerService {
     const isPostpaid = !isMemberSession(session) && isPostpaidSession(session);
     const vipSettings = isPostpaid ? getClubSettings(targetClubId) : null;
     const member = isMemberSession(session) ? db.prepare('SELECT id,username,balance FROM users WHERE id=? AND club_id=?').get(session.user_id,session.club_id) : null;
-    const refund = isPrepaidMember(session) && session.status === 'ACTIVE' ? prepaidRefund(session,new Date(now)) : null;
+    const cashPrepaid = !isMemberSession(session) && !isPostpaid && session.status === 'ACTIVE';
+    const refund = (isPrepaidMember(session) || cashPrepaid) && session.status === 'ACTIVE' ? prepaidRefund(session,new Date(now)) : null;
 
     // 1. O'yin vaqti narxi hisob-kitobi
     let gameBill = 0;
@@ -103,7 +105,9 @@ export class BarLedgerService {
     // Prepaid bo'lsa: Game allaqachon to'langan, mijoz faqat BarBill to'laydi (yoki jami kassa formulasi bilan ko'rsatiladi).
     const totalSessionCost = gameBill + barBill;
     const gameAmountToCollect = !isPostpaid ? 0 : session.status === 'ACTIVE' ? gameBill : Math.max(0,gameBill-Number(session.paid_amount || 0));
-    const amountToCollect = gameAmountToCollect + barBill;
+    const prepaidCredit = cashPrepaid ? refund.amount : 0;
+    const amountToCollect = Math.max(0, gameAmountToCollect + barBill - prepaidCredit);
+    const refundAmount = Math.max(0, prepaidCredit - barBill);
 
     // Formula matni
     const durationLabel = playedHours >= 1 ? `${playedHours} soat` : `${playedMinutes} daqiqa`;
@@ -133,6 +137,8 @@ export class BarLedgerService {
       barBill,
       finalBill: totalSessionCost,
       amountToCollect,
+      prepaidCredit,
+      refundAmount,
       barItems,
       barSummaryText,
       formulaText,
@@ -152,6 +158,17 @@ export class BarLedgerService {
       const settlement = preview.sessionStatus === 'ACTIVE' ? settleMemberUsage(preview.sessionId,new Date(),true,true) : null;
       preview = this.getSessionCheckoutPreview(target, clubId);
       const targetClubId = clubId || 1;
+      const original = preview.prepaidCredit > 0
+        ? db.prepare("SELECT payment_method,payment_type FROM transactions WHERE session_id=? AND club_id=? AND amount>0 AND transaction_type!='BAR_SALE' ORDER BY created_at LIMIT 1").get(preview.sessionId,targetClubId)
+        : null;
+      const prepaidMethod = original?.payment_method || original?.payment_type || validPayMethod;
+      // Reverse unused prepaid game receipts, then record the full bar sale.
+      // Their net is the actual cash collected/refunded; reports retain game usage only.
+      if (preview.prepaidCredit > 0) {
+        db.prepare(`INSERT INTO transactions (id,club_id,session_id,amount,payment_type,payment_method,transaction_type,created_by,notes)
+          VALUES (?,?,?,?,?,?,'REFUND',?,'REFUND (Zdacha)')`).run(
+          'tx_refund_'+crypto.randomUUID(),targetClubId,preview.sessionId,-preview.prepaidCredit,prepaidMethod,prepaidMethod,String(cashierUserId || 'system'));
+      }
 
       // 1. O'yin vaqti tranzaksiyasi (agar Postpaid bo'lsa va to'lov olinayotgan bo'lsa)
       if (preview.gameAmountToCollect > 0) {
@@ -172,24 +189,27 @@ export class BarLedgerService {
 
       // 2. Bar savdosi tranzaksiyasi (agar barda to'lanmagan buyurtmalar bo'lsa)
       if (preview.barBill > 0) {
-        db.prepare(`
+        const prepaidBarAmount = Math.min(preview.barBill, preview.prepaidCredit);
+        const externalBarAmount = preview.barBill - prepaidBarAmount;
+        const insertBarSale = db.prepare(`
           INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by, notes)
           VALUES (?, ?, ?, ?, ?, ?, 'BAR_SALE', ?, ?)
-        `).run(
-          `tx_bar_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
-          targetClubId,
-          preview.sessionId,
-          preview.barBill,
-          validPayMethod,
-          validPayMethod,
-          String(cashierUserId || 'system'),
-          `BAR_SALE_CHECKOUT: ${preview.barSummaryText}`
-        );
+        `);
+        const recordBarPart = (amount, method, source) => {
+          if (amount <= 0) return;
+          insertBarSale.run(
+            `tx_bar_${crypto.randomUUID()}`, targetClubId, preview.sessionId, amount,
+            method, method, String(cashierUserId || 'system'),
+            `BAR_SALE_CHECKOUT_${source}: ${preview.barSummaryText}`);
+        };
+        recordBarPart(prepaidBarAmount, prepaidMethod, 'PREPAID_CREDIT');
+        recordBarPart(externalBarAmount, validPayMethod, 'COLLECTED');
 
         // Barcha tegishli bar buyurtmalarini PAID holatiga o'tkazish
         const markPaid = db.prepare(`UPDATE bar_orders SET payment_status='PAID', payment_method=?, paid_at=CURRENT_TIMESTAMP
           WHERE id=? AND club_id=? AND payment_status='PENDING_AT_CHECKOUT' AND approval_status='CONFIRMED'`);
-        for (const id of preview.pendingOrderIds) markPaid.run(validPayMethod, id, targetClubId);
+        const orderMethod = externalBarAmount > 0 ? validPayMethod : prepaidMethod;
+        for (const id of preview.pendingOrderIds) markPaid.run(orderMethod, id, targetClubId);
       }
 
       // 3. Sessiyani yakunlash (COMPLETED)
@@ -218,6 +238,15 @@ export class BarLedgerService {
         sessionId: preview.sessionId,
         reason: 'CHECKOUT_COMPLETED',
         memberSummary,
+        amountToCollect: preview.amountToCollect,
+        refundAmount: preview.refundAmount,
+        checkoutMessage: preview.barBill > 0
+          ? `Siz ${preview.barSummaryText} olgansiz.\n${preview.refundAmount > 0
+            ? 'Qaytimingizni kassadan olishni unutmang 😊'
+            : preview.amountToCollect > 0
+              ? 'Kassaga quyidagi summani to‘lashni unutmang 😊'
+              : 'Hisob-kitob teng: qo‘shimcha to‘lov yo‘q 😊'}`
+          : null,
         forceKillApps: true,
         message: 'Seans muvaffaqiyatli yakunlandi. Tashrifingiz uchun rahmat!'
       });
@@ -253,7 +282,7 @@ export class BarLedgerService {
         barBill: preview.barBill,
         finalBill: preview.finalBill,
         amountCollected: preview.amountToCollect,
-        refundAmount: settlement?.refundAmount || 0,
+        refundAmount: settlement?.refundAmount || preview.refundAmount || 0,
         memberSummary,
         formulaText: preview.formulaText,
         barSummaryText: preview.barSummaryText,

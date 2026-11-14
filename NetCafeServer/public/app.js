@@ -124,6 +124,10 @@ function initLiquidSidebar() {
  * @param {'workstations'|'bookings'|'reports'|'stats'|'bar'|'history'} viewName 
  */
 function switchView(viewName) {
+  if (viewName === 'bookings') {
+    if (typeof showToast === 'function') showToast('Band qilingan — Tez orada...', 'info');
+    return;
+  }
   const validViews = ['workstations', 'bookings', 'reports', 'stats', 'bar', 'history'];
   if (!validViews.includes(viewName)) viewName = 'workstations';
 

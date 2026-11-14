@@ -26,6 +26,8 @@ public class NodeProcessManager
     private Process? _spawnedProcess;
     private readonly SemaphoreSlim _startupGate = new(1, 1);
     internal Func<(string nodePath, string serverDir)> ResolvePaths = ResolveNodeAndServerPaths;
+    internal Func<string,bool> ServiceInstallCheck = ServerService.Installed;
+    internal Func<string,int,bool> ServiceBackendCheck = ServerService.OwnsBackend;
     internal TimeSpan StartupTimeout = TimeSpan.FromSeconds(90);
     internal Func<bool> PortIsBusy = () => Array.Exists(
         IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners(), endpoint => endpoint.Port == 5000);
@@ -61,7 +63,7 @@ public class NodeProcessManager
 
     private bool _isSpawnedByThisInstance;
     public string ServerDirectory => ResolvePaths().serverDir;
-    public bool ServiceInstalled => ServerService.Installed(ServerDirectory);
+    public bool ServiceInstalled => ServiceInstallCheck(ServerDirectory);
 
     public const string ServerUrl = "http://127.0.0.1:5000";
     public const string HealthCheckUrl = "http://127.0.0.1:5000/api/health";
@@ -92,7 +94,7 @@ public class NodeProcessManager
             if(root.TryGetProperty("updatePending",out var pending)&&pending.ValueKind==JsonValueKind.True)return false;
             if(ServiceInstalled) {
                 if(!root.TryGetProperty("processId",out var pid)||!pid.TryGetInt32(out int id))return false;
-                if(!string.Equals(ServerService.ProcessPath(id),Path.Combine(ServerDirectory,"runtime","node.exe"),StringComparison.OrdinalIgnoreCase))return false;
+                if(!ServiceBackendCheck(ServerDirectory,id))return false;
             }
             return root.TryGetProperty("app", out var app) && (app.GetString() is "NetCafeServer" or "NetCafeEmergency") &&
                 root.TryGetProperty("status", out var status) && status.GetString() == "ok";

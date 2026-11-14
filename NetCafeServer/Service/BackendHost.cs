@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using Softech.Updates;
 using SoftechCockpit;
 
@@ -64,7 +65,7 @@ public sealed class BackendHost(string root)
     private void StartProcess(string script,bool emergency)
     {
         if(!File.Exists(PackageManifest.ChildPath(root,script))){errorCode="SCRIPT_MISSING";return;}
-        var info=new ProcessStartInfo(Path.Combine(root,"runtime","node.exe")){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,RedirectStandardError=true,RedirectStandardOutput=true};
+        var info=new ProcessStartInfo(Path.Combine(root,"runtime","node.exe")){WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,RedirectStandardError=true,RedirectStandardOutput=true,StandardErrorEncoding=Encoding.UTF8,StandardOutputEncoding=Encoding.UTF8};
         info.ArgumentList.Add(script);
         foreach(string key in new[]{"SOFTECH_COCKPIT_PID","SOFTECH_COCKPIT_EXE","SOFTECH_UPDATE_TOKEN","SOFTECH_UPDATER_RESTART","SOFTECH_RECOVERY_FAILED"})info.Environment.Remove(key);
         info.Environment["SOFTECH_SERVICE_ROOT"]=root;info.Environment["SOFTECH_SERVICE_CONTROL_SECRET"]=secret;

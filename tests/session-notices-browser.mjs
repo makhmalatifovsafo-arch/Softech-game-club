@@ -32,10 +32,10 @@ try{
   console.log('PASS member logout notice: account name, products and no automatic dismissal');
 
   const html=fs.readFileSync('NetCafeServer/public/index.html','utf8');
-  const quoteHelper=html.slice(html.indexOf('    async function fetchStartQuote('),html.indexOf('    // 1. Soat'));
+  const quoteHelper=html.slice(html.indexOf('    function quoteDurationLabel('),html.indexOf('    // 1. Soat'));
   const hours=html.slice(html.indexOf('    function calcFromHours('),html.indexOf('    function setHoursPreset('));
   await page.goto('about:blank');
-  await page.setContent(['hoursCalculatedMins','startModalDurationSummary','startModalPerPcPrice','startModalPrice','startModalTotalLabel'].map(id=>`<span id="${id}"></span>`).join(''));
+  await page.setContent('<input id="inputHours">'+['hoursCalculatedMins','startModalDurationSummary','startModalPerPcPrice','startModalPrice','startModalTotalLabel'].map(id=>`<span id="${id}"></span>`).join(''));
   await page.addScriptTag({content:`let priceCalculationRevision=0,calcDebounceTimer=null;const targetSelectedPcIds=['pc'],currentHourlyRate=7000,authToken='test';
     const pending=[];function fetch(url,options){return new Promise(resolve=>pending.push({hours:JSON.parse(options.body).durationHours,resolve}));}
     ${quoteHelper}\n${hours}`});
@@ -46,5 +46,8 @@ try{
   await page.evaluate(()=>pending[0].resolve({ok:true,json:async()=>({price:4900})}));
   await page.waitForTimeout(100);
   assert.equal((await page.locator('#startModalPrice').innerText()).replace(/\D/g,''),'14000');
+  await page.evaluate(()=>calcFromMinutes(14));await page.clock.fastForward(200);
+  assert.ok(Math.abs((await page.evaluate(()=>pending[2].hours))-14/60)<1e-10);
+  assert.match(await page.locator('#startModalDurationSummary').innerText(),/14 daqiqa/);
   console.log('PASS pricing UI: stale 4900 response cannot overwrite the latest two-hour 14000 quote');
 }finally{await browser.close();}

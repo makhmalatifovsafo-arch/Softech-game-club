@@ -1,5 +1,21 @@
 # Softech barqarorlik rejasi
 
+## 1.2.1 dan keyingi sinovda topilgan launcher va log tuzatishi
+
+Windows xizmatidagi backend sog'lom ishlayotgan bo'lsa ham, oddiy foydalanuvchi
+LocalService jarayonining `node.exe` manzilini o'qiy olmagan kompyuterda launcher
+90 soniya kutib qolishi aniqlandi. Launcher endi yo'lni bevosita o'qish rad
+etilgandagina SCM'dagi ishlab turgan xizmat PID'i va xizmatning 30 soniyadan yangi
+holat yozuvidagi host/backend PID'larini birga tekshiradi. Boshqa dastur, eski,
+buzilgan, kelajak sanali yoki `STARTING` dalili qabul qilinmaydi.
+
+Windows xizmati Node stdout/stderr baytlarini tizim kodirovkasi deb o'qigani sababli
+Uzbek matni va belgilar logda buzilgan. Redirect qilingan ikkala oqim endi UTF-8
+sifatida o'qiladi. Eski log dalillari qayta yozilmaydi; yangi qatorlar to'g'ri
+saqlanadi. Yo'naltirilgan testlarda launcher identity, receipt chegaralari,
+UTF-8 log, real service crash/adoption, OTA va graceful stop o'tdi. Yangi paket
+chiqarilmaguncha bu kod ishlab turgan klublarga yetib bormaydi.
+
 ## Tasdiqlangan hodisa
 
 10-klubda config.json 99 ta NUL baytdan iborat bo'lib qolgan. Eski server uni

@@ -12,7 +12,7 @@ test('prepaid prices, durations, tariff boundaries, midnight and invalid input',
   fs.writeFileSync(path.join(root,'case.mjs'),`
     import assert from 'node:assert/strict';
     import {db,initDatabase} from './src/db.js';
-    import {prepaidQuote} from './src/services/prepaidQuote.js';
+    import {prepaidQuote,quoteUntilTime,sessionStartTime} from './src/services/prepaidQuote.js';
     import {calculateIntervalPrice,calculateTimeFromAmount} from './src/services/pricingEngine.js';
     import {freezePrepaidRates,prepaidRefund} from './src/services/memberBilling.js';
     initDatabase();
@@ -21,6 +21,16 @@ test('prepaid prices, durations, tariff boundaries, midnight and invalid input',
       const add=db.prepare("INSERT INTO tariffs(id,club_id,zone_id,name,type,price_per_hour,start_time,end_time) VALUES(?,1,90,?,'HOURLY',?,?,?)");
       add.run('day','Day',7000,'10:00','17:00');add.run('night','Night',14000,'17:00','10:00');
       const start=new Date('2026-11-13T15:00:00');
+      for(const seconds of [1,29,59]) {
+        const actual=new Date('2026-11-13T12:38:00');actual.setSeconds(seconds,999);
+        const data={mode:'endtime',targetEndTime:'13:38'};
+        const preview=quoteUntilTime(actual,'13:38',false,1,90);
+        const opened=prepaidQuote(data,sessionStartTime(data,actual),1,90);
+        assert.equal(preview.totalAmount,7000);assert.equal(preview.totalMinutes,60);
+        assert.equal(opened.totalAmount,7000);assert.equal(opened.endTime,preview.endTime);
+        assert.equal(sessionStartTime(data,actual).getSeconds(),0);
+        assert.equal(sessionStartTime({mode:'price'},actual).getTime(),actual.getTime());
+      }
       const quote=data=>prepaidQuote(data,start,1,90);
       assert.equal(quote({mode:'hours',durationMinutes:90,amount:1}).totalAmount,10500);
       const money=quote({mode:'price',amount:10000,durationMinutes:0});

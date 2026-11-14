@@ -6,7 +6,7 @@ import { resolveCloudUrl } from './services/cloudUrl.js';
 import { updateCustomerCredentials } from './services/customerCredentials.js';
 import { transferSession, previewSessionTransfer } from './services/sessionTransfer.js';
 import { frozenPriceSegments } from './services/prepaidTransferPlan.js';
-import { prepaidQuote } from './services/prepaidQuote.js';
+import { prepaidQuote, quoteUntilTime, sessionStartTime } from './services/prepaidQuote.js';
 import { clientSessionState, sessionGameAmount } from './services/clientSessionState.js';
 import { isPostpaidSession } from './services/sessionMode.js';
 import { validateSchedule } from './services/tariffValidation.js';
@@ -1752,7 +1752,7 @@ function handleRequest(req, res) {
 
         if (targetEndTime !== undefined) {
           if (!targetEndTime) throw new Error('Tugash vaqtini kiriting.');
-          result = calculateIntervalPrice(startTime, targetEndTime, isVip, clubId, zoneId,72);
+          result = quoteUntilTime(startTime, targetEndTime, isVip, clubId, zoneId);
         } else if (amount !== undefined) {
           result = calculateTimeFromAmount(startTime, Number(amount), isVip, clubId, zoneId, true);
         } else {
@@ -1931,7 +1931,7 @@ function handleRequest(req, res) {
         let finalDuration = durationMinutes;
         let finalAmount = amount;
         let finalEndsAt;
-        const startedAt = new Date();
+        const startedAt = sessionStartTime(data);
 
         const isPostpaidReq = Boolean(mode === 'postpaid' || mode === 'VIP' || mode === 'vip' || isPostpaid || paymentType === 'POSTPAID');
         const activeRate = requireRateForMoment(startedAt, isPostpaidReq, clubId, pcZoneId);
@@ -2142,107 +2142,11 @@ function handleRequest(req, res) {
           return;
         }
 
-        if (isMemberSession(sessionRow) || isPostpaidSession(sessionRow)) {
+        {
           const result=BarLedgerService.executeSessionCheckout({target:sessionRow.id,clubId:sessionRow.club_id,
             paymentMethod:data.paymentType||'CASH',cashierUserId:currentUserId,broadcastUpdate:broadcastAdminUpdate});
           sendJson(res,200,{...result,refundAmount:result.refundAmount || 0,usedAmount:result.gameBill}); return;
         }
-        const compId = sessionRow.computer_id;
-        const startedAt = new Date(sessionRow.started_at);
-        const now = new Date();
-        const playedMinutes = Math.max(1, Math.ceil((now.getTime() - startedAt.getTime()) / 60000));
-        const totalPaid = Number(sessionRow.paid_amount || sessionRow.total_amount || 0);
-
-        let usedAmount = 0;
-        let refundAmount = 0;
-
-        if (sessionRow.notes === 'POSTPAID' || sessionRow.paid_amount === 0) {
-          const hourlyRate = sessionRow.price_per_hour || 12000;
-          usedAmount = Math.round((playedMinutes / 60) * hourlyRate);
-          refundAmount = 0;
-        } else if (sessionRow.prepaid_rate_plan) {
-          const refund = prepaidRefund(sessionRow,now);
-          usedAmount=refund.usedAmount;
-          refundAmount=refund.amount;
-        } else {
-          const intervalCalc = calculateIntervalPrice(startedAt, now, false, sessionRow.club_id || clubId || 1, resolveZoneIdForComputer(compId, sessionRow.club_id || clubId || 1));
-          usedAmount = Math.min(totalPaid, Math.max(0, intervalCalc.totalAmount));
-          refundAmount = Math.max(0, Math.round(totalPaid - usedAmount));
-        }
-
-        db.exec('BEGIN IMMEDIATE');
-        // Agar bu a'zo (member) hisobidan yechilgan bo'lsa, balansiga qaytarish
-        if (sessionRow.notes && sessionRow.notes.includes('CLIENT_BALANCE_PREPAID:')) {
-          const matchLive = sessionRow.notes.match(/CLIENT_BALANCE_PREPAID:(\d+)/);
-          const memberId = matchLive ? parseInt(matchLive[1], 10) : null;
-          if (memberId && refundAmount > 0) {
-            db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(refundAmount, memberId);
-            db.prepare(`
-              INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method, category, session_id)
-              VALUES (?, ?, ?, 'REFUND', 'BALANCE', 'GAME', ?)
-            `).run(sessionRow.club_id || 1, memberId, refundAmount,sessionRow.id);
-          }
-        } else if (refundAmount > 0) {
-          const origTx = db.prepare('SELECT payment_type FROM transactions WHERE session_id = ? ORDER BY created_at ASC LIMIT 1').get(sessionRow.id);
-          const payType = origTx?.payment_type || 'CASH';
-          db.prepare(`
-            INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(`tx_${Date.now().toString(36)}`, sessionRow.club_id || 1, sessionRow.id, -refundAmount, payType, String(currentUserId), 'REFUND (Zdacha)');
-        }
-
-        // Bazadagi seansni yakunlash va kompyuterni qulflash
-        db.prepare(`
-          UPDATE sessions 
-          SET status = 'COMPLETED', ends_at = CURRENT_TIMESTAMP, total_amount = ?, updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `).run(usedAmount, sessionRow.id);
-
-        db.prepare(`
-          UPDATE computers 
-          SET status = 'LOCKED', current_session_id = NULL, updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `).run(compId);
-
-        db.exec('COMMIT');
-        // Klient agentga WebSocket signallari
-        ClientManager.send(compId, 'STOP_SESSION', {
-          sessionId: sessionRow.id,
-          reason: 'EARLY_TERMINATION',
-          refundAmount,
-          usedAmount,
-          playedMinutes,
-          forceKillApps: true,
-          message: `Seans to'xtatildi. Qaytim: ${refundAmount.toLocaleString()} UZS`
-        });
-
-        ClientManager.send(compId, 'LOCK_SCREEN', {
-          reason: 'SESSION_TERMINATED',
-          message: `Seans yakunlandi. Qaytim (Zdacha): ${refundAmount.toLocaleString()} UZS`
-        });
-
-        broadcastAdminUpdate();
-        logAuditEvent(sessionRow.club_id || clubId || 1, null, 'REFUND', {
-          sessionId: sessionRow.id,
-          computerId: compId,
-          customerName: sessionRow.customer_name || 'Mijoz',
-          playedMinutes,
-          totalPaid,
-          usedAmount,
-          refundAmount
-        });
-
-        console.log(`💵 [StopEarly] Seans ${sessionRow.id} to'xtatildi (${playedMinutes} daq). To'langan: ${totalPaid}, Ishlatildi: ${usedAmount}, Qaytim: ${refundAmount} UZS`);
-
-        sendJson(res, 200, {
-          success: true,
-          sessionId: sessionRow.id,
-          computerId: compId,
-          playedMinutes,
-          totalPaid,
-          usedAmount,
-          refundAmount
-        });
       } catch (err) {
         try { db.exec('ROLLBACK'); } catch {}
         sendJson(res, 500, { error: 'Seansni muddatidan oldin to\'xtatishda xatolik: ' + err.message });
@@ -2627,7 +2531,7 @@ function handleRequest(req, res) {
         }
 
         const normalizedMode = String(mode).toUpperCase();
-        const startedAt = new Date();
+        const startedAt = sessionStartTime(data);
         const isPostpaid = ['POSTPAID','VIP'].includes(normalizedMode);
         if (isPostpaid && !getClubSettings(clubId).vip_enabled) throw new Error('VIP Postpaid faol emas.');
         const plans = computerIds.map(rawId => {

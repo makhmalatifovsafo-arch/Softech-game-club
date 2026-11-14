@@ -11,7 +11,6 @@ namespace ServerSetup
 {
     public partial class MainWindow : Window
     {
-        private string installedDirectory = @"C:\SoftechServer";
         private readonly string? previousInstall;
 
         public MainWindow()
@@ -48,7 +47,6 @@ namespace ServerSetup
                 return;
             }
 
-            installedDirectory = targetDir;
             if (previousInstall != null && !Path.GetFullPath(targetDir).TrimEnd(Path.DirectorySeparatorChar).Equals(
                 previousInstall.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
             {
@@ -185,12 +183,9 @@ namespace ServerSetup
                 PbProgress.IsIndeterminate = false;
                 Registry.SetValue(@"HKEY_CURRENT_USER\Software\Softech\Server", "InstallPath", Path.GetFullPath(targetDir));
                 PbProgress.Value = 100;
-                TxtStatus.Text = "✅ Server muvaffaqiyatli o'rnatildi! Dasturni ishga tushirishingiz mumkin.";
+                TxtStatus.Text = "✅ Server muvaffaqiyatli o'rnatildi. Oynani yopishingiz mumkin.";
                 TxtStatus.Foreground = System.Windows.Media.Brushes.LightGreen;
-
-                BtnStartServer.Visibility = Visibility.Visible;
-                BtnOpenBrowser.Visibility = Visibility.Visible;
-                BtnInstall.Content = "Qayta O'rnatish";
+                BtnInstall.Visibility = Visibility.Collapsed;
             }
             catch (Exception ex)
             {
@@ -233,55 +228,6 @@ namespace ServerSetup
             catch
             {
                 // Fallback to simple batch or ignore if COM fails
-            }
-        }
-
-        private void BtnStartServer_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string cockpitPath = Path.Combine(installedDirectory, "SoftechCockpit.exe");
-                if (File.Exists(cockpitPath))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = cockpitPath,
-                        WorkingDirectory = installedDirectory,
-                        UseShellExecute = true
-                    });
-                    return;
-                }
-
-                string batPath = Path.Combine(installedDirectory, "start_server.bat");
-                if (File.Exists(batPath))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = batPath,
-                        WorkingDirectory = installedDirectory,
-                        UseShellExecute = true
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Serverni ishga tushirib bo'lmadi: {ex.Message}", "Xatolik", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void BtnOpenBrowser_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "http://localhost:5000",
-                    UseShellExecute = true
-                });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Brauzerni ochib bo'lmadi: {ex.Message}", "Xatolik", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

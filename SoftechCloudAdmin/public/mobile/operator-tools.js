@@ -1,3 +1,4 @@
+import {checkoutView} from './checkout-view.js';
 export function createOperatorTools({state,remote,modal,esc,money,notice,can,refresh}) {
  const $=s=>document.querySelector(s),content=()=>$('#content');
  const payment=(name='paymentMethod',extra='')=>`<label>To‘lov<select name="${name}"><option value="CASH">Naqd</option><option value="CARD">Karta</option>${extra}</select></label>`;
@@ -8,9 +9,9 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
  const clientOptions=users=>'<option value="">Tanlang</option>'+users.map(u=>`<option value="${u.id}">${esc(u.username)} · ${esc(money(u.balance))}</option>`).join('');
  async function startSession(pc){
   try{
-   online();let quote=null,quotedInput='',revision=0;
-   modal(pc.name+' - yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo'yicha</option><option value="price">Summa bo'yicha</option><option value="postpaid">VIP Postpaid</option></select></label><label id="sessionMinutes">Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label id="sessionAmount" hidden>Summa (so'm)<input name="amount" type="number" min="1" step="1"></label><div id="sessionPayment">${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}</div><label id="sessionMember" hidden>Balans egasi<select name="customerId"><option value="">Tanlang</option></select></label><button type="button" id="sessionCalculate" class="quiet">Serverda hisoblash</button><div id="sessionQuote" class="card" aria-live="polite">Hisoblanmoqda...</div><p class="hint">Narx va vaqt klub serverida hisoblanadi. Seans ochilgan paytda server amaldagi tarifni qayta tekshiradi.</p>${!pc.isOnline?'<p class="hint">Kompyuter ulanmagan. Seans boshlanganda avtomatik yoqish sinaladi; buning uchun MAC va Wake-on-LAN sozlangan bo&#39;lishi kerak. Kompyuter hali yoqilmagan bo&#39;lsa ham seans vaqti boshlanadi.</p>':''}`,async v=>{
-    if(!quote||quotedInput!==key())throw Error('Avval serverda hisoblash tugmasini bosing.');
+   online();let quote=null,quotedInput='',revision=0,quoteTimer=null,calculating=false;
+   modal(pc.name+' - yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo'yicha</option><option value="price">Summa bo'yicha</option><option value="postpaid">VIP Postpaid</option></select></label><label id="sessionMinutes">Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label id="sessionAmount" hidden>Summa (so'm)<input name="amount" type="number" inputmode="numeric" min="1" step="1"></label><div id="sessionPayment">${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}</div><label id="sessionMember" hidden>Balans egasi<select name="customerId"><option value="">Tanlang</option></select></label><button type="button" id="sessionCalculate" class="quiet">Narxni qayta tekshirish</button><div id="sessionQuote" class="card" aria-live="polite">Hisoblanmoqda...</div><p class="hint">Narx va vaqt avtomatik hisoblanadi. Seans ochilgan paytda server amaldagi tarifni qayta tekshiradi.</p>${!pc.isOnline?'<p class="hint">Kompyuter ulanmagan. Seans boshlanganda avtomatik yoqish sinaladi; buning uchun MAC va Wake-on-LAN sozlangan bo&#39;lishi kerak. Kompyuter hali yoqilmagan bo&#39;lsa ham seans vaqti boshlanadi.</p>':''}`,async v=>{
+    if(!quote||quotedInput!==key())throw Error('Narx hisoblanmoqda. Bir oz kuting.');
     if(v.mode!=='postpaid'&&v.paymentType==='BALANCE'&&!v.customerId)throw Error('Balans egasini tanlang.');
     const result=await remote('/api/sessions/start','POST',request());
     return result;
@@ -18,7 +19,7 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
    const form=$('#actionForm'),fields=form.elements,panel=$('#sessionQuote');
    function request(){const mode=fields.mode.value;return {computerId:pc.id,mode,...(mode==='hours'?{durationMinutes:Number(fields.minutes.value)}:mode==='price'?{amount:Number(fields.amount.value)}:{}),customerId:mode!=='postpaid'&&fields.paymentType.value==='BALANCE'?Number(fields.customerId.value):null,paymentType:mode==='postpaid'?'POSTPAID':fields.paymentType.value};}
    function key(){return JSON.stringify(request());}
-   function invalidate(){revision++;quote=null;$('#actionSubmit').disabled=true;panel.textContent="Narx va vaqtni serverda hisoblang.";}
+   function invalidate(){revision++;quote=null;$('#actionSubmit').disabled=true;panel.textContent='Narx avtomatik hisoblanmoqda…';clearTimeout(quoteTimer);quoteTimer=setTimeout(calculate,450);}
    function modeChanged(){
     const mode=fields.mode.value;
     $('#sessionMinutes').hidden=mode!=='hours';fields.minutes.disabled=mode!=='hours';fields.minutes.required=mode==='hours';
@@ -38,10 +39,12 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
    fields.mode.onchange=modeChanged;
    for(const name of ['minutes','amount','customerId'])fields[name].oninput=invalidate;
    async function calculate(){
-    invalidate();const rev=revision,input=key(),body=request();
+    clearTimeout(quoteTimer);
+    if(!panel.isConnected||!$('#dialog').open||calculating)return;
+    const rev=revision,input=key(),body=request();
     if(body.mode==='hours'&&(!Number.isInteger(body.durationMinutes)||body.durationMinutes<1||body.durationMinutes>1440)){panel.textContent='1-1440 daqiqa kiriting.';return;}
     if(body.mode==='price'&&!(body.amount>0)){panel.textContent='Seans summasini kiriting.';return;}
-    panel.textContent='Klub serverida hisoblanmoqda...';$('#sessionCalculate').disabled=true;
+    calculating=true;quote=null;$('#actionSubmit').disabled=true;panel.textContent='Klub serverida hisoblanmoqda...';$('#sessionCalculate').disabled=true;
     try{
      const data=await remote('/api/sessions/start-preview','POST',body);
      if(rev!==revision||!panel.isConnected)return;
@@ -59,14 +62,18 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
       $('#actionSubmit').disabled=false;
      }else panel.textContent=error.message;
     }
-    finally{if(panel.isConnected)$('#sessionCalculate').disabled=false;}
+    finally{calculating=false;if(panel.isConnected&&$('#dialog').open){$('#sessionCalculate').disabled=false;if(rev!==revision)quoteTimer=setTimeout(calculate,0);}}
    }
    $('#sessionCalculate').onclick=calculate;modeChanged();await calculate();
   }catch(e){notice(e.message);}
  }
  async function checkout(pc){
   try{online();const s=pc.activeSession;const bill=await remote('/api/sessions/'+s.sessionId+'/checkout-preview');
-   modal(pc.name+' — yakunlash',`<p>${esc(bill.formulaText)}</p><p>Bar qarzi: <b>${esc(money(bill.barBill))}</b></p><p>Olinadigan to‘lov: <b>${esc(money(bill.amountToCollect))}</b></p><p class="hint">Yakuniy summa serverda qayta hisoblanadi. Oldindan to‘langan seansning ishlatilmagan qismi server qoidasi bo‘yicha qaytariladi.</p>${payment('paymentType')}`,v=>remote('/api/sessions/'+s.sessionId+(s.isPostpaid||s.paymentType==='BALANCE'?'/checkout':'/stop-early'),'POST',{paymentType:v.paymentType,paymentMethod:v.paymentType}));
+   modal(pc.name+' — yakunlash',checkoutView(bill,{esc,money})+`<p class="hint">Bu klub serverining hisobi. Tasdiqlashgacha o‘tgan vaqt ham yakuniy hisobga kiradi. Bar qarzi ishlatilmagan vaqt pulidan ayriladi; mijoz balansi alohida hisoblanadi.</p>${payment('paymentType')}`,async v=>{
+    const result=await remote('/api/sessions/'+s.sessionId+'/checkout','POST',{paymentMethod:v.paymentType});
+    const due=Number(result.amountCollected||0),refund=Number(result.refundAmount||0);
+    return {...result,message:result.memberSummary?'Seans yopildi. Kassaga olinadi: '+money(due)+'. Balans hisob-kitobi serverda saqlandi.':refund>0?'Seans yopildi.':'Seans yopildi. '+(due>0?'Mijozdan olinadi: '+money(due):'Qo‘shimcha to‘lov yo‘q — '+money(0))};
+   });
   }catch(e){notice(e.message);}
  }
  function transfer(pc){
@@ -99,6 +106,22 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
  }
 
  function message(pc){modal(pc.name+' — xabar','<label>Sarlavha<input name="title" maxlength="100" value="Administrator"></label><label>Xabar<input name="message" maxlength="1000" required></label>',v=>remote('/api/messages/send','POST',{computerId:pc.id,...v}));}
+ async function addBarToComputer(pc){
+  try {
+   online();
+   if(!pc.activeSession?.sessionId)throw Error('Avval kompyuterga seans oching.');
+   const sessionId=pc.activeSession.sessionId;
+   const data=await remote('/api/bar/items');
+   const items=(Array.isArray(data)?data:data.items||[]).filter(i=>Number(i.stockQuantity)>0);
+   if(!items.length)throw Error('Omborda sotiladigan mahsulot yo‘q.');
+   modal(pc.name+' — bardan mahsulot qo‘shish',`<p>Mahsulotlar shu kompyuterning joriy seansiga qo‘shiladi. To‘lov seans yakunida olinadi.</p>${items.map(i=>`<label>${esc(i.name)} · ${esc(money(i.sellPrice))}<input name="item_${i.id}" type="number" min="0" max="${Number(i.stockQuantity)}" step="1" value="0"></label>`).join('')}<strong id="pcBarTotal">${esc(money(0))}</strong>`,async values=>{
+    const lines=items.map(i=>({barItemId:i.id,quantity:Number(values['item_'+i.id]||0)})).filter(i=>i.quantity!==0);
+    if(!lines.length||lines.some(i=>!Number.isInteger(i.quantity)||i.quantity<1))throw Error('Mahsulot miqdorini to‘g‘ri tanlang.');
+    return remote('/api/bar/orders','POST',{items:lines,paymentMethod:'ON_PC_SESSION',computerId:pc.id,sessionId});
+   });
+   for(const input of document.querySelectorAll('#actionForm input[name^="item_"]'))input.oninput=()=>{const values=new FormData($('#actionForm'));$('#pcBarTotal').textContent=money(items.reduce((sum,i)=>sum+Number(values.get('item_'+i.id)||0)*Number(i.sellPrice),0));};
+  }catch(error){notice(error.message);}
+ }
  function renderBar(items){
   state.barDraft ||= {};
   content().innerHTML=`<section class="card"><div class="heading"><h2>Bar savdosi</h2><button id="barOrders" class="quiet">Buyurtmalar</button></div><p class="hint">Miqdorlarni tanlang. Narx, qoldiq va to‘lov klub serverida tekshiriladi.</p><div id="saleItems">${items.map(i=>`<label class="sale-item"><span>${esc(i.name)}<small>${esc(money(i.sellPrice))} · Qoldiq: ${i.stockQuantity}</small></span><input aria-label="${esc(i.name)} miqdori" data-quantity="${i.id}" type="number" min="0" max="${i.stockQuantity}" step="1" value="${esc(state.barDraft[i.id]??0)}" ${i.stockQuantity<1?'disabled':''}></label>`).join('')||'<p>Mahsulot yo‘q.</p>'}</div><div class="heading"><strong id="saleTotal">${money(0)}</strong><button id="saleCheckout" class="primary" ${state.meta?.serverOnline?'':'disabled'}>Sotishni tasdiqlash</button></div></section>`;
@@ -172,5 +195,5 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
   content().innerHTML=`<h2>Administrator amallari</h2><p class="hint">Serverdagi akkaunt ruxsatlari har bir amalda tekshiriladi.</p><div class="grid">${[['bookings','Bronlar'],['customers','Mijozlar va balans'],['orders','Bar buyurtmalari'],['inventory','Bar ombori'],['batch','Guruh seansi'],['history','Amallar tarixi']].filter(([id])=>id!=='batch'||can('session:manage')).map(([id,label])=>`<button data-operation="${id}" ${state.meta?.serverOnline?'':'disabled'}>${label}</button>`).join('')}</div>`;
   const handlers={bookings,customers:customerList,orders,inventory,history,batch};for(const b of document.querySelectorAll('[data-operation]'))b.onclick=run(handlers[b.dataset.operation]);
  }
- return {renderMenu,renderBar,startSession,checkout,transfer,message};
+ return {renderMenu,renderBar,startSession,checkout,transfer,message,addBarToComputer};
 }

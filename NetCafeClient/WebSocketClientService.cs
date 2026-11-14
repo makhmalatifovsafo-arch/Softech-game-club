@@ -644,6 +644,14 @@ public class WebSocketClientService
                         _lastSessionAuthority = 0;
                         CanSelfClose = false;
                         _logoutResponse?.TrySetResult(true);
+                        if (data.TryGetProperty("amountToCollect", out var collected) && collected.TryGetDouble(out var due) && double.IsFinite(due) && due >= 0)
+                        {
+                            double refund = data.TryGetProperty("refundAmount", out var refundValue) && refundValue.TryGetDouble(out var refundNumber) ? refundNumber : 0;
+                            string settlementText = refund > 0 ? $"Sizga qaytariladi: {refund:N0} so'm" : $"Qo'shimcha to'lov: {due:N0} so'm";
+                            if (data.TryGetProperty("checkoutMessage", out var checkoutMessage) && checkoutMessage.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(checkoutMessage.GetString()))
+                                settlementText = checkoutMessage.GetString()!;
+                            OnSessionBarNotice?.Invoke(stoppedSessionId, settlementText, refund > 0 ? refund : due);
+                        }
                         if (data.TryGetProperty("memberSummary", out var summaryValue) && MemberSessionSummary.Parse(summaryValue) is { } summary)
                             OnMemberSessionEnded?.Invoke(summary);
                         if (data.TryGetProperty("barNotice", out var notice) && notice.ValueKind == JsonValueKind.Object &&

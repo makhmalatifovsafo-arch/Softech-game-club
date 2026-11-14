@@ -31,6 +31,20 @@ test('transfer preserves VIP debt, converts prepaid value, follows bar debt and 
     const request=(from,to,time=now)=>({fromComputerId:from,toComputerId:to,clubId:1,now:time});
     const move=(from,to,time=now)=>{const q=previewSessionTransfer(request(from,to,time));return transferSession({...request(from,to,time),quoteRevision:q.quoteRevision});};
     try {
+      for (const [minutes,expected] of [[30,0],[50,3333]]) {
+        const id='checkout-'+minutes;
+        makePc(id,1100+minutes,null);
+        open(id,id,'hours',10000,now-minutes*60000,now+(60-minutes)*60000);
+        db.prepare("INSERT INTO transactions(id,club_id,session_id,amount,payment_type,payment_method,transaction_type) VALUES(?,1,?,10000,'CASH','CASH','PREPAID')").run(id,id);
+        db.prepare("INSERT INTO bar_orders(club_id,order_number,computer_id,session_id,total_amount,payment_status,approval_status) VALUES(1,?,?,?,5000,'PENDING_AT_CHECKOUT','CONFIRMED')").run(id,1100+minutes,id);
+        const preview=BarLedgerService.getSessionCheckoutPreview(id,1);
+        assert.equal(preview.amountToCollect,expected);
+        assert.equal(preview.gameBill,minutes===30?5000:8333);
+        const result=BarLedgerService.executeSessionCheckout({target:id,clubId:1});
+        assert.equal(result.amountCollected,expected);
+        assert.equal(db.prepare('SELECT SUM(amount) AS total FROM transactions WHERE session_id=?').get(id).total,10000+expected);
+        assert.throws(()=>BarLedgerService.executeSessionCheckout({target:id,clubId:1}));
+      }
       for(const [id,rate] of [[91,10000],[92,20000],[93,7000],[94,14000]]) {
         db.prepare('INSERT INTO zones(id,club_id,name) VALUES(?,1,?)').run(id,'Zone '+rate);
         db.prepare("INSERT INTO tariffs(id,club_id,zone_id,name,type,price_per_hour,start_time,end_time) VALUES(?,1,?,?,'HOURLY',?,'00:00','00:00')").run('transfer-'+id,id,'Rate '+rate,rate);

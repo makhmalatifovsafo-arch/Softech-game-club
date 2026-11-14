@@ -60,6 +60,19 @@ Check(Directory.GetFiles(storageRoot).Length==2,"Log rotations accumulated");
 File.WriteAllText(boundedLog,new string('x',(int)BoundedLog.MaxBytes+1024)+"latest-error");
 BoundedLog.Append(boundedLog,"after upgrade");
 Check(new FileInfo(boundedLog+".previous").Length<=BoundedLog.MaxBytes&&File.ReadAllText(boundedLog+".previous").EndsWith("latest-error"),"Legacy oversized log lost its tail or remained unbounded");
+BoundedLog.Append(boundedLog,"O‘zbekcha: server to‘liq faol — sinov ✅");
+Check(File.ReadAllText(boundedLog,System.Text.Encoding.UTF8).Contains("O‘zbekcha: server to‘liq faol — sinov ✅"),"UTF-8 diagnostics were corrupted");
+var receiptRoot=Path.Combine(storageRoot,"service-receipt");Directory.CreateDirectory(Path.Combine(receiptRoot,"data"));
+var receiptNow=DateTimeOffset.UtcNow;
+void Receipt(int hostPid,int backendPid,string state,DateTimeOffset observed)=>File.WriteAllText(Path.Combine(receiptRoot,"data","service-status.json"),
+    System.Text.Json.JsonSerializer.Serialize(new{hostPid,backendPid,state,observedAt=observed}));
+Receipt(71,81,"RUNNING",receiptNow);
+Check(ServerService.ReceiptMatches(receiptRoot,81,71,receiptNow),"Fresh service receipt was rejected");
+Check(!ServerService.ReceiptMatches(receiptRoot,82,71,receiptNow)&&!ServerService.ReceiptMatches(receiptRoot,81,72,receiptNow),"Service receipt did not bind both process IDs");
+Receipt(71,81,"STARTING",receiptNow);Check(!ServerService.ReceiptMatches(receiptRoot,81,71,receiptNow),"Starting backend was accepted as healthy");
+Receipt(71,81,"RUNNING",receiptNow.AddSeconds(-31));Check(!ServerService.ReceiptMatches(receiptRoot,81,71,receiptNow),"Stale service receipt was accepted");
+Receipt(71,81,"RUNNING",receiptNow.AddSeconds(6));Check(!ServerService.ReceiptMatches(receiptRoot,81,71,receiptNow),"Future service receipt was accepted");
+File.WriteAllText(Path.Combine(receiptRoot,"data","service-status.json"),"broken");Check(!ServerService.ReceiptMatches(receiptRoot,81,71,receiptNow),"Broken service receipt was accepted");
 await UpdateStorage.DownloadAsync(new MemoryStream(new byte[4096]),Path.Combine(storageRoot,"valid.zip"),4096,CancellationToken.None);
 bool truncated=false;
 try { await UpdateStorage.DownloadAsync(new MemoryStream(new byte[100]),Path.Combine(storageRoot,"truncated.zip"),4096,CancellationToken.None); }

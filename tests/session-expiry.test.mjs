@@ -87,12 +87,13 @@ test('server restart preserves paid deadline and reconnect resumes only the rema
   assert.equal(db.prepare("SELECT paid_amount FROM sessions WHERE id='resume-session'").get().paid_amount,7000);
 `));
 
-test('VIP remains open until cashier checkout and closes without bar-reminder windows',()=>run(`
+test('VIP remains open until cashier checkout and sends a final product and total reminder',()=>run(`
   db.prepare("INSERT INTO computers(id,club_id,pc_number,name,current_session_id,status) VALUES('vip-pc',1,8,'VIP-8','vip','OCCUPIED')").run();
   db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,started_at,ends_at,paid_amount,status,notes) VALUES('vip',1,'vip-pc','trf_standard_1h',?,?,0,'ACTIVE','POSTPAID')")
     .run(new Date(Date.now()-3600000).toISOString(),new Date(Date.now()-1000).toISOString());
   db.prepare("INSERT INTO bar_orders(club_id,order_number,computer_id,session_id,total_amount,payment_status) VALUES(1,'VIP-COLA',8,'vip',10000,'PENDING_AT_CHECKOUT')").run();
   const sent=[],broadcast=[];ClientManager.send=(pc,type,payload)=>sent.push({pc,type,payload});ClientManager.broadcast=(type,payload)=>broadcast.push({type,payload});
+  db.prepare("INSERT INTO bar_order_items(order_id,bar_item_id,item_name,quantity,unit_price,total_price) VALUES((SELECT id FROM bar_orders WHERE order_number='VIP-COLA'),1,'Cola',2,5000,10000)").run();
   const socket={};ClientManager.socketToPcId.set(socket,'vip-pc');
   SessionScheduler.checkActiveSessions();SessionScheduler.expireSession({id:'vip'});
   ProtocolDispatcher.handleClientLogout(socket,{});
@@ -106,6 +107,10 @@ test('VIP remains open until cashier checkout and closes without bar-reminder wi
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM session_end_notices').get().n,0);
   assert.ok(sent.some(m=>m.type==='STOP_SESSION'));assert.ok(sent.some(m=>m.type==='LOCK_SCREEN'));
   assert.ok(sent.every(m=>!m.payload.barNotice));
+  const checkout=sent.find(m=>m.type==='STOP_SESSION').payload;
+  assert.equal(checkout.amountToCollect,receipt.amountCollected);
+  assert.match(checkout.checkoutMessage,/2x Cola/);
+  assert.match(checkout.checkoutMessage,/Kassaga/);
   assert.ok(broadcast.every(m=>m.type!=='SESSION_EXPIRED_WITH_BAR_DEBT'));
 `));
 

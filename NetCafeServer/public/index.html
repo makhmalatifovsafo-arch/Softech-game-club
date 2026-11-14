@@ -471,13 +471,13 @@
           </button>
 
           <!-- 2. Band qilingan -->
-          <button type="button" onclick="switchView('bookings')" data-view="bookings" 
+          <button type="button" onclick="switchView('bookings')" data-view="bookings" title="Tez orada..."
                   class="sidebar-nav-btn relative z-10 w-full flex items-center justify-between px-3.5 py-3.5 rounded-xl text-sm font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer group">
             <div class="flex items-center gap-3">
               <span class="nav-icon text-lg">📅</span>
               <span class="nav-label">Band qilingan</span>
             </div>
-            <span id="sidebarBookingBadge" class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 shadow-[0_0_6px_rgba(245,158,11,0.2)]">3</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 whitespace-nowrap">Tez orada...</span>
           </button>
 
           <!-- 3. Otchyot -->
@@ -578,15 +578,8 @@
             </div>
           </div>
 
-          <!-- KASSA METRIKALARI (Segmented Bar) -->
+          <!-- JONLI BANDLIK -->
           <div class="header-metrics hidden lg:flex items-center gap-2 bg-[var(--bg-primary)] p-1 rounded-xl border border-[var(--border-color)]">
-            <div id="statTotalRevContainer" class="px-3.5 py-1.5 rounded-lg flex flex-col">
-              <span class="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Bugungi Kassa</span>
-              <span id="statTotalRev" class="text-sm font-bold text-[var(--text-main)] font-mono">0 UZS</span>
-            </div>
-
-            <div id="statDivider1" class="w-[1px] h-6 bg-[var(--border-color)]"></div>
-
             <div class="px-3.5 py-1.5 rounded-lg flex flex-col">
               <span class="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Bandlik</span>
               <div class="flex items-center gap-1.5">
@@ -595,18 +588,6 @@
               </div>
             </div>
 
-            <div id="statDivider2" class="w-[1px] h-6 bg-[var(--border-color)]"></div>
-
-            <div id="statDetailsContainer" class="px-3.5 py-1.5 rounded-lg flex items-center gap-3 text-xs">
-              <div>
-                <span class="text-[10px] block text-[var(--text-muted)]">Naqd</span>
-                <span id="statCash" class="font-mono text-emerald-400 font-medium">0</span>
-              </div>
-              <div>
-                <span class="text-[10px] block text-[var(--text-muted)]">Karta</span>
-                <span id="statCard" class="font-mono text-purple-400 font-medium">0</span>
-              </div>
-            </div>
           </div>
 
           <!-- RIGHT ACTIONS: Theme, Clock, Quick Refresh -->
@@ -2534,7 +2515,7 @@
       <div class="grid grid-cols-5 gap-1 p-2 bg-[#09090b] border-b border-[var(--border-color)] text-xs font-medium">
         <button type="button" onclick="setStartMode('hours')" id="startTab-hours" class="start-tab-btn py-2 px-1 rounded-lg text-center transition flex flex-col items-center gap-1 bg-[#18181b] text-white border border-[#27272a]">
           <span class="text-sm">⏱️</span>
-          <span class="text-[10px] font-semibold">Soatda</span>
+          <span class="text-[10px] font-semibold">Vaqtda</span>
         </button>
         <button type="button" onclick="setStartMode('price')" id="startTab-price" class="start-tab-btn py-2 px-1 rounded-lg text-center transition flex flex-col items-center gap-1 text-[#71717a] hover:text-white border border-transparent">
           <span class="text-sm">💵</span>
@@ -2562,13 +2543,22 @@
         <!-- a) VARIANT: SOAT BO'YICHA -->
         <div id="startSection-hours" class="space-y-3">
           <div class="flex items-center justify-between">
-            <label class="text-[11px] uppercase tracking-wider font-semibold text-[#a1a1aa]">O'yin vaqti (soatda)</label>
+            <label class="text-[11px] uppercase tracking-wider font-semibold text-[#a1a1aa]">O'yin vaqti</label>
             <span class="text-[11px] text-[#71717a] font-mono" id="hoursCalculatedMins">60 daqiqa</span>
           </div>
-          <div class="relative">
+          <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#09090b] border border-[#27272a]">
+            <button type="button" id="durationUnit-hours" onclick="setDurationInputUnit('hours')" class="py-2 rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30 text-xs font-semibold">Soatda</button>
+            <button type="button" id="durationUnit-minutes" onclick="setDurationInputUnit('minutes')" class="py-2 rounded-lg text-[#a1a1aa] border border-transparent text-xs font-semibold">Daqiqada</button>
+          </div>
+          <div id="durationInput-hours" class="relative">
             <input type="number" id="inputHours" value="1" min="0.1" max="24" step="any" oninput="calcFromHours(this.value)"
                    class="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-lg font-mono font-bold text-white focus:outline-none focus:border-sky-500">
             <span class="absolute right-4 top-3.5 text-xs text-[#71717a] font-medium uppercase font-mono">soat</span>
+          </div>
+          <div id="durationInput-minutes" class="relative hidden">
+            <input type="number" id="inputMinutes" value="60" min="1" max="1440" step="1" inputmode="numeric" oninput="calcFromMinutes(this.value)"
+                   class="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-lg font-mono font-bold text-white focus:outline-none focus:border-sky-500">
+            <span class="absolute right-4 top-3.5 text-xs text-[#71717a] font-medium uppercase font-mono">daqiqa</span>
           </div>
           <!-- Tezkor preset tugmalar -->
           <div class="grid grid-cols-5 gap-1.5 pt-1">
@@ -4568,25 +4558,7 @@
             : 'text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400');
       }
 
-      // 2. Kassa ma'lumotlarini cheklash (Faqat Manager ko'ra oladi)
-      const totalRevCont = document.getElementById('statTotalRevContainer');
-      const detailsCont = document.getElementById('statDetailsContainer');
-      const div1 = document.getElementById('statDivider1');
-      const div2 = document.getElementById('statDivider2');
-
-      if (!canFinance) {
-        if (totalRevCont) totalRevCont.classList.add('hidden');
-        if (detailsCont) detailsCont.classList.add('hidden');
-        if (div1) div1.classList.add('hidden');
-        if (div2) div2.classList.add('hidden');
-      } else {
-        if (totalRevCont) totalRevCont.classList.remove('hidden');
-        if (detailsCont) detailsCont.classList.remove('hidden');
-        if (div1) div1.classList.remove('hidden');
-        if (div2) div2.classList.remove('hidden');
-      }
-
-      // 3. Layout Edit tugmasi
+      // 2. Layout Edit tugmasi
       const btnToggleEdit = document.getElementById('btnToggleEditLayout');
       if (btnToggleEdit) {
         if (canLayout) {
@@ -7904,7 +7876,9 @@
         }
 
         // Jami summa
-        document.getElementById('vipCheckoutTotalBill').textContent = `${(data.amountToCollect || 0).toLocaleString()} UZS`;
+        document.getElementById('vipCheckoutTotalBill').textContent = data.refundAmount > 0
+          ? `Qaytim: ${data.refundAmount.toLocaleString()} UZS`
+          : `${(data.amountToCollect || 0).toLocaleString()} UZS`;
 
         selectVipPaymentMethod('CASH');
         document.getElementById('vipCheckoutModal').classList.remove('hidden');
@@ -8694,16 +8668,6 @@
     setInterval(checkServerUpdates, 10000);
 
     function renderStats(stats) {
-      if (stats.canViewFinance && stats.totalRevenue !== null) {
-        document.getElementById('statTotalRev').textContent = `${stats.totalRevenue.toLocaleString()} UZS`;
-        document.getElementById('statCash').textContent = stats.cashRevenue.toLocaleString();
-        document.getElementById('statCard').textContent = stats.cardRevenue.toLocaleString();
-      } else {
-        document.getElementById('statTotalRev').textContent = '•••••• UZS';
-        document.getElementById('statCash').textContent = '•••';
-        document.getElementById('statCard').textContent = '•••';
-      }
-
       document.getElementById('statOccupiedVal').textContent = stats.occupiedComputers || 0;
       document.getElementById('statTotalVal').textContent = `/ ${stats.totalComputers || 0} PC`;
 
@@ -8968,6 +8932,7 @@
     // SEANS OCHISH MODALI VA LIFE-CYCLE BOSHQARUVI (5 TA VARIANT & BATCH)
     // ========================================================================
     let currentStartMode = 'hours'; // 'hours' | 'price' | 'endtime' | 'postpaid' | 'client'
+    let currentDurationInputUnit = 'hours';
     let selectedCustomer = null;
     let currentHourlyRate = 0;
     let customerSearchTimeout = null;
@@ -9024,6 +8989,7 @@
 
       // Standart qiymatlar
       document.getElementById('inputHours').value = '1';
+      document.getElementById('inputMinutes').value = '60';
       document.getElementById('inputPrice').value = '10000';
       document.getElementById('clientHoursInput').value = '1';
 
@@ -9031,6 +8997,7 @@
       updateVipUiState();
 
       // Rejimni 'hours' ga o'rnatish
+      setDurationInputUnit('hours', false);
       setStartMode('hours');
 
       document.getElementById('startSessionModal').classList.remove('hidden');
@@ -9142,19 +9109,37 @@
       }
     }
 
-    // 1. Soat bo'yicha hisoblash
+    function setDurationInputUnit(unit, recalculate = true) {
+      currentDurationInputUnit = unit === 'minutes' ? 'minutes' : 'hours';
+      const minutesMode = currentDurationInputUnit === 'minutes';
+      document.getElementById('durationInput-hours').classList.toggle('hidden', minutesMode);
+      document.getElementById('durationInput-minutes').classList.toggle('hidden', !minutesMode);
+      for (const name of ['hours','minutes']) {
+        const active = name === currentDurationInputUnit;
+        document.getElementById('durationUnit-' + name).className = active
+          ? 'py-2 rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30 text-xs font-semibold'
+          : 'py-2 rounded-lg text-[#a1a1aa] border border-transparent text-xs font-semibold';
+      }
+      if (minutesMode) document.getElementById('inputMinutes').value = String(Math.max(1, Math.round(Number(document.getElementById('inputHours').value || 1) * 60)));
+      else document.getElementById('inputHours').value = String(Number(document.getElementById('inputMinutes').value || 60) / 60);
+      if (recalculate) calcFromHours(document.getElementById('inputHours').value);
+    }
+
+    // 1. Soat yoki daqiqa bo'yicha hisoblash
     function calcFromHours(val) {
       const revision = ++priceCalculationRevision;
       setStartQuotePending(true);
       const h = Number(val);
       const mins = Math.round(h * 60);
+      const wholeHours = Math.floor(mins / 60), remainingMinutes = mins % 60;
+      const durationLabel = wholeHours && remainingMinutes ? `${wholeHours} soat ${remainingMinutes} daqiqa` : wholeHours ? `${wholeHours} soat` : `${remainingMinutes} daqiqa`;
       const pcId = targetSelectedPcIds[0];
       const count = Math.max(1, targetSelectedPcIds.length);
       let perPc = Math.round(h * currentHourlyRate);
       let total = perPc * count;
 
       document.getElementById('hoursCalculatedMins').textContent = `${mins} daqiqa`;
-      document.getElementById('startModalDurationSummary').textContent = `${h} soat (${mins} daqiqa)`;
+      document.getElementById('startModalDurationSummary').textContent = `${durationLabel} (${mins} daqiqa)`;
       document.getElementById('startModalPerPcPrice').textContent = `${perPc.toLocaleString()} UZS`;
       document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
       document.getElementById('startModalTotalLabel').textContent = count > 1 ? `JAMI TO'LOV (${count} PC):` : `JAMI TO'LOV:`;
@@ -9188,8 +9173,15 @@
       }, 150);
     }
 
+    function calcFromMinutes(val) {
+      const mins = Number(val);
+      document.getElementById('inputHours').value = Number.isFinite(mins) ? String(mins / 60) : '';
+      calcFromHours(Number.isFinite(mins) ? mins / 60 : NaN);
+    }
+
     function setHoursPreset(h) {
       document.getElementById('inputHours').value = h;
+      document.getElementById('inputMinutes').value = String(Math.round(h * 60));
       calcFromHours(h);
     }
 
@@ -9282,8 +9274,11 @@
             const count = Math.max(1, targetSelectedPcIds.length);
             const total = data.totalPrice;
 
-            document.getElementById('endTimeCalculatedMins').textContent = data.durationLabel;
-            document.getElementById('startModalDurationSummary').textContent = data.durationLabel + ` (soat ${timeVal} gacha)`;
+            const wholeMinutes = Math.round(mins);
+            const hours = Math.floor(wholeMinutes / 60), minutes = wholeMinutes % 60;
+            const label = [hours ? `${hours} soat` : '', minutes ? `${minutes} daqiqa` : ''].filter(Boolean).join(' ') || '0 daqiqa';
+            document.getElementById('endTimeCalculatedMins').textContent = label;
+            document.getElementById('startModalDurationSummary').textContent = label + ` (soat ${timeVal} gacha)`;
             document.getElementById('startModalPerPcPrice').textContent = data.perPcLabel;
             document.getElementById('startModalPrice').textContent = `${total.toLocaleString()} UZS`;
             document.getElementById('startModalTotalLabel').textContent = count > 1 ? `JAMI TO'LOV (${count} PC):` : `JAMI TO'LOV:`;
@@ -9395,9 +9390,14 @@
       let customerId = null;
 
       if (currentStartMode === 'hours') {
-        const h = Number(document.getElementById('inputHours').value);
-        durationMinutes = Math.round(h * 60);
-        amount = Math.round(h * currentHourlyRate);
+        durationMinutes = currentDurationInputUnit === 'minutes'
+          ? Number(document.getElementById('inputMinutes').value)
+          : Math.round(Number(document.getElementById('inputHours').value) * 60);
+        if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1440) {
+          setStartQuotePending(true, 'Vaqt 1–1440 daqiqa oralig‘ida bo‘lsin.');
+          return;
+        }
+        amount = Math.round((durationMinutes / 60) * currentHourlyRate);
       } else if (currentStartMode === 'price') {
         amount = Number(document.getElementById('inputPrice').value);
         durationMinutes = currentHourlyRate > 0 ? Math.round((amount / currentHourlyRate) * 60) : 0;
