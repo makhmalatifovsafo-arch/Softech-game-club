@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS club_workstations_cache (
     status TEXT NOT NULL DEFAULT 'OFFLINE'
         CHECK(status IN ('AVAILABLE', 'OCCUPIED', 'OFFLINE')),
     current_session_started_at DATETIME,
+    client_version TEXT,
+    update_status TEXT NOT NULL DEFAULT 'IDLE',
+    update_target_version TEXT,
+    update_command_id INTEGER,
+    update_error TEXT,
+    update_receipt_id TEXT,
+    update_observed_at DATETIME,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(club_id, pc_number)
 );

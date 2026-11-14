@@ -10,6 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using NetCafeClient.Services;
 
 namespace NetCafeClient;
 
@@ -102,7 +103,7 @@ public class WebSocketClientService
     public event Action<SessionInfo>?                          OnSessionInfo;
     public bool CanSelfClose { get; private set; }
     public event Action<string>?                               OnPowerCommand;       // SHUTDOWN | REBOOT | LOCK | UNLOCK
-    public event Action?                                       OnForceClientUpdate;
+    public event Action<long?, string?>?                       OnForceClientUpdate;
     public event Action<string, double, string, string>?       OnPcConfigReceived;   // zoneName, pricePerHour, formattedRate, qrToken
     public event Action<string, string>?                       OnEmergencyLockdown;  // reason, message (SaaS Remote Kill-Switch)
 
@@ -336,6 +337,7 @@ public class WebSocketClientService
     {
         string localIp = GetLocalIpAddress();
         string mac = GetMacAddress();
+        var update = AutoUpdateService.Instance.GetReport();
         var helloMsg = new
         {
             type = "CLIENT_HELLO",
@@ -352,7 +354,13 @@ public class WebSocketClientService
                 macAddress = mac,
                 clientVersion = "1.0.0",
                 agentVersion = typeof(WebSocketClientService).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
-                osInfo = Environment.OSVersion.VersionString
+                osInfo = Environment.OSVersion.VersionString,
+                updateStatus = update.Status,
+                updateTargetVersion = update.TargetVersion,
+                updateCommandId = update.CommandId,
+                updateError = update.Error,
+                updateReceiptId = update.ReceiptId,
+                updateUpdatedAt = update.UpdatedAt
             },
             timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
@@ -370,6 +378,7 @@ public class WebSocketClientService
         {
             try
             {
+                var update = AutoUpdateService.Instance.GetReport();
                 var hb = new
                 {
                     type = "HEARTBEAT_PING",
@@ -378,7 +387,14 @@ public class WebSocketClientService
                     payload = new
                     {
                         pcNumber = _config.PcNumber,
-                        uptimeSeconds = Environment.TickCount64 / 1000
+                        uptimeSeconds = Environment.TickCount64 / 1000,
+                        agentVersion = update.CurrentVersion,
+                        updateStatus = update.Status,
+                        updateTargetVersion = update.TargetVersion,
+                        updateCommandId = update.CommandId,
+                        updateError = update.Error,
+                        updateReceiptId = update.ReceiptId,
+                        updateUpdatedAt = update.UpdatedAt
                     },
                     timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 };
@@ -683,8 +699,12 @@ public class WebSocketClientService
                 }
 
                 case "FORCE_CLIENT_UPDATE":
-                    System.Windows.Application.Current?.Dispatcher.Invoke(() => OnForceClientUpdate?.Invoke());
+                {
+                    long? commandId = data.TryGetProperty("commandId", out var id) && id.TryGetInt64(out var parsedId) ? parsedId : null;
+                    string? targetVersion = data.TryGetProperty("targetVersion", out var version) && version.ValueKind == JsonValueKind.String ? version.GetString() : null;
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() => OnForceClientUpdate?.Invoke(commandId, targetVersion));
                     break;
+                }
 
                 // ---- BUG 3: Dynamic Pricing CONFIG_UPDATE ----
                 case "CONFIG_UPDATE":

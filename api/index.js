@@ -201,6 +201,12 @@ export default async function handler(req, res) {
       return sendJson(res, 201, { success: true, club: newClub });
     }
 
+    const fleetMatch=pathname.match(/^\/api\/(?:telemetry\/)?clubs\/(\d+)\/fleet$/);
+    if(fleetMatch&&method==='GET'){
+      if(!getAuthUser(req))return sendJson(res,401,{success:false,error:'Ruxsat berilmagan'});
+      return sendJson(res,200,await new CloudDashboardService(SupabaseCloudService.getClient()).fleet(Number(fleetMatch[1])));
+    }
+
     // Bitta klub ma'lumotlari
     const clubMatch = pathname.match(/^\/api\/(?:telemetry\/)?clubs\/(\d+)/);
     if (clubMatch && method === 'GET') {

@@ -23,6 +23,8 @@ export class ClientManager {
       ipAddress,
       lastHeartbeat: Date.now(),
       isAlive: true,
+      agentVersion: null,
+      updateStatus: 'IDLE',
     };
 
     this.clients.set(pcId, client);

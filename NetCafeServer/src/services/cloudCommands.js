@@ -50,7 +50,7 @@ export async function applyCloudCommands(db,envelopes,license,{broadcast,updateC
       continue;
     }
     if(p.action==='FORCE_CLIENT_UPDATE') {
-      const count=Number(updateClients?.(options)||0);
+      const count=Number(updateClients?.({...options,commandId:p.id})||0);
       db.prepare('INSERT INTO cloud_command_receipts(id,club_id,status,message) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,message=excluded.message')
         .run(p.id,p.clubId,'EXECUTED',count>0?`${count} ta onlayn clientga yangilanish buyrug‘i yuborildi.`:'Onlayn client topilmadi. U ulanganda avtomatik yangilanishni tekshiradi.');
       continue;

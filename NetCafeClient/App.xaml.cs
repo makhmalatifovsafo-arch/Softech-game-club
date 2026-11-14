@@ -260,11 +260,8 @@ public partial class App : WpfApplication
         {
             Dispatcher.Invoke(() => HandlePowerCommand(action));
         };
-        _wsService.OnForceClientUpdate += () =>
-        {
-            _ = AutoUpdateService.Instance.ForceCheckAsync();
-        };
-        _wsService.OnForceClientUpdate += () => _ = AutoUpdateService.Instance.ForceCheckAsync();
+        _wsService.OnForceClientUpdate += (commandId, targetVersion) =>
+            _ = AutoUpdateService.Instance.ForceCheckAsync(commandId, targetVersion);
 
         // ---- 10.5. SaaS Anti-Piracy & Remote Kill-Switch Enforcer ----
         _wsService.OnEmergencyLockdown += (reason, message) =>
@@ -281,12 +278,12 @@ public partial class App : WpfApplication
             });
         };
 
-        // ---- 11. WebSocket ulanishni boshlash ----
-        _wsService.Start();
-
-        // ---- 12. OTA Auto-Update Service ----
+        // ---- 11. OTA holati birinchi handshake ichida ham aniq bo'lishi kerak ----
         AutoUpdateService.Instance.Initialize(null, () => _isSessionActive, () => _isMaintenance);
         AutoUpdateService.Instance.StartPeriodicChecks(TimeSpan.FromSeconds(60));
+
+        // ---- 12. WebSocket ulanishni boshlash ----
+        _wsService.Start();
         int healthArg = Array.IndexOf(args, "--update-health");
         if (healthArg >= 0 && healthArg + 1 < args.Length)
         {
@@ -294,7 +291,9 @@ public partial class App : WpfApplication
             // The updater owns crash recovery until its health check completes.
             _ = System.Threading.Tasks.Task.Run(async () =>
             {
-                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(45));
+                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(12));
+                AutoUpdateService.Instance.ConfirmInstalled();
+                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(33));
                 if (!IsDevMode) WatchdogService.Initialize(Array.Empty<string>());
             });
         }

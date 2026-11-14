@@ -307,12 +307,16 @@ export class TelemetryService {
    */
   static syncWorkstationsCache(clubId, workstations = []) {
     const upsertStmt = db.prepare(`
-      INSERT INTO club_workstations_cache (club_id, pc_number, zone_name, status, current_session_started_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO club_workstations_cache (club_id, pc_number, zone_name, status, current_session_started_at,
+        client_version,update_status,update_target_version,update_command_id,update_error,update_receipt_id,update_observed_at,updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(club_id, pc_number) DO UPDATE SET
         zone_name = excluded.zone_name,
         status = excluded.status,
         current_session_started_at = excluded.current_session_started_at,
+        client_version=excluded.client_version,update_status=excluded.update_status,
+        update_target_version=excluded.update_target_version,update_command_id=excluded.update_command_id,
+        update_error=excluded.update_error,update_receipt_id=excluded.update_receipt_id,update_observed_at=excluded.update_observed_at,
         updated_at = CURRENT_TIMESTAMP
     `);
 
@@ -325,7 +329,10 @@ export class TelemetryService {
           String(pc.pc_number || pc.pcNumber || pc.name || 'PC'),
           String(pc.zone_name || pc.zoneName || 'STANDARD'),
           String(pc.status || 'AVAILABLE').toUpperCase(),
-          pc.current_session_started_at || pc.sessionStartedAt || null
+          pc.current_session_started_at || pc.sessionStartedAt || null,
+          /^\d+\.\d+\.\d+$/.test(String(pc.clientVersion||''))?String(pc.clientVersion):null,
+          String(pc.updateStatus||'IDLE').toUpperCase(),pc.updateTargetVersion||null,pc.updateCommandId||null,
+          String(pc.updateError||'').slice(0,300)||null,pc.updateReceiptId||null,pc.updateObservedAt||null
         );
       }
       db.exec('COMMIT;');

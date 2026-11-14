@@ -60,7 +60,7 @@ test('signed client update command reaches every connected kiosk without restart
   try {
     const envelopes=await deliverCommands({db:cloud},club);
     await applyCloudCommands(db,envelopes,license,{broadcast(){},hasActiveSessions:()=>false,maintain(){throw Error('Server maintenance must not run');},updateClients:value=>{options=value;return 4;}});
-    assert.deepEqual(options,{reason:'fixture'});
+    assert.deepEqual(options,{reason:'fixture',commandId:8});
     const result=commandResults(db)[0];assert.equal(result.status,'EXECUTED');assert.match(result.message,/4 ta onlayn client/);
     assert.equal((await deliverCommands({db:cloud},club,[result])).length,0);
   } finally { db.close();cloud.close(); }

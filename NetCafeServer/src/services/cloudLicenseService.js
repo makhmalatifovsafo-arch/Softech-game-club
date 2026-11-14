@@ -351,7 +351,10 @@ export class CloudLicenseService {
         onlinePcsCount:pcs.filter(p=>ClientManager.isConnected(p.id)).length,
         occupiedPcsCount:pcs.filter(p=>p.current_session_id).length,
         workstations:pcs.map(p=>({pc:p.pc_number,status:p.current_session_id?'OCCUPIED':ClientManager.isConnected(p.id)?'AVAILABLE':'OFFLINE',
-          zone:p.zone,minutesLeft:p.ends_at?Math.max(0,Math.ceil((Date.parse(p.ends_at)-Date.now())/60000)):0}))};
+          zone:p.zone,minutesLeft:p.ends_at?Math.max(0,Math.ceil((Date.parse(p.ends_at)-Date.now())/60000)):0,
+          clientVersion:p.agent_version||null,updateStatus:p.update_status||'IDLE',updateTargetVersion:p.update_target_version||null,
+          updateCommandId:p.update_command_id||null,updateError:p.update_error||null,updateReceiptId:p.update_receipt_id||null,
+          updateObservedAt:p.update_observed_at||null}))};
       const response=await cloudFetch(LicenseManager.cloudUrl+'/api/telemetry/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)});
       if(!response.ok)throw new Error('HTTP '+response.status);
@@ -359,8 +362,13 @@ export class CloudLicenseService {
       this.commandTask ??= applyCloudCommands(db,result.signedCommands,LicenseManager.licenseData,{
         broadcast:message=>ClientManager.broadcast('CLOUD_ANNOUNCEMENT',message),
         updateClients:options=>{
-          const clients=ClientManager.getAllClients().filter(client=>ClientManager.isConnected(client.pcId));
-          for(const client of clients)ClientManager.send(client.pcId,'FORCE_CLIENT_UPDATE',{reason:String(options?.reason||'Super Admin buyrug‘i').slice(0,200)});
+          const target=String(options?.pcNumber||options?.computerId||'').trim();
+          const clients=ClientManager.getAllClients().filter(client=>ClientManager.isConnected(client.pcId) && (!target ||
+            String(client.pcId)===target || String(client.pcNumber)===target || String(client.name).toUpperCase()===target.toUpperCase()));
+          for(const client of clients)ClientManager.send(client.pcId,'FORCE_CLIENT_UPDATE',{
+            reason:String(options?.reason||'Super Admin buyrug‘i').slice(0,200),commandId:Number(options?.commandId)||null,
+            targetVersion:/^\d+\.\d+\.\d+$/.test(String(options?.targetVersion||''))?String(options.targetVersion):null
+          });
           return clients.length;
         },
         hasActiveSessions:()=>Boolean(db.prepare("SELECT id FROM sessions WHERE status='ACTIVE' LIMIT 1").get()),

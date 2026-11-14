@@ -51,6 +51,11 @@ export class CloudDashboardService {
   const reports=await cloudFinancialReports(this.client,date,date,id);
   return {success:true,...formatClubInspector(clubs[0],mergeFinancialReports(metrics,reports)[0]||{},pcs)};
  }
+ async fleet(id){
+  const clubs=await this.rows('clubs',q=>q.eq('id',id));if(!clubs[0])throw failure('Klub topilmadi.',404);
+  const pcs=await this.rows('club_workstations_cache',q=>q.eq('club_id',id));
+  return {success:true,serverVersion:clubs[0].server_version||null,workstations:formatClubInspector(clubs[0],{},pcs).workstations};
+ }
  async dailyMetrics(date){
   const [metrics,reports]=await Promise.all([this.rows('club_metrics',q=>q.eq('record_date',date)),cloudFinancialReports(this.client,date,date)]);
   return mergeFinancialReports(metrics,reports);

@@ -110,6 +110,15 @@ export function initDatabase() {
     console.warn('⚠️ [Database] remote_commands migratsiya ogohlantirishi:', err.message);
   }
 
+  try {
+    const fleetColumns = new Set(db.prepare('PRAGMA table_info(club_workstations_cache)').all().map(c => c.name));
+    for (const [column, type] of Object.entries({client_version:'TEXT',update_status:"TEXT NOT NULL DEFAULT 'IDLE'",
+      update_target_version:'TEXT',update_command_id:'INTEGER',update_error:'TEXT',update_receipt_id:'TEXT',update_observed_at:'DATETIME'}))
+      if (!fleetColumns.has(column)) db.exec(`ALTER TABLE club_workstations_cache ADD COLUMN ${column} ${type};`);
+  } catch (err) {
+    console.warn('[Database] Client fleet migratsiya ogohlantirishi:', err.message);
+  }
+
   // clubs jadvaliga api_secret_token ustuni qo'shish (Heartbeat autentifikatsiyasi uchun)
   try {
     const clubsCols = db.prepare('PRAGMA table_info(clubs)').all().map(c => c.name);

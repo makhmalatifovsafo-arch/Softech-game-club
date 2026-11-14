@@ -5,6 +5,15 @@
  */
 
 import {renderServerDiagnostics} from './serverDiagnostics.js';
+const fleetEsc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+const semver=value=>/^\d+\.\d+\.\d+$/.test(String(value||''))?String(value):null;
+function fleetStatus(pc){
+  const labels={IDLE:'Yangilanish kutilmayapti',REQUESTED:'Buyruq qabul qilindi',CHECKING:'Versiya tekshirilmoqda',DOWNLOADING:'Yuklanmoqda',READY:'O‘rnatishga tayyor',WAITING_FOR_SESSION:'Seans tugashi kutilmoqda',INSTALLING:'O‘rnatilmoqda',VERIFYING:'Yangi versiya tekshirilmoqda',INSTALLED:'O‘rnatildi',ERROR:'Xatolik'};
+  const status=String(pc.updateStatus||'IDLE').toUpperCase(),client=semver(pc.clientVersion),server=semver(pc.serverVersion);
+  let compatibility='Versiya aniqlanmadi',tone='text-zinc-400';
+  if(client&&server){const [cm,cn]=client.split('.').map(Number),[sm,sn]=server.split('.').map(Number);if(cm!==sm){compatibility='Server bilan mos emas';tone='text-rose-400';}else if(cm===sm&&cn<sn){compatibility='Client eski — yangilang';tone='text-amber-400';}else if(client!==server){compatibility='Versiyalar farqli';tone='text-amber-300';}else{compatibility='Server bilan mos';tone='text-emerald-400';}}
+  return {status,label:labels[status]||status,client,server,compatibility,tone};
+}
 // Global Inspector State
 export const clubInspectorState = {
   activeClubId: null,
@@ -418,6 +427,7 @@ function renderWorkstationsMatrix(workstations) {
       <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2.5 pt-1">
         ${workstations.map(pc => {
           const status = pc.status;
+          const fleet=fleetStatus(pc);
           let cardStyle = '';
           let badgeDot = '';
           let textStatus = '';
@@ -472,10 +482,9 @@ function renderWorkstationsMatrix(workstations) {
 
               <!-- Bottom: Zone indicator pill -->
               <div class="w-full mt-1 pt-1 border-t border-white/10 flex items-center justify-center">
-                <span class="text-[8px] font-mono uppercase tracking-wider text-zinc-400">
-                  ${pc.zoneName || 'STD'}
-                </span>
+                <span class="text-[8px] font-mono uppercase tracking-wider text-zinc-400">${pc.zoneName || 'STD'} • v${fleet.client||'?'}</span>
               </div>
+              ${!['IDLE','INSTALLED'].includes(fleet.status)?`<div class="text-[8px] mt-1 ${fleet.status==='ERROR'?'text-rose-400':'text-violet-300'}">${fleetEsc(fleet.label)}</div>`:''}
             </div>
           `;
         }).join('')}
@@ -494,6 +503,7 @@ function renderWorkstationSessionModal() {
   const isOccupied = pc.status === 'OCCUPIED';
   const isAvailable = pc.status === 'AVAILABLE';
   const session = pc.session;
+  const fleet=fleetStatus(pc);
 
   return `
     <div id="pcDetailModalContainer" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
@@ -515,6 +525,20 @@ function renderWorkstationSessionModal() {
           </div>
           <button type="button" onclick="closeInspectorWorkstationModal()" class="w-8 h-8 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition">
             ✕
+          </button>
+        </div>
+
+        <div class="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 text-xs space-y-2">
+          <div class="flex justify-between"><span class="text-zinc-400">Client versiyasi:</span><span class="font-mono font-bold text-white">${fleet.client?`v${fleet.client}`:'Aniqlanmadi'}</span></div>
+          <div class="flex justify-between"><span class="text-zinc-400">Server versiyasi:</span><span class="font-mono text-zinc-200">${fleet.server?`v${fleet.server}`:'Aniqlanmadi'}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-zinc-400">Moslik:</span><span class="font-bold text-right ${fleet.tone}">${fleet.compatibility}</span></div>
+          <div class="flex justify-between gap-3"><span class="text-zinc-400">Yangilanish:</span><span class="font-bold text-right ${fleet.status==='ERROR'?'text-rose-400':'text-violet-300'}">${fleetEsc(fleet.label)}</span></div>
+          ${pc.updateTargetVersion?`<div class="flex justify-between"><span class="text-zinc-400">Maqsad:</span><span class="font-mono">v${fleetEsc(pc.updateTargetVersion)}</span></div>`:''}
+          ${pc.updateReceiptId?`<div class="text-[10px] text-emerald-400 break-all">Tasdiq receipt: ${fleetEsc(pc.updateReceiptId)}</div>`:''}
+          ${pc.updateError?`<div class="p-2 rounded-lg bg-rose-950/40 border border-rose-500/30 text-[10px] text-rose-300">${fleetEsc(pc.updateError)}</div>`:''}
+          <button type="button" onclick="updateSingleClient('${fleetEsc(pc.pcNumber)}')" ${pc.status==='OFFLINE'?'disabled':''}
+            class="w-full py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white font-bold text-xs">
+            Shu clientni yangilash
           </button>
         </div>
 
@@ -765,6 +789,22 @@ setInterval(async()=>{
   finally{diagnosticRefreshing=false;renderDiagnosticSection();}
 },30000);
 
+let fleetRefreshing=false;
+setInterval(async()=>{
+  if(document.hidden||fleetRefreshing||!document.querySelector('[data-server-diagnostics]'))return;
+  const id=clubInspectorState.activeClubId,generation=clubInspectorState.requestGeneration;
+  const token=localStorage.getItem('softech_access_token');if(!id||!token)return;
+  fleetRefreshing=true;
+  try{
+    const response=await fetch(`/api/clubs/${id}/fleet`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error();const data=await response.json();
+    if(id!==clubInspectorState.activeClubId||generation!==clubInspectorState.requestGeneration)return;
+    clubInspectorState.workstations=data.workstations||[];
+    if(clubInspectorState.selectedPc){const selected=clubInspectorState.selectedPc.pcNumber;clubInspectorState.selectedPc=clubInspectorState.workstations.find(pc=>pc.pcNumber===selected)||null;}
+    renderClubInspectorView();
+  }catch{/* The last verified fleet remains visible. */}finally{fleetRefreshing=false;}
+},15000);
+
 window.refreshClubDetailInspector = async function() {
   triggerHaptic(15);
   if (!clubInspectorState.activeClubId) return;
@@ -787,6 +827,19 @@ window.closeInspectorWorkstationModal = function() {
   triggerHaptic(10);
   clubInspectorState.selectedPc = null;
   renderClubInspectorView();
+};
+
+window.updateSingleClient = async function(pcNumber) {
+  const clubId=clubInspectorState.activeClubId,token=localStorage.getItem('softech_access_token');
+  if(!clubId||!token)return;
+  showInspectorToast(`${pcNumber}: yangilanish navbatga qo‘yilmoqda...`);
+  try{
+    const response=await fetch(`/api/telemetry/commands/${clubId}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+      body:JSON.stringify({action:'FORCE_CLIENT_UPDATE',payload:{pcNumber,reason:'Super Admin orqali bitta client yangilanishi'}})});
+    const data=await response.json();if(!response.ok||!data.success)throw Error(data.error||'Buyruq yuborilmadi.');
+    showInspectorToast(`${pcNumber}: buyruq yuborildi`);clubInspectorState.selectedPc=null;
+    setTimeout(async()=>{await fetchClubInspectorData(clubId);renderClubInspectorView();},1500);
+  }catch(error){showInspectorToast(`Xatolik: ${error.message}`);}
 };
 
 window.sendWorkstationQuickSignal = function(pcNumber, signalType) {

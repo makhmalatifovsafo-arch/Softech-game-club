@@ -17,6 +17,23 @@ test('remote client update is wired end to end and never bypasses an active sess
   assert.match(updater, /ForceCheckAsync[\s\S]*?CheckForUpdatesAsync/);
   assert.match(updater, /IdleSafety\.CanApply\(sessionActive\?\.Invoke\(\) \?\? true, maintenance\?\.Invoke\(\) \?\? true/);
   assert.match(ui, /Barcha client kompyuterlarni yangilash/);
+  assert.match(protocol, /updateReceiptId/);
+  assert.match(updater, /VERIFYING[\s\S]*?ConfirmInstalled/);
+  assert.match(updater, /client-update-state\.json/);
+});
+
+test('fleet telemetry persists version, progress, errors and a post-health receipt end to end',()=>{
+  const local=fs.readFileSync('NetCafeServer/src/handlers/protocolDispatcher.js','utf8');
+  const heartbeat=fs.readFileSync('NetCafeServer/src/services/cloudLicenseService.js','utf8');
+  const cloud=fs.readFileSync('src/services/supabaseClient.js','utf8');
+  const inspector=fs.readFileSync('src/services/clubInspector.js','utf8');
+  const ui=fs.readFileSync('public/views/clubDetail.js','utf8');
+  const migration=fs.readFileSync('migrations/20261114_client_fleet.sql','utf8');
+  for(const field of ['client_version','update_status','update_target_version','update_command_id','update_error','update_receipt_id','update_observed_at'])
+    assert.match(migration,new RegExp(field));
+  assert.match(local,/saveClientUpdateState/);assert.match(heartbeat,/updateReceiptId/);assert.match(cloud,/update_receipt_id/);
+  assert.match(inspector,/updateReceiptId/);assert.match(ui,/Shu clientni yangilash/);assert.match(ui,/Tasdiq receipt/);
+  assert.match(ui,/Server bilan mos emas/);assert.match(ui,/Client eski/);
 });
 
 test('locked kiosk updates are no longer blocked forever by a third-party shell', () => {

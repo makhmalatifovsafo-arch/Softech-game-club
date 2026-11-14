@@ -217,6 +217,23 @@ function migrateSchemaToMultiTenant() {
       throw patchErr;
     }
 
+    // Client fleet/update telemetry. These fields are operational only and do
+    // not participate in session or financial accounting.
+    const fleetTable = db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='computers'").get();
+    if (fleetTable) {
+      const fleetColumns = new Set(db.prepare("PRAGMA table_info(computers);").all().map(c => c.name));
+      for (const [column, type] of Object.entries({
+        update_status: "TEXT NOT NULL DEFAULT 'IDLE'",
+        update_target_version: 'TEXT',
+        update_command_id: 'INTEGER',
+        update_error: 'TEXT',
+        update_receipt_id: 'TEXT',
+        update_observed_at: 'TEXT'
+      })) {
+        if (!fleetColumns.has(column)) db.exec(`ALTER TABLE computers ADD COLUMN ${column} ${type};`);
+      }
+    }
+
     // tariffs jadvaliga zone_id, is_vip_postpaid_allowed, start_time, end_time, days_of_week ustunlarini qo'shish
     const tariffCols = db.prepare("PRAGMA table_info(tariffs);").all().map(c => c.name);
     if (!tariffCols.includes('zone_id')) {

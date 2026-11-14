@@ -118,7 +118,8 @@ export class ProtocolDispatcher {
     const ipAddress = message.ip || payload.ipAddress || payload.ip || socket._remoteAddress || socket._socket?.remoteAddress?.replace('::ffff:', '') || '127.0.0.1';
     let macAddress = '';
     try { macAddress = normalizeMacAddress(payload.macAddress) || ''; } catch { /* Keep the last valid MAC when a client reports an invalid adapter. */ }
-    const agentVersion = payload.agentVersion || '2.0.0';
+    const agentVersion = /^\d+\.\d+\.\d+$/.test(String(payload.agentVersion || payload.clientVersion || message.clientVersion || ''))
+      ? String(payload.agentVersion || payload.clientVersion || message.clientVersion) : '';
     const osInfo = payload.osInfo || '';
     const clubId = 1; // Each installed server owns its local club; clients cannot select another tenant.
 
@@ -192,6 +193,7 @@ export class ProtocolDispatcher {
     }
 
     ClientManager.registerClient(socket, pcId, numericPcNum || 1, macAddress, ipAddress, pcName);
+    this.saveClientUpdateState(pcId, { ...payload, agentVersion });
 
     // Litsenziya holatini tekshirish — Agar server faollashtirilmagan yoki bloklangan bo'lsa darhol qulflash
     if (!LicenseManager.isOperational()) {
@@ -268,9 +270,29 @@ export class ProtocolDispatcher {
     const pcId = ClientManager.socketToPcId.get(socket);
     if (pcId) {
       ClientManager.recordHeartbeat(pcId);
+      this.saveClientUpdateState(pcId, payload);
       const computer = db.prepare('SELECT club_id, name FROM computers WHERE id = ?').get(pcId);
       this.syncClientRate(pcId, Number(computer?.club_id || 1), computer?.name || '');
     }
+  }
+
+  static saveClientUpdateState(pcId, payload = {}) {
+    const allowed = new Set(['IDLE','REQUESTED','CHECKING','DOWNLOADING','READY','WAITING_FOR_SESSION','INSTALLING','VERIFYING','INSTALLED','ERROR']);
+    const status = String(payload.updateStatus || '').toUpperCase();
+    const version = String(payload.agentVersion || '').trim();
+    if (!allowed.has(status) && !/^\d+\.\d+\.\d+$/.test(version)) return;
+    const target = /^\d+\.\d+\.\d+$/.test(String(payload.updateTargetVersion || '')) ? String(payload.updateTargetVersion) : null;
+    const commandId = Number.isSafeInteger(Number(payload.updateCommandId)) && Number(payload.updateCommandId) > 0 ? Number(payload.updateCommandId) : null;
+    const error = String(payload.updateError || '').trim().slice(0, 300) || null;
+    const receipt = /^[a-f0-9]{16,64}$/i.test(String(payload.updateReceiptId || '')) ? String(payload.updateReceiptId) : null;
+    const observed = Number.isFinite(Date.parse(payload.updateUpdatedAt)) ? new Date(payload.updateUpdatedAt).toISOString() : new Date().toISOString();
+    db.prepare(`UPDATE computers SET
+      agent_version=CASE WHEN ?<>'' THEN ? ELSE agent_version END,
+      update_status=?,update_target_version=?,update_command_id=?,update_error=?,update_receipt_id=?,update_observed_at=?
+      WHERE id=?`).run(version, version, allowed.has(status) ? status : 'IDLE', target, commandId, error, receipt, observed, pcId);
+    const client = ClientManager.getClientByPcId(pcId);
+    if (client) Object.assign(client, { agentVersion: version || client.agentVersion, updateStatus: status, updateTargetVersion: target,
+      updateCommandId: commandId, updateError: error, updateReceiptId: receipt, updateObservedAt: observed });
   }
 
   static handleSessionAlert(socket, payload) {

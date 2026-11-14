@@ -9,6 +9,15 @@ using Softech.Updates;
 
 namespace NetCafeClient.Services;
 
+public sealed record ClientUpdateReport(
+    string Status,
+    string CurrentVersion,
+    string? TargetVersion,
+    long? CommandId,
+    string? Error,
+    string? ReceiptId,
+    DateTimeOffset UpdatedAt);
+
 public sealed class AutoUpdateService
 {
     public static AutoUpdateService Instance { get; } = new();
@@ -22,6 +31,8 @@ public sealed class AutoUpdateService
     private string? stagedVersion;
     private int idleSeconds = 10;
     private DateTime nextApplyAttempt;
+    private readonly object stateLock = new();
+    private ClientUpdateReport updateReport;
     private readonly string root = AppContext.BaseDirectory;
     private readonly string staging;
     public string CurrentVersion { get; } = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
@@ -36,6 +47,59 @@ public sealed class AutoUpdateService
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Softech-Updater/2.0");
         // Per-installation staging avoids collisions between separate installations.
         staging = Path.Combine(root, "updates", "staging");
+        updateReport = LoadReport();
+        if (updateReport.Status == "INSTALLING" && updateReport.TargetVersion == CurrentVersion)
+            SetReport("VERIFYING", CurrentVersion, updateReport.CommandId, null,
+                updateReport.ReceiptId ?? Guid.NewGuid().ToString("N"));
+        else if ((updateReport.Status is "INSTALLING" or "VERIFYING") && updateReport.TargetVersion is { } failed && IsFailedVersion(failed))
+            SetReport("ERROR", failed, updateReport.CommandId, "Yangi versiya sog‘lom ishga tushmadi; oldingi client tiklandi.", updateReport.ReceiptId);
+    }
+
+    public ClientUpdateReport GetReport()
+    {
+        lock (stateLock) return updateReport;
+    }
+
+    public void ConfirmInstalled()
+    {
+        var report=GetReport();
+        if (report.Status == "VERIFYING" && report.TargetVersion == CurrentVersion)
+            SetReport("INSTALLED", CurrentVersion, report.CommandId, null, report.ReceiptId);
+    }
+
+    private ClientUpdateReport LoadReport()
+    {
+        try
+        {
+            var saved = JsonSerializer.Deserialize<ClientUpdateReport>(File.ReadAllText(Path.Combine(root, "client-update-state.json")));
+            if (saved != null) return saved with { CurrentVersion = CurrentVersion };
+        }
+        catch { }
+        return new("IDLE", CurrentVersion, null, null, null, null, DateTimeOffset.UtcNow);
+    }
+
+    private void SetReport(string status, string? target = null, long? commandId = null, string? error = null, string? receiptId = null, bool resetCommand = false)
+    {
+        ClientUpdateReport report;
+        lock (stateLock)
+        {
+            string? nextTarget=target ?? updateReport.TargetVersion;
+            long? nextCommand=resetCommand ? commandId : commandId ?? updateReport.CommandId;
+            string? nextError=string.IsNullOrWhiteSpace(error) ? null : error[..Math.Min(error.Length, 300)];
+            string? nextReceipt=receiptId ?? updateReport.ReceiptId;
+            if (updateReport.Status==status && updateReport.CurrentVersion==CurrentVersion && updateReport.TargetVersion==nextTarget &&
+                updateReport.CommandId==nextCommand && updateReport.Error==nextError && updateReport.ReceiptId==nextReceipt) return;
+            report = new(status, CurrentVersion, target ?? updateReport.TargetVersion,
+                nextCommand, nextError, nextReceipt, DateTimeOffset.UtcNow);
+            updateReport = report;
+        }
+        try
+        {
+            string file = Path.Combine(root, "client-update-state.json"), temporary = file + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(report, PackageManifest.JsonOptions));
+            File.Move(temporary, file, true);
+        }
+        catch { }
     }
 
     public void Initialize(string? manifestUrl, Func<bool> isSessionActiveFunc, Func<bool>? isMaintenance = null)
@@ -86,16 +150,19 @@ public sealed class AutoUpdateService
     public void Stop() => stopping.Cancel();
     public void OnSessionEnded() { /* The one-second safety loop makes the decision. */ }
     public void ApplyStagedUpdate() => _ = TryApplyAsync(); // Manual callers cannot bypass safety.
-    public async Task<bool> ForceCheckAsync()
+    public async Task<bool> ForceCheckAsync(long? commandId = null, string? requestedVersion = null)
     {
         // A remote request accelerates download/staging, but applying still waits
         // for the kiosk to have no active session and no maintenance window.
-        bool found = await CheckForUpdatesAsync();
+        SetReport("REQUESTED", requestedVersion, commandId, null, Guid.NewGuid().ToString("N"));
+        bool found = await CheckForUpdatesAsync(commandId);
+        if (!found && !IsUpdateStaged && GetReport().Status == "CHECKING")
+            SetReport("INSTALLED", CurrentVersion, commandId, null, GetReport().ReceiptId);
         if (found || IsUpdateStaged) _ = TryApplyAsync();
         return found || IsUpdateStaged;
     }
 
-    public async Task<bool> CheckForUpdatesAsync()
+    public async Task<bool> CheckForUpdatesAsync(long? commandId = null)
     {
         if (!await checkLock.WaitAsync(0)) return false;
         IsChecking = true;
@@ -103,16 +170,28 @@ public sealed class AutoUpdateService
         bool published = false;
         try
         {
+            if (commandId.HasValue) SetReport("CHECKING", null, commandId);
             if (applyLock.CurrentCount == 0) return false;
             await Task.Run(() => UpdateCleanup.OnStartup(root, CurrentVersion));
             using var response = await http.GetAsync(ManifestUrl, stopping.Token);
-            if (!response.IsSuccessStatusCode) return false;
+            if (!response.IsSuccessStatusCode)
+            {
+                if (commandId.HasValue) throw new HttpRequestException($"Manifest HTTP {(int)response.StatusCode}");
+                return false;
+            }
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(stopping.Token));
             var manifest = document.RootElement;
             string version = manifest.GetProperty("version").GetString() ?? "";
-            if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$") ||
-                Version.Parse(version) <= Version.Parse(CurrentVersion)) return false;
-            if (IsFailedVersion(version) || stagedVersion == version) return false;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^\d+\.\d+\.\d+$"))
+                throw new InvalidDataException("Manifest version is invalid.");
+            if (Version.Parse(version) <= Version.Parse(CurrentVersion)) return false;
+            if (IsFailedVersion(version))
+            {
+                if(commandId.HasValue)SetReport("ERROR",version,commandId,"Bu versiyaning oldingi o‘rnatilishi muvaffaqiyatsiz tugagan.");
+                return false;
+            }
+            if (stagedVersion == version && staged != null) { SetReport("READY", version, commandId); return true; }
+            SetReport("DOWNLOADING", version, commandId, receiptId:commandId.HasValue?null:Guid.NewGuid().ToString("N"), resetCommand:!commandId.HasValue);
             var file = manifest.GetProperty("client");
             string url = file.TryGetProperty("downloadUrl", out var download) ? download.GetString()! : file.GetProperty("url").GetString()!;
             string hash = file.GetProperty("sha256").GetString() ?? "";
@@ -121,7 +200,7 @@ public sealed class AutoUpdateService
             if (uri.Scheme != "https" && !(uri.IsLoopback && uri.Scheme == "http")) throw new InvalidDataException("HTTPS download required.");
 
             string? cached = await Task.Run(() => UpdateStorage.FindStaged(root,version,"client",hash));
-            if (cached != null) { staged = cached; stagedVersion = version; return true; }
+            if (cached != null) { staged = cached; stagedVersion = version; SetReport("READY", version, commandId); return true; }
 
             IsDownloading = true;
             candidate = PackageManifest.ChildPath(root, "updates/staging/v" + version + "-" + Guid.NewGuid().ToString("N"));
@@ -147,10 +226,11 @@ public sealed class AutoUpdateService
             // Publish the staged state only after the whole package is validated.
             staged = extracted;
             stagedVersion = version;
+            SetReport("READY", version, commandId);
             published = true;
             return true;
         }
-        catch (Exception ex) { Log(ex.Message); return false; }
+        catch (Exception ex) { if (commandId.HasValue) SetReport("ERROR", null, commandId, ex.Message); Log(ex.Message); return false; }
         finally
         {
             // Only this failed attempt is disposable. Keep the last verified
@@ -189,7 +269,11 @@ public sealed class AutoUpdateService
             // Third-party kiosk shells (RunPad and similar) intentionally stay
             // open while the PC is locked. Session/maintenance state is the
             // authority; treating the shell as a game postponed updates forever.
-            if (!SafeOnUiThread(false, IdleSafety.IdleSeconds())) return;
+            if (!SafeOnUiThread(false, IdleSafety.IdleSeconds()))
+            {
+                if (sessionActive?.Invoke() == true) SetReport("WAITING_FOR_SESSION", stagedVersion);
+                return;
+            }
             string handover = Path.Combine(staging, "handover-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(handover);
             string updater = Path.Combine(handover, "SoftechUpdater.exe");
@@ -226,12 +310,13 @@ public sealed class AutoUpdateService
                     IdleSafety.IdleSeconds(), false, idleSeconds))
                     throw new InvalidOperationException("Computer became busy; update postponed.");
                 WatchdogService.PrepareForUpdate();
+                SetReport("INSTALLING", stagedVersion);
                 File.WriteAllText(plan.CommitFile, stagedVersion);
                 cancel = null;
                 app.Shutdown(0);
             });
         }
-        catch (Exception ex) { nextApplyAttempt = DateTime.UtcNow.AddSeconds(60); Log(ex.Message); }
+        catch (Exception ex) { nextApplyAttempt = DateTime.UtcNow.AddSeconds(60); SetReport("ERROR", stagedVersion, null, ex.Message); Log(ex.Message); }
         finally
         {
             if (cancel != null) try { File.WriteAllText(cancel, "cancel"); } catch { }

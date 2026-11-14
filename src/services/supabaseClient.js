@@ -292,12 +292,21 @@ export class SupabaseCloudService {
       // 4. Kompyuterlar matritsasini yangilash
       if (Array.isArray(payload.workstations)) {
         for (const ws of payload.workstations) {
+          const updateStatus=['IDLE','REQUESTED','CHECKING','DOWNLOADING','READY','WAITING_FOR_SESSION','INSTALLING','VERIFYING','INSTALLED','ERROR'].includes(String(ws.updateStatus||'').toUpperCase())
+            ? String(ws.updateStatus).toUpperCase() : 'IDLE';
           const cached=await client.from('club_workstations_cache').upsert({
             club_id: club.id,
             pc_number: String(ws.pc),
             zone_name: ws.zone || 'STANDARD',
             status: ws.status || 'AVAILABLE',
             minutes_left: ws.minutesLeft || 0,
+            client_version:/^\d+\.\d+\.\d+$/.test(String(ws.clientVersion||''))?String(ws.clientVersion):null,
+            update_status:updateStatus,
+            update_target_version:/^\d+\.\d+\.\d+$/.test(String(ws.updateTargetVersion||''))?String(ws.updateTargetVersion):null,
+            update_command_id:Number.isSafeInteger(Number(ws.updateCommandId))&&Number(ws.updateCommandId)>0?Number(ws.updateCommandId):null,
+            update_error:String(ws.updateError||'').slice(0,300)||null,
+            update_receipt_id:/^[a-f0-9]{16,64}$/i.test(String(ws.updateReceiptId||''))?String(ws.updateReceiptId):null,
+            update_observed_at:Number.isFinite(Date.parse(ws.updateObservedAt))?new Date(ws.updateObservedAt).toISOString():null,
             updated_at: nowIso
           }, { onConflict: 'club_id,pc_number' });
           if(cached.error)throw new Error('Kompyuterlar holati saqlanmadi.');
