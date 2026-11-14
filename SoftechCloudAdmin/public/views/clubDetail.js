@@ -657,6 +657,21 @@ export function renderClubInspectorView() {
       ${renderOverviewHeader(club)}
       <div data-server-diagnostics="${Number(club.id)}">${renderServerDiagnostics(clubInspectorState.diagnostic,clubInspectorState.diagnosticLoadState,Date.now(),club.last_heartbeat_at||club.last_heartbeat)}</div>
 
+      <!-- Client fleet update must be reachable without discovering a hidden modal tab. -->
+      <div class="p-4 rounded-2xl bg-violet-500/10 border border-violet-500/30 space-y-3">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-extrabold text-white">Client kompyuterlar yangilanishi</h3>
+            <p class="text-[11px] text-zinc-400 mt-1">Barcha online clientlarga eng yangi versiyani tekshirish va o‘rnatish buyrug‘ini yuboradi.</p>
+          </div>
+          <span class="px-2 py-1 rounded-lg bg-violet-500/20 text-violet-300 text-[10px] font-bold whitespace-nowrap">FLEET UPDATE</span>
+        </div>
+        <button type="button" onclick="openClientFleetUpdate(${Number(club.id)}, ${JSON.stringify(String(club.name || 'Klub')).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')})"
+          class="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 active:scale-[0.98] text-white font-extrabold text-xs transition shadow-lg shadow-violet-600/20">
+          Barcha client kompyuterlarni yangilash
+        </button>
+      </div>
+
       <!-- 2. Kunlik Kassa Bo'linishi -->
       ${renderKassaBreakdown(kassa || {})}
 
@@ -840,6 +855,15 @@ window.updateSingleClient = async function(pcNumber) {
     showInspectorToast(`${pcNumber}: buyruq yuborildi`);clubInspectorState.selectedPc=null;
     setTimeout(async()=>{await fetchClubInspectorData(clubId);renderClubInspectorView();},1500);
   }catch(error){showInspectorToast(`Xatolik: ${error.message}`);}
+};
+
+window.openClientFleetUpdate = function(clubId, clubName) {
+  if (typeof window.openRemoteCommandModal !== 'function') {
+    showInspectorToast('Masofaviy boshqaruv oynasi yuklanmadi. Sahifani yangilang.');
+    return;
+  }
+  window.openRemoteCommandModal(clubId, clubName);
+  if (typeof window.switchRemoteTab === 'function') window.switchRemoteTab('RESTART');
 };
 
 window.sendWorkstationQuickSignal = function(pcNumber, signalType) {

@@ -33,6 +33,7 @@ test('fleet telemetry persists version, progress, errors and a post-health recei
     assert.match(migration,new RegExp(field));
   assert.match(local,/saveClientUpdateState/);assert.match(heartbeat,/updateReceiptId/);assert.match(cloud,/update_receipt_id/);
   assert.match(inspector,/updateReceiptId/);assert.match(ui,/Shu clientni yangilash/);assert.match(ui,/Tasdiq receipt/);
+  assert.match(ui,/Barcha client kompyuterlarni yangilash/);assert.match(ui,/openClientFleetUpdate/);
   assert.match(ui,/Server bilan mos emas/);assert.match(ui,/Client eski/);
 });
 
