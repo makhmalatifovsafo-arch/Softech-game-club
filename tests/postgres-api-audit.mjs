@@ -26,6 +26,7 @@ try{
  await db.exec(fs.readFileSync('supabase_schema.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261031_cloud_audit.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261031_mobile_relay.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261031_mobile_relay.sql','utf8'));
  await db.exec("INSERT INTO clubs(id,name,slug,hardware_fingerprint,api_secret_token,total_workstations,tariff_type,tariff_fixed_price) VALUES(1,'API Club','api-club','HWID-API-TEST-123','private-test-token',24,'FIXED_MONTHLY',500000);");
  await db.exec(fs.readFileSync('migrations/20261110_mobile_dashboard.sql','utf8'));
+ await db.exec(fs.readFileSync('migrations/20261114_client_fleet.sql','utf8'));await db.exec(fs.readFileSync('migrations/20261114_client_fleet.sql','utf8'));
  const {default:handler}=await import('../api/index.js');const {SupabaseCloudService}=await import('../src/services/supabaseClient.js');SupabaseCloudService.client=client;
  const {signAccessToken}=await import('../src/utils/jwt.js');const {signClubLicense}=await import('../src/services/cloudActivationService.js');
  const token=signAccessToken({id:1,sub:1,username:'admin',role:'superadmin'});
@@ -65,12 +66,13 @@ try{
  assert.equal((await db.query('SELECT count(*)::int n FROM mobile_requests')).rows[0].n,1);
  await db.exec('RESET ROLE;SET ROLE anon');await assert.rejects(()=>db.query('SELECT * FROM mobile_requests'));await assert.rejects(()=>db.query('SELECT * FROM mobile_agents'));await db.exec('RESET ROLE;SET ROLE service_role');
  console.log('PASS PostgreSQL mobile relay migration, API, retry deduplication, result acknowledgement and public-role restrictions');
- const report={clubId:1,signedLicense:license,reportDate:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'}),totalSessionsCount:3,todayRevenue:150000,barRevenue:30000,onlinePcsCount:1,occupiedPcsCount:1,workstations:[{pc:1,status:'OCCUPIED',zone:'VIP',minutesLeft:15}]};
+ const report={clubId:1,signedLicense:license,reportDate:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'}),totalSessionsCount:3,todayRevenue:150000,barRevenue:30000,onlinePcsCount:1,occupiedPcsCount:1,workstations:[{pc:1,status:'OCCUPIED',zone:'VIP',minutesLeft:15,clientVersion:'1.3.3',updateStatus:'INSTALLED',updateTargetVersion:'1.3.3',updateCommandId:8,updateReceiptId:'1234567890abcdef',updateObservedAt:new Date().toISOString()}]};
  let heartbeat=await api('/api/telemetry/heartbeat','POST',report,false);assert.equal(heartbeat.status,200,JSON.stringify(heartbeat));assert.ok(heartbeat.body.managerAccount);assert.equal(heartbeat.body.signedCommands.length,1);
  heartbeat=await api('/api/telemetry/heartbeat','POST',{...report,managerRevision:heartbeat.body.managerAccount.payload.revision,commandResults:[{id:command.body.queuedCommand.id,status:'EXECUTED'}]},false);assert.equal(heartbeat.body.signedCommands.length,0);
  assert.equal((await api('/api/clubs/1/manager')).body.manager.applied,true);
  assert.equal((await db.query('SELECT total_workstations FROM clubs WHERE id=1')).rows[0].total_workstations,24);
  const detail=await api('/api/telemetry/clubs/1');assert.equal(detail.status,200,JSON.stringify(detail));assert.equal(detail.body.workstations.length,1);assert.equal(detail.body.kassa.barRevenue,30000);assert.equal(detail.body.club.ping_ms,null);
+ assert.equal(detail.body.workstations[0].clientVersion,'1.3.3');assert.equal(detail.body.workstations[0].updateStatus,'INSTALLED');assert.equal(detail.body.workstations[0].updateReceiptId,'1234567890abcdef');
  const overview=await api('/api/telemetry/summary');assert.equal(overview.body.summary.revenue.sessionsCount,3);assert.equal(overview.body.summary.revenue.barTotal,30000);
  assert.equal(overview.body.summary.workstations.totalNetwork,1,'Inventory count, not the licensed limit');
  await db.exec("INSERT INTO clubs(id,name,slug,total_workstations) VALUES(2,'Other Club','other-club',8); INSERT INTO club_workstations_cache(club_id,pc_number,status) VALUES(2,'1','OFFLINE');");
