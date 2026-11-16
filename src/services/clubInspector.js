@@ -1,11 +1,12 @@
 ﻿export function formatClubInspector(club,metrics={},workstations=[]){
+ const realWorkstations=workstations.filter(pc=>Number(pc?.pc_number)>0);
  const stamp=club.last_heartbeat_at||club.last_heartbeat;
  const normalized=stamp&&!/(Z|[+-]\d{2}:?\d{2})$/i.test(String(stamp))?String(stamp).replace(' ','T')+'Z':stamp;
  const elapsed=Date.now()-Date.parse(normalized),online=Number.isFinite(elapsed)&&elapsed>=0&&elapsed<=90000;
  const days=Math.ceil((Date.parse(club.license_expires_at)-Date.now())/86400000);
- return {club:{...club,actual_workstations:workstations.length,is_online_now:online,offline_minutes:Number.isFinite(elapsed)?Math.max(0,Math.floor(elapsed/60000)):null,license_days_left:Number.isFinite(days)?days:0,duty_cashier:null,ping_ms:null},
+ return {club:{...club,actual_workstations:realWorkstations.length,is_online_now:online,offline_minutes:Number.isFinite(elapsed)?Math.max(0,Math.floor(elapsed/60000)):null,license_days_left:Number.isFinite(days)?days:0,duty_cashier:null,ping_ms:null},
   kassa:{accountingVersion:metrics.accounting_version||null,capturedAt:metrics.captured_at||null,cashReceipts:metrics.cash_receipts??null,topupRevenue:metrics.topup_revenue??null,totalDailyRevenue:Number(metrics.total_daily_revenue||0),sessionsRevenue:Number(metrics.game_revenue??(Number(metrics.total_daily_revenue||0)-Number(metrics.bar_revenue||0))),barRevenue:Number(metrics.bar_revenue||0),refundsSum:null,totalSessionsCount:Number(metrics.total_sessions_count||0),totalPlayHours:Number(metrics.total_play_hours||0)},
-  workstations:workstations.map(pc=>({id:pc.id,pcNumber:pc.pc_number,zoneName:pc.zone_name||'STANDARD',status:online?pc.status:'OFFLINE',
+  workstations:realWorkstations.map(pc=>({id:pc.id,pcNumber:pc.pc_number,zoneName:pc.zone_name||'STANDARD',status:online?pc.status:'OFFLINE',
    clientVersion:pc.client_version||null,updateStatus:pc.update_status||'IDLE',updateTargetVersion:pc.update_target_version||null,
    updateCommandId:pc.update_command_id||null,updateError:pc.update_error||null,updateReceiptId:pc.update_receipt_id||null,
    updateObservedAt:pc.update_observed_at||null,lastSeenAt:pc.updated_at||null,serverVersion:club.server_version||null,

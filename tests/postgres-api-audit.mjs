@@ -67,7 +67,7 @@ try{
  assert.equal((await db.query('SELECT count(*)::int n FROM mobile_requests')).rows[0].n,1);
  await db.exec('RESET ROLE;SET ROLE anon');await assert.rejects(()=>db.query('SELECT * FROM mobile_requests'));await assert.rejects(()=>db.query('SELECT * FROM mobile_agents'));await db.exec('RESET ROLE;SET ROLE service_role');
  console.log('PASS PostgreSQL mobile relay migration, API, retry deduplication, result acknowledgement and public-role restrictions');
- const report={clubId:1,signedLicense:license,reportDate:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'}),totalSessionsCount:3,todayRevenue:150000,barRevenue:30000,onlinePcsCount:1,occupiedPcsCount:1,workstations:[{pc:1,status:'OCCUPIED',zone:'VIP',minutesLeft:15,clientVersion:'1.3.3',updateStatus:'INSTALLED',updateTargetVersion:'1.3.3',updateCommandId:8,updateReceiptId:'1234567890abcdef',updateObservedAt:new Date().toISOString()}]};
+ const report={clubId:1,signedLicense:license,reportDate:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'}),totalSessionsCount:3,todayRevenue:150000,barRevenue:30000,onlinePcsCount:1,occupiedPcsCount:1,workstations:[{pc:0,status:'OFFLINE'},{pc:1,status:'OCCUPIED',zone:'VIP',minutesLeft:15,clientVersion:'1.3.3',updateStatus:'INSTALLED',updateTargetVersion:'1.3.3',updateCommandId:8,updateReceiptId:'1234567890abcdef',updateObservedAt:new Date().toISOString()}]};
  let heartbeat=await api('/api/telemetry/heartbeat','POST',report,false);assert.equal(heartbeat.status,200,JSON.stringify(heartbeat));assert.ok(heartbeat.body.managerAccount);assert.equal(heartbeat.body.signedCommands.length,1);
  heartbeat=await api('/api/telemetry/heartbeat','POST',{...report,managerRevision:heartbeat.body.managerAccount.payload.revision,commandResults:[{id:command.body.queuedCommand.id,status:'EXECUTED'}]},false);assert.equal(heartbeat.body.signedCommands.length,0);
  assert.equal((await api('/api/clubs/1/manager')).body.manager.applied,true);
@@ -77,13 +77,14 @@ try{
  const overview=await api('/api/telemetry/summary');assert.equal(overview.body.summary.revenue.sessionsCount,3);assert.equal(overview.body.summary.revenue.barTotal,30000);
  assert.equal(overview.body.summary.workstations.totalNetwork,1,'Inventory count, not the licensed limit');
  await db.exec("INSERT INTO clubs(id,name,slug,total_workstations) VALUES(2,'Other Club','other-club',8); INSERT INTO club_workstations_cache(club_id,pc_number,status) VALUES(2,'1','OFFLINE');");
- for (const pcs of [[{pc:1,status:'OFFLINE'},{pc:2,status:'AVAILABLE'},{pc:3,status:'OFFLINE'}],[{pc:2,status:'OFFLINE'}],[]]) {
+ for (const pcs of [[{pc:0,status:'OFFLINE'},{pc:1,status:'OFFLINE'},{pc:2,status:'AVAILABLE'},{pc:3,status:'OFFLINE'}],[{pc:0,status:'OFFLINE'},{pc:2,status:'OFFLINE'}],[{pc:0,status:'OFFLINE'}],[]]) {
   const pulse=await api('/api/telemetry/heartbeat','POST',{...report,onlinePcsCount:0,occupiedPcsCount:0,workstations:pcs},false);
   assert.equal(pulse.status,200,JSON.stringify(pulse));
   const clubs=await SupabaseCloudService.getAllClubs();
-  assert.equal(clubs[0].actual_workstations,pcs.length,'Additions, removals and zero must match the server inventory');
+  const realPcCount=pcs.filter(pc=>Number(pc.pc)>0).length;
+  assert.equal(clubs[0].actual_workstations,realPcCount,'Technical PC 0 must never enter the server inventory');
   assert.equal(clubs[0].total_workstations,24,'Telemetry must not change license capacity or billing');
-  assert.equal((await api('/api/telemetry/clubs/1')).body.workstations.length,pcs.length,'Removed PCs must disappear from inspector');
+  assert.equal((await api('/api/telemetry/clubs/1')).body.workstations.length,realPcCount,'Removed PCs and technical PC 0 must disappear from inspector');
   assert.equal((await db.query('SELECT count(*)::int n FROM club_workstations_cache WHERE club_id=2')).rows[0].n,1,'One club cannot remove another club inventory');
  }
  console.log('PASS cloud inventory grows, shrinks and reaches zero while license capacity stays unchanged');

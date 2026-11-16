@@ -121,7 +121,9 @@ export class SupabaseCloudService {
       const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Tashkent'});
       const metrics=await (sharedMetrics || new CloudDashboardService(client).dailyMetrics(date));
       return await Promise.all((data || []).map(async club => {
-        const { count, error: countError } = await client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', club.id);
+        let countQuery = client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', club.id);
+        if (typeof countQuery.neq === 'function') countQuery = countQuery.neq('pc_number', '0');
+        const { count, error: countError } = await countQuery;
         if (countError) throw countError;
         const isOnline = this.isHeartbeatOnline(club.last_heartbeat_at || club.last_heartbeat);
         return {
@@ -152,7 +154,9 @@ export class SupabaseCloudService {
         .maybeSingle();
 
       if(error)throw error;if(!data)return null;
-      const { count, error: countError } = await client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', clubId);
+      let countQuery = client.from('club_workstations_cache').select('*', { count: 'exact', head: true }).eq('club_id', clubId);
+      if (typeof countQuery.neq === 'function') countQuery = countQuery.neq('pc_number', '0');
+      const { count, error: countError } = await countQuery;
       if (countError) throw countError;
       return {
         ...data,
@@ -292,7 +296,13 @@ export class SupabaseCloudService {
 
       // 4. Kompyuterlar matritsasini yangilash
       if (Array.isArray(payload.workstations)) {
-        const rows = payload.workstations.map(ws => {
+        // 1.3.3 and older servers could emit a technical PC 0 placeholder.
+        // It is not a workstation and must never enter inventory or fleet counts.
+        const workstations = payload.workstations.filter(ws => {
+          const pcNumber = Number(ws?.pc ?? ws?.pc_number);
+          return Number.isSafeInteger(pcNumber) && pcNumber > 0;
+        });
+        const rows = workstations.map(ws => {
           const updateStatus=['IDLE','REQUESTED','CHECKING','DOWNLOADING','READY','WAITING_FOR_SESSION','INSTALLING','VERIFYING','INSTALLED','ERROR'].includes(String(ws.updateStatus||'').toUpperCase())
             ? String(ws.updateStatus).toUpperCase() : 'IDLE';
           return {
@@ -320,7 +330,7 @@ export class SupabaseCloudService {
         // The heartbeat contains the complete inventory, including offline PCs.
         // Remove rows absent from this snapshot; an empty inventory removes all.
         let removal = client.from('club_workstations_cache').delete().eq('club_id', club.id);
-        if (payload.workstations.length) removal = removal.lt('updated_at', nowIso);
+        if (workstations.length) removal = removal.lt('updated_at', nowIso);
         const removed = await removal;
         if (removed.error) throw new Error('Eski kompyuterlar holati tozalanmadi.');
       }

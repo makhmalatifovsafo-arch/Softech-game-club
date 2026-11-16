@@ -324,9 +324,11 @@ export class TelemetryService {
     try {
       db.prepare('DELETE FROM club_workstations_cache WHERE club_id=?').run(clubId);
       for (const pc of workstations) {
+        const pcNumber = Number(pc.pc_number ?? pc.pcNumber ?? pc.pc);
+        if (!Number.isSafeInteger(pcNumber) || pcNumber <= 0) continue;
         upsertStmt.run(
           clubId,
-          String(pc.pc_number || pc.pcNumber || pc.name || 'PC'),
+          String(pcNumber),
           String(pc.zone_name || pc.zoneName || 'STANDARD'),
           String(pc.status || 'AVAILABLE').toUpperCase(),
           pc.current_session_started_at || pc.sessionStartedAt || null,
@@ -388,12 +390,12 @@ export class TelemetryService {
     const rows = db.prepare(`
       SELECT 
         c.*,
-        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id=c.id) as actual_workstations,
+        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id=c.id AND pc_number <> '0') as actual_workstations,
         COALESCE(m.total_daily_revenue, 0) as today_revenue,
         COALESCE(m.total_sessions_count, 0) as today_sessions,
         COALESCE(m.bar_revenue, 0) as today_bar_revenue,
-        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id = c.id AND status = 'OCCUPIED') as occupied_pcs_now,
-        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id = c.id AND status = 'AVAILABLE') as available_pcs_now,
+        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id = c.id AND pc_number <> '0' AND status = 'OCCUPIED') as occupied_pcs_now,
+        (SELECT COUNT(*) FROM club_workstations_cache WHERE club_id = c.id AND pc_number <> '0' AND status = 'AVAILABLE') as available_pcs_now,
         CASE 
           WHEN c.last_heartbeat_at >= datetime('now', '-5 minutes') THEN 1 
           ELSE 0 

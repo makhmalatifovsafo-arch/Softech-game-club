@@ -204,7 +204,9 @@ export async function handleHeartbeatIngestion(req, res) {
       try {
         db.prepare('DELETE FROM club_workstations_cache WHERE club_id=?').run(clubId);
         for (const item of payload.workstations) {
-          const pcNum = String(item.pc || item.pc_number || item.name || 'PC').toUpperCase();
+          const numericPc = Number(item.pc ?? item.pc_number);
+          if (!Number.isSafeInteger(numericPc) || numericPc <= 0) continue;
+          const pcNum = String(numericPc);
           const zoneName = String(item.zone || item.zone_name || 'STANDARD').toUpperCase();
           const status = String(item.status || 'AVAILABLE').toUpperCase();
 
