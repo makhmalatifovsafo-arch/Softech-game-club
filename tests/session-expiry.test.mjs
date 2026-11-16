@@ -59,6 +59,21 @@ test('one failing session does not prevent another computer from expiring',()=>r
   assert.equal(db.prepare("SELECT status FROM sessions WHERE id='bad'").get().status,'ACTIVE');
 `));
 
+test('failed time notification cannot postpone expiration of the same prepaid session',()=>run(`
+  db.prepare("INSERT INTO computers(id,club_id,pc_number,name,current_session_id,status) VALUES('offline-pc',1,87,'Offline PC','expired-offline','OCCUPIED')").run();
+  db.prepare("INSERT INTO sessions(id,club_id,computer_id,tariff_id,started_at,ends_at,paid_amount,total_amount,status) VALUES('expired-offline',1,'offline-pc','trf_standard_1h',?,?,7000,7000,'ACTIVE')")
+    .run(new Date(Date.now()-3600000).toISOString(),new Date(Date.now()-1000).toISOString());
+  ClientManager.send=()=>{throw Error('fixture transport failure');};
+  ClientManager.broadcast=()=>{};
+  SessionScheduler.lastSyncMinute=-1;
+  SessionScheduler.checkActiveSessions();
+  const saved=db.prepare("SELECT status,paid_amount,total_amount FROM sessions WHERE id='expired-offline'").get();
+  assert.equal(saved.status,'COMPLETED');
+  assert.equal(saved.paid_amount,7000);
+  assert.equal(saved.total_amount,7000);
+  assert.equal(db.prepare("SELECT current_session_id FROM computers WHERE id='offline-pc'").get().current_session_id,null);
+`));
+
 test('server restart preserves paid deadline and reconnect resumes only the remaining time',()=>run(`
   const now=new Date('2026-11-13T10:20:00.000Z');
   const started=new Date(now.getTime()-20*60000);

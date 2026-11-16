@@ -72,7 +72,14 @@ export class SessionScheduler {
       for (const session of activeSessions) {
         try {
         // Refresh financial information once per minute, independent of time-limit mode.
-        if (shouldSyncTime) ClientManager.send(session.computer_id,'SESSION_INFO',clientSessionState(session.id,now.getTime()));
+        if (shouldSyncTime) {
+          try {
+            ClientManager.send(session.computer_id,'SESSION_INFO',clientSessionState(session.id,now.getTime()));
+          } catch (error) {
+            // Display/transport failures must not postpone deadline enforcement.
+            console.error(`[SessionScheduler] Session info ${session.id}:`, error);
+          }
+        }
         // Postpaid is open-ended: only cashier checkout may settle and close it.
         if (isPostpaidSession(session)) continue;
         // Agar mijoz balansidan jonli yechiladigan rejim bo'lsa (CLIENT_BALANCE_LIVE:userId)
