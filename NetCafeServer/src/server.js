@@ -321,7 +321,7 @@ function handleRequest(req, res) {
       const clubsCountRow = db.prepare('SELECT COUNT(*) as count FROM clubs').get();
       const activeClubsRow = db.prepare("SELECT COUNT(*) as count FROM clubs WHERE is_active = 1 AND datetime(expires_at) > datetime('now')").get();
       
-      const totalComputersRow = db.prepare('SELECT COUNT(*) as count FROM computers').get();
+      const totalComputersRow = db.prepare('SELECT COUNT(*) as count FROM computers WHERE pc_number > 0').get();
       const activeSessionsRow = db.prepare("SELECT COUNT(*) as count FROM sessions WHERE status = 'ACTIVE'").get();
 
       // SaaS obuna hisob-kitobi: har bir klubning max_computers * price_per_pc_monthly
@@ -335,7 +335,7 @@ function handleRequest(req, res) {
       const allClubs = db.prepare(`
         SELECT 
           c.*,
-          (SELECT COUNT(*) FROM computers WHERE club_id = c.id) as actual_computers,
+          (SELECT COUNT(*) FROM computers WHERE club_id = c.id AND pc_number > 0) as actual_computers,
           (SELECT COUNT(*) FROM sessions WHERE club_id = c.id AND status = 'ACTIVE') as active_sessions,
           (SELECT COUNT(*) FROM users WHERE club_id = c.id) as total_users
         FROM clubs c
@@ -1808,6 +1808,7 @@ function handleRequest(req, res) {
           SUM(CASE WHEN status = 'AVAILABLE' THEN 1 ELSE 0 END) as available,
           SUM(CASE WHEN status = 'OFFLINE' THEN 1 ELSE 0 END) as offline
         FROM computers
+        WHERE pc_number > 0
       `).get();
     } else {
       // Club Owner / Cashier stats (Strictly scoped to club_id)
@@ -1828,7 +1829,7 @@ function handleRequest(req, res) {
           SUM(CASE WHEN status = 'AVAILABLE' THEN 1 ELSE 0 END) as available,
           SUM(CASE WHEN status = 'OFFLINE' THEN 1 ELSE 0 END) as offline
         FROM computers
-        WHERE club_id = ?
+        WHERE club_id = ? AND pc_number > 0
       `).get(clubId);
     }
 

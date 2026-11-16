@@ -35,6 +35,11 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal(pc.isOnline, true, 'Handshaken client must be online');
   assert.ok(pc.lastHeartbeat, 'Handshake must persist connection history');
   assert.equal(pc.macAddress, '02:00:00:00:00:01', 'Client handshake automatically saves MAC');
+  const placeholderDb=new DatabaseSync(databasePath);placeholderDb.exec('PRAGMA busy_timeout=5000');
+  placeholderDb.prepare("INSERT INTO computers(id,club_id,pc_number,name,status) VALUES('legacy-placeholder',1,0,'Layout placeholder','OFFLINE')").run();placeholderDb.close();
+  const visibleAfterPlaceholder=await api('/api/computers');
+  assert.equal(visibleAfterPlaceholder.body.length,list.length,'Legacy pc_number=0 must not become a ninth workstation');
+  assert.equal((await api('/api/stats')).body.totalComputers,list.length,'Statistics count only real numbered kiosks');
   const added = await api('/api/admin/computers', 'POST', { name: 'Never connected test', pcNumber: 901 });
   assert.equal(added.status, 201, JSON.stringify(added.body));
   assert.equal(added.body.computer.status, 'OFFLINE');

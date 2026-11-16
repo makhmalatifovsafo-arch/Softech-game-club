@@ -243,7 +243,8 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     const foreign=await fetch(localUrl+'/api/admin/users/'+other.lastInsertRowid+'/permissions',{method:'PUT',headers:ownerHeaders,body:JSON.stringify({permissions:['*']})});assert.equal(foreign.status,404);
     assert.equal(fixture.prepare('SELECT permissions FROM users WHERE id=?').get(other.lastInsertRowid).permissions,'[]');fixture.close();
     const cloudInspection=new DatabaseSync(path.join(cloud,'data/softech_cloud.db'));
-    assert.equal(cloudInspection.prepare('SELECT total_workstations FROM clubs WHERE id=?').get(approved.club.id).total_workstations,24,'Heartbeat must not shrink the licensed PC count');cloudInspection.close();
+    assert.equal(cloudInspection.prepare('SELECT total_workstations FROM clubs WHERE id=?').get(approved.club.id).total_workstations,24,'Heartbeat must not shrink the licensed PC count');
+    assert.equal(cloudInspection.prepare("SELECT COUNT(*) AS n FROM club_workstations_cache WHERE club_id=? AND pc_number='0'").get(approved.club.id).n,0,'Cloud inventory must exclude legacy layout placeholders');cloudInspection.close();
     assert.equal((await fetch(localUrl+'/api/health')).status,200);
     const reportBeforeStop=await(await fetch(localUrl+'/api/reports/financial',{headers:ownerHeaders})).json();
     const dashboardLogin=async()=>{

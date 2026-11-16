@@ -343,7 +343,9 @@ export class CloudLicenseService {
     this.heartbeatInFlight=true;
     try {
       const report=BarLedgerService.getDailyFinancialReport({clubId:1});
-      const pcs=db.prepare("SELECT c.*,s.ends_at FROM computers c LEFT JOIN sessions s ON s.id=c.current_session_id WHERE c.club_id=1").all();
+      // pc_number=0 is a legacy/layout placeholder, not a billable or manageable kiosk.
+      // Keep the cloud inventory identical to GET /api/computers and local statistics.
+      const pcs=db.prepare("SELECT c.*,s.ends_at FROM computers c LEFT JOIN sessions s ON s.id=c.current_session_id WHERE c.club_id=1 AND c.pc_number>0").all();
       const payload={commandResults:commandResults(db,{currentVersion:ServerUpdater.currentVersion}),administratorRevision:getAdministratorRevision(db,LicenseManager.licenseData.clubId),managerRevision:getManagerRevision(db,LicenseManager.licenseData.clubId),clubId:LicenseManager.licenseData.clubId,signedLicense:LicenseManager.getSignedLicense(),
         appVersion:JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../package.json'),'utf8')).version,
         reportDate:report.from,todayRevenue:report.summary.salesRevenue,barRevenue:report.summary.barRevenue,
