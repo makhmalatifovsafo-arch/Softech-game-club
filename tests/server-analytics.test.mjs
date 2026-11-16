@@ -32,8 +32,13 @@ test('server statistics use retained receipts, real durations and occupied minut
     assert.deepEqual(result.revenueSources,{games:5000,bar:3000,topup:20000});
     assert.equal(result.kpis.todayChecks,1);
     assert.equal(result.kpis.averageSessionMinutes,60);
-    assert.equal(result.kpis.peakTime,'10:00–11:00');
-    assert.equal(result.peakHours[10],50);
+    // The desktop report uses the club computer's local time, not a fixed UTC+5.
+    const localStartHour=new Date('2026-11-16T05:00:00.000Z').getHours();
+    const localEndHour=new Date('2026-11-16T06:00:00.000Z').getHours();
+    const hourLabel=hour=>String(hour).padStart(2,'0')+':00';
+    assert.equal(result.kpis.peakTime,`${hourLabel(localStartHour)}–${hourLabel(localEndHour)}`);
+    assert.equal(result.peakHours[localStartHour],50);
+    assert.equal(result.peakHours.reduce((sum,value)=>sum+value,0),50,'Only the occupied hour contributes');
     assert.equal(result.computerStats.find(pc=>pc.id===1).totalRevenue,5000);
     assert.equal(result.computerStats.find(pc=>pc.id===1).totalHours,1);
     assert.deepEqual(db.prepare('SELECT amount FROM transactions ORDER BY id').all(),before,'Statistics must remain read-only');
