@@ -131,6 +131,15 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal(shift.body.shift.systemCard,0);
   const analytics = await api('/api/reports/analytics');
   assert.equal(analytics.status,200,JSON.stringify(analytics.body));
+  assert.equal(analytics.body.dailyRevenue.at(-1).revenue,15000+retainedGame,'Statistics revenue must match the retained financial ledger');
+  assert.equal(analytics.body.revenueSources.games,retainedGame,'Refunded prepaid money must not remain in game statistics');
+  assert.equal(analytics.body.revenueSources.bar,15000,'Paid bar sales must appear once in statistics');
+  assert.equal(analytics.body.revenueSources.topup,0,'Balance top-up must remain separate from game and bar sales');
+  assert.equal(analytics.body.kpis.todayChecks,1,'Today check count must come from real sessions');
+  assert.ok(Number.isFinite(analytics.body.kpis.averageOccupancy));
+  assert.ok(Number.isFinite(analytics.body.kpis.averageSessionMinutes));
+  assert.equal(analytics.body.peakHours.length,24);
+  assert.equal(analytics.body.computerStats.find(row=>row.id===pc.id)?.totalRevenue,retainedGame);
   const stock=await api('/api/bar/items');
   const products=Array.isArray(stock.body)?stock.body:stock.body.items;
   const product=products.find(x=>x.id===id);

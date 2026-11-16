@@ -1528,9 +1528,8 @@ async function loadAnalyticsData() {
     const data = await res.json();
 
     // 1. KPI kartalarini yangilash
-    const occVal = document.getElementById('statOccupiedVal')?.textContent || '0';
-    const totVal = document.getElementById('statTotalVal')?.textContent.replace(/[^0-9]/g, '') || '1';
-    const rate = Math.round((parseInt(occVal, 10) / (parseInt(totVal, 10) || 1)) * 100) || 74;
+    const kpis = data.kpis || {};
+    const rate = Math.max(0, Math.min(100, Number(kpis.averageOccupancy) || 0));
 
     const rateEl = document.getElementById('statsOccupancyRate');
     const rateBar = document.getElementById('statsOccupancyBar');
@@ -1538,15 +1537,27 @@ async function loadAnalyticsData() {
     if (rateBar) rateBar.style.width = `${rate}%`;
 
     const peakTimeEl = document.getElementById('statsPeakTime');
-    if (peakTimeEl) peakTimeEl.textContent = '16:00 — 23:00';
+    if (peakTimeEl) peakTimeEl.textContent = kpis.peakTime || '—';
 
     const avgDurEl = document.getElementById('statsAvgDuration');
-    if (avgDurEl) avgDurEl.textContent = '2h 15m';
+    if (avgDurEl) {
+      const minutes = Math.max(0, Math.round(Number(kpis.averageSessionMinutes) || 0));
+      avgDurEl.textContent = minutes >= 60 ? `${Math.floor(minutes / 60)} soat ${minutes % 60} daq` : `${minutes} daq`;
+    }
 
     const checkCountEl = document.getElementById('statsCheckCount');
     if (checkCountEl) {
-      const totalChecks = (data.computerStats || []).reduce((acc, c) => acc + (c.sessionsCount || 0), 0) || 38;
-      checkCountEl.textContent = `${totalChecks} ta`;
+      checkCountEl.textContent = `${Math.max(0, Number(kpis.todayChecks) || 0)} ta`;
+    }
+
+    const trendBadge = document.getElementById('statsRevenueTrendBadge');
+    if (trendBadge) {
+      const values = (data.dailyRevenue || []).map(row => Number(row.revenue) || 0);
+      const current = values.at(-1) || 0;
+      const previous = values.at(-2) || 0;
+      const change = previous > 0 ? Math.round((current - previous) / previous * 100) : (current > 0 ? 100 : 0);
+      trendBadge.textContent = change > 0 ? `Oldingi kunga nisbatan +${change}%` : change < 0 ? `Oldingi kunga nisbatan ${change}%` : 'O‘zgarish yo‘q';
+      trendBadge.className = `text-xs font-mono font-bold px-2 py-0.5 rounded border ${change < 0 ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'}`;
     }
 
     // 2. Chart.js grafiklarini chizish

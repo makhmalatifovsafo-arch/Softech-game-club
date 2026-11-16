@@ -11,6 +11,7 @@ import { clientSessionState, sessionGameAmount } from './services/clientSessionS
 import { isPostpaidSession } from './services/sessionMode.js';
 import { validateSchedule } from './services/tariffValidation.js';
 import { getFinancialBreakdown } from './services/financialBreakdown.js';
+import { buildServerAnalytics } from './services/analyticsService.js';
 import { autoWakeComputer } from './services/autoWake.js';
 import { normalizeMacAddress } from './services/macAddress.js';
 import { MobileAgent } from './services/mobileAgent.js';
@@ -3886,6 +3887,12 @@ function handleRequest(req, res) {
     const clubId = getTenantClubId(req);
 
     try {
+      sendJson(res, 200, buildServerAnalytics(db, {
+        clubId,
+        days: url.searchParams.get('days') || 30
+      }));
+      return;
+
       const daysCount = parseInt(url.searchParams.get('days') || '30', 10) || 30;
       const today = new Date();
       const pad = (n) => String(n).padStart(2, '0');
