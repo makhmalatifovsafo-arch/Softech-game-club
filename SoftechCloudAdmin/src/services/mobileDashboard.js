@@ -99,8 +99,10 @@ export class MobileDashboard {
    capturedAt=rows.map(r=>r.captured_at).sort()[0];
   } else {const row=await this.row(id,resource);if(!row)throw fail('Bu bo‘lim hali sinxronlanmagan. Server dasturini yangilang va internetga ulang.',409);data=row.payload;capturedAt=row.captured_at;}
   if(resource==='cash'&&session.role==='administrator')data={success:true,hasOpenShift:!!data.shift,shift:data.shift?{id:data.shift.id,openedAt:data.shift.openedAt}:null};
-  const recent=metadata&&Date.parse(metadata.captured_at)>Date.now()-90000;
-  return {data,meta:{source:'cloud',capturedAt,serverOnline:!!recent,serverDate:metadata?.payload.serverDate,missingDates},...await this.sessionInfo(session,club,metadata)};
+  const snapshotRecent=metadata&&Date.parse(metadata.captured_at)>Date.now()-90000;
+  const heartbeat=club.last_heartbeat_at||club.last_heartbeat;
+  const heartbeatRecent=heartbeat&&Date.parse(heartbeat)>Date.now()-90000;
+  return {data,meta:{source:'cloud',capturedAt,serverOnline:!!(snapshotRecent||heartbeatRecent),snapshotFresh:!!snapshotRecent,serverDate:metadata?.payload.serverDate,missingDates},...await this.sessionInfo(session,club,metadata)};
  }
 }
 export function combineDailyReports(reports,from,to){

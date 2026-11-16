@@ -113,14 +113,26 @@ export function getFilteredAndSortedClubs() {
 /**
  * Vaqt davomiyligini qulay formatlash (masalan: 15 daq, 2 soat)
  */
-function formatOfflineTime(minutes) {
-  const m = Math.max(1, parseInt(minutes, 10) || 15);
+export function heartbeatAgeMinutes(club) {
+  const supplied = club.offline_minutes == null || club.offline_minutes === '' ? NaN : Number(club.offline_minutes);
+  if (Number.isFinite(supplied) && supplied >= 0) return Math.floor(supplied);
+  const value = club.last_heartbeat_at || club.last_heartbeat;
+  if (!value) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? value.replace(' ', 'T') + 'Z' : value;
+  const time = Date.parse(normalized);
+  return Number.isFinite(time) ? Math.max(0, Math.floor((Date.now() - time) / 60000)) : null;
+}
+
+export function formatOfflineTime(minutes) {
+  const parsed = Number(minutes);
+  if (!Number.isFinite(parsed)) return 'vaqt noma’lum';
+  const m = Math.max(1, Math.floor(parsed));
   if (m < 60) {
     return `${m} daq`;
   }
   const h = Math.floor(m / 60);
   const remM = m % 60;
-  return remM > 0 ? `${h}s ${remM}d` : `${h} soat`;
+  return remM > 0 ? `${h} soat ${remM} daq` : `${h} soat`;
 }
 
 /**
@@ -168,7 +180,7 @@ function getClubStatusBadge(club) {
     `;
   }
 
-  const durationStr = formatOfflineTime(club.offline_minutes);
+  const durationStr = formatOfflineTime(heartbeatAgeMinutes(club));
   return `
     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
       <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>

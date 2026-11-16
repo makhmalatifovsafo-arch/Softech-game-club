@@ -29,12 +29,13 @@ export class MobileSnapshotSync {
    token=this.createSession(owner).token;
    const capturedAt=new Date().toISOString(),today=dateString(new Date());
    const entries=[];
-   const currentEntries=await Promise.all([['computers','/api/computers'],['cash','/api/shifts/current'],['bar','/api/bar/items']].map(async([key,path])=>{
+   const currentResults=await Promise.allSettled([['computers','/api/computers'],['cash','/api/shifts/current'],['bar','/api/bar/items']].map(async([key,path])=>{
     const r=await this.fetcher('http://127.0.0.1:'+this.localPort+path,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)});
     if(!r.ok)throw Error('Mahalliy '+key+' HTTP '+r.status);
     return {key,data:await r.json(),capturedAt};
    }));
-   entries.push(...currentEntries);
+   entries.push(...currentResults.filter(result=>result.status==='fulfilled').map(result=>result.value));
+   for(const failed of currentResults.filter(result=>result.status==='rejected'))console.warn('[Mobile reports] Jonli bo‘lim o‘tkazib yuborildi:',failed.reason?.message||'noma’lum xato');
    const staff=[];
    for(const role of ['manager','administrator']){
     const table=role==='manager'?'cloud_manager_state':'cloud_administrator_state';

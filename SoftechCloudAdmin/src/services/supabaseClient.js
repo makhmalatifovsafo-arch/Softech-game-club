@@ -130,6 +130,7 @@ export class SupabaseCloudService {
           actual_workstations: count ?? 0,
           occupied_pcs_now: isOnline ? Number(club.occupied_pcs || 0) : 0,
           is_online_now: isOnline,
+          offline_minutes: this.heartbeatAgeMinutes(club.last_heartbeat_at || club.last_heartbeat),
           status_display: isOnline ? (club.status === 'ACTIVE' ? 'ONLINE' : club.status) : 'OFFLINE'
         };
       }));
@@ -515,8 +516,18 @@ export class SupabaseCloudService {
 
   static isHeartbeatOnline(lastHeartbeatIso) {
     if (!lastHeartbeatIso) return false;
-    const diffSeconds = (Date.now() - new Date(lastHeartbeatIso).getTime()) / 1000;
-    return diffSeconds <= 90;
+    const age = this.heartbeatAgeMinutes(lastHeartbeatIso, true);
+    return Number.isFinite(age) && age <= 90;
+  }
+
+  static heartbeatAgeMinutes(lastHeartbeatIso, seconds = false) {
+    if (!lastHeartbeatIso) return null;
+    const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(lastHeartbeatIso)
+      ? lastHeartbeatIso.replace(' ', 'T') + 'Z' : lastHeartbeatIso;
+    const time = Date.parse(normalized);
+    if (!Number.isFinite(time)) return null;
+    const ageSeconds = Math.max(0, (Date.now() - time) / 1000);
+    return seconds ? ageSeconds : Math.floor(ageSeconds / 60);
   }
 
   static verifyPbkdf2(password, storedHash) {

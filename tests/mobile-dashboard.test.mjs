@@ -19,8 +19,8 @@ test('multi-day insights sum exact receipts and profit while excluding unpaid ba
 function report(date,amount){return {accountingVersion:2,filter:{from:date,to:date},breakdown:{cash:amount,card:0,total:amount,gameReceipts:amount,topupReceipts:0,receipts:{GAME:{CASH:amount,CARD:0}},rows:[{id:'tx:'+date,createdAt:date,amount}]}};}
 async function fixture(){
  const db=new DatabaseSync(':memory:');
- db.exec(`CREATE TABLE clubs(id INTEGER PRIMARY KEY,name TEXT,status TEXT,license_expires_at TEXT,hardware_fingerprint TEXT);
- INSERT INTO clubs VALUES(7,'Offline club','ACTIVE','2099-01-01','TEST-HWID-7'),(8,'Other club','ACTIVE','2099-01-01','TEST-HWID-8');
+ db.exec(`CREATE TABLE clubs(id INTEGER PRIMARY KEY,name TEXT,status TEXT,license_expires_at TEXT,hardware_fingerprint TEXT,last_heartbeat_at TEXT);
+ INSERT INTO clubs VALUES(7,'Offline club','ACTIVE','2099-01-01','TEST-HWID-7',NULL),(8,'Other club','ACTIVE','2099-01-01','TEST-HWID-8',NULL);
  CREATE TABLE remote_commands(id INTEGER PRIMARY KEY,club_id INTEGER,command_type TEXT,payload TEXT,status TEXT,executed_at TEXT);`);
  const manager=new ManagerAccountService({db,role:'manager'}),admin=new ManagerAccountService({db,role:'administrator'});
  await manager.save(7,{username:'owner',password:'1234'});await admin.save(7,{username:'cashier',password:'5678'});
@@ -37,6 +37,10 @@ test('cloud login and reports work with no running club server; dates, roles and
   const {session,club}=await s.authorize(login.token);
   const read=await s.read(session,club,new URL('http://test/?resource=reports'));
   assert.equal(read.data.breakdown.total,150);assert.equal(read.meta.serverOnline,false);assert.equal(read.meta.capturedAt,yesterday);
+  db.prepare('UPDATE clubs SET last_heartbeat_at=? WHERE id=7').run(new Date().toISOString());
+  const live=await s.authorize(login.token);const liveRead=await s.read(live.session,live.club,new URL('http://test/?resource=computers'));
+  assert.equal(liveRead.meta.serverOnline,true,'A live heartbeat must not be hidden by an older report snapshot');
+  assert.equal(liveRead.meta.snapshotFresh,false,'The UI can distinguish live server presence from stale cached data');
   const partial=await s.read(session,club,new URL('http://test/?resource=reports&from=2026-11-08&to=2026-11-09'));
   assert.deepEqual(partial.meta.missingDates,['2026-11-08']);assert.equal(partial.data.breakdown.total,150);
   await assert.rejects(()=>s.read(session,club,new URL('http://test/?resource=reports&from=2026-02-30')),e=>e.statusCode===400);
