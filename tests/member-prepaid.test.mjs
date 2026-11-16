@@ -6,6 +6,8 @@ test('member prepaid debits once, retains price through restart, refunds once an
  const moduleUrl=pathToFileURL(path.join(dir,'src/services/memberBilling.js')).href;
  const {db,initDatabase}=await import(dbUrl);initDatabase();
  try{
+  const {getActiveRateForMoment}=await import(pathToFileURL(path.join(dir,'src/services/pricingEngine.js')).href);
+  assert.equal(getActiveRateForMoment(new Date('2026-11-16T05:15:00'),false,1).pricePerHour,12000,'Sunday night tariff must cover Monday morning');
   const {startMemberSession,settleMemberUsage,extendPrepaidMember,freezePrepaidRates,prepaidRefund}=await import(moduleUrl);
   db.prepare("INSERT INTO computers (id,club_id,name,pc_number,status) VALUES ('prepay-pc',1,'Test PC',1,'ONLINE')").run();
   db.prepare('UPDATE tariff_schedules SET price_per_hour=12000').run();db.prepare('UPDATE tariffs SET price_per_hour=12000').run();

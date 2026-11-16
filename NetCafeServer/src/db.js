@@ -634,7 +634,9 @@ function seedInitialData() {
       INSERT INTO tariff_schedules (club_id, name, days_of_week, start_time, end_time, price_per_hour, is_vip, priority)
       VALUES 
         (1, 'Kunduzgi tarif (Ish kunlari)', '[1,2,3,4,5]', '09:00', '18:00', 8000.0, 0, 1),
-        (1, 'Kechki / Tun tarifi (Ish kunlari)', '[1,2,3,4,5]', '18:00', '09:00', 12000.0, 0, 2),
+        -- Sunday night must continue into Monday morning. Without day 7,
+        -- Monday 00:00-09:00 had no configured rate at all.
+        (1, 'Kechki / Tun tarifi (Ish kunlari)', '[1,2,3,4,5,7]', '18:00', '09:00', 12000.0, 0, 2),
         (1, 'Dam olish kunlari tarifi', '[6,7]', '00:00', '00:00', 15000.0, 0, 3);
     `).run();
     console.log('📅 [Database] Dinamik tarif jadvali qoidalari (club_id=1) kiritildi.');
