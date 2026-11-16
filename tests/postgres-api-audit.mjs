@@ -10,7 +10,8 @@ const client={from(table){let operation='SELECT',values,filters=[],sort=table===
   const args=[],param=v=>{args.push(typeof v==='object'&&v!==null?JSON.stringify(v):v);return '$'+args.length;};
   let statement;
   if(operation==='INSERT'){
-   const keys=Object.keys(values);statement='INSERT INTO '+ident(table)+'('+keys.map(ident).join(',')+') VALUES('+keys.map(k=>param(values[k])).join(',')+')';
+   const rows=Array.isArray(values)?values:[values];
+   const keys=Object.keys(rows[0]);statement='INSERT INTO '+ident(table)+'('+keys.map(ident).join(',')+') VALUES '+rows.map(row=>'('+keys.map(k=>param(row[k])).join(',')+')').join(',');
    if(conflict)statement+=' ON CONFLICT('+conflict.split(',').map(ident).join(',')+') DO UPDATE SET '+keys.filter(k=>!conflict.split(',').includes(k)).map(k=>ident(k)+'=excluded.'+ident(k)).join(',');
   }else{
    statement=operation==='SELECT'?'SELECT * FROM '+ident(table):operation==='DELETE'?'DELETE FROM '+ident(table):'UPDATE '+ident(table)+' SET '+Object.keys(values).map(k=>ident(k)+'='+param(values[k])).join(',');

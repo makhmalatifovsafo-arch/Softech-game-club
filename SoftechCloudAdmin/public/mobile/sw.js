@@ -1,5 +1,5 @@
-const CACHE='softech-club-mobile-v19';
-const ASSETS=['/mobile/','/mobile/index.html','/mobile/style.css','/mobile/app.js','/mobile/operator-tools.js','/mobile/manager-tools.js','/mobile/report-view.js','/mobile/power-confirm.js','/mobile/crypto.js','/mobile/computer-state.js','/mobile/manifest.webmanifest','/mobile/icon.svg','/mobile/icon-192.png','/mobile/icon-512.png'];
+const CACHE='softech-club-mobile-v20';
+const ASSETS=['/mobile/','/mobile/index.html','/mobile/style.css','/mobile/app.js','/mobile/live.js','/mobile/release-presentation.js','/mobile/release-notes.js','/mobile/release-presentation-data.js','/mobile/operator-tools.js','/mobile/manager-tools.js','/mobile/report-view.js','/mobile/power-confirm.js','/mobile/crypto.js','/mobile/computer-state.js','/mobile/manifest.webmanifest','/mobile/icon.svg','/mobile/icon-192.png','/mobile/icon-512.png'];
 ASSETS.push('/mobile/checkout-view.js');
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
 self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys())if(k.startsWith('softech-club-mobile-')&&k!==CACHE)await caches.delete(k);await self.clients.claim();})()));

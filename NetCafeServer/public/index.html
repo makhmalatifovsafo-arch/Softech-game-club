@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <script src="/version-label.js" defer></script>
+  <script type="module" src="/release-presentation.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Softech OS — Game Club Boshqaruv Tizimi</title>
   <script src="/computer-state.js"></script>
@@ -2010,6 +2011,7 @@
             <span data-app-version="/api/health" class="text-[11px] font-mono text-zinc-400">Versiya —</span>
           </h3>
           <span id="settingsRoleBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400">MANAGER ACCESS</span>
+          <button type="button" onclick="window.SoftechReleasePresentation?.open(currentUser?.role,currentUser?.id||currentUser?.username)" class="px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/25 text-sky-300 text-[11px] font-semibold">Versiya yangiliklari</button>
         </div>
         <button onclick="closeModal('settingsModal')" class="text-[var(--text-muted)] hover:text-white text-lg leading-none p-1.5 rounded-lg hover:bg-[#27272a] transition">&times;</button>
       </div>
@@ -4450,9 +4452,11 @@
         if (res.ok) {
           const data = await res.json();
           currentUser = data.user;
+          window.softechReleaseAudience={role:currentUser.role,identity:currentUser.id||currentUser.username};
           hideLoginModal();
           applyUserRbacUi();
           await fetchData();
+          window.dispatchEvent(new CustomEvent('softech:authenticated',{detail:{role:currentUser.role,identity:currentUser.id||currentUser.username}}));
         } else {
           showLoginModal();
         }
@@ -4494,11 +4498,13 @@
         if (res.ok && data.token) {
           authToken = data.token;
           currentUser = data.user;
+          window.softechReleaseAudience={role:currentUser.role,identity:currentUser.id||currentUser.username};
           localStorage.setItem('softech_token', authToken);
           window.SoftechMessages?.refresh();
           hideLoginModal();
           applyUserRbacUi();
           fetchData();
+          window.dispatchEvent(new CustomEvent('softech:authenticated',{detail:{role:currentUser.role,identity:currentUser.id||currentUser.username}}));
         } else {
           errEl.textContent = data.error || 'Login yoki parol noto\'g\'ri';
           errEl.classList.remove('hidden');

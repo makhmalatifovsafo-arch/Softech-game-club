@@ -291,10 +291,10 @@ export class SupabaseCloudService {
 
       // 4. Kompyuterlar matritsasini yangilash
       if (Array.isArray(payload.workstations)) {
-        for (const ws of payload.workstations) {
+        const rows = payload.workstations.map(ws => {
           const updateStatus=['IDLE','REQUESTED','CHECKING','DOWNLOADING','READY','WAITING_FOR_SESSION','INSTALLING','VERIFYING','INSTALLED','ERROR'].includes(String(ws.updateStatus||'').toUpperCase())
             ? String(ws.updateStatus).toUpperCase() : 'IDLE';
-          const cached=await client.from('club_workstations_cache').upsert({
+          return {
             club_id: club.id,
             pc_number: String(ws.pc),
             zone_name: ws.zone || 'STANDARD',
@@ -308,8 +308,13 @@ export class SupabaseCloudService {
             update_receipt_id:/^[a-f0-9]{16,64}$/i.test(String(ws.updateReceiptId||''))?String(ws.updateReceiptId):null,
             update_observed_at:Number.isFinite(Date.parse(ws.updateObservedAt))?new Date(ws.updateObservedAt).toISOString():null,
             updated_at: nowIso
-          }, { onConflict: 'club_id,pc_number' });
-          if(cached.error)throw new Error('Kompyuterlar holati saqlanmadi.');
+          };
+        });
+        if (rows.length) {
+          const cached=await client.from('club_workstations_cache').upsert(rows, { onConflict: 'club_id,pc_number' });
+          if(cached.error)throw new Error(['42703','PGRST204'].includes(cached.error.code)
+            ? 'Client telemetriya ustunlari topilmadi. Supabase bazasida migrations/20261114_client_fleet.sql migratsiyasini bajaring.'
+            : 'Kompyuterlar holati saqlanmadi.');
         }
         // The heartbeat contains the complete inventory, including offline PCs.
         // Remove rows absent from this snapshot; an empty inventory removes all.

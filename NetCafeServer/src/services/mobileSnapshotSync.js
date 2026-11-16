@@ -29,11 +29,12 @@ export class MobileSnapshotSync {
    token=this.createSession(owner).token;
    const capturedAt=new Date().toISOString(),today=dateString(new Date());
    const entries=[];
-   for(const [key,path] of [['computers','/api/computers'],['cash','/api/shifts/current'],['bar','/api/bar/items']]){
+   const currentEntries=await Promise.all([['computers','/api/computers'],['cash','/api/shifts/current'],['bar','/api/bar/items']].map(async([key,path])=>{
     const r=await this.fetcher('http://127.0.0.1:'+this.localPort+path,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)});
     if(!r.ok)throw Error('Mahalliy '+key+' HTTP '+r.status);
-    entries.push({key,data:await r.json(),capturedAt});
-   }
+    return {key,data:await r.json(),capturedAt};
+   }));
+   entries.push(...currentEntries);
    const staff=[];
    for(const role of ['manager','administrator']){
     const table=role==='manager'?'cloud_manager_state':'cloud_administrator_state';

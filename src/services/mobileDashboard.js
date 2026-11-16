@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {liveTicket,notifyLive} from './liveSignals.js';
 import { ManagerAccountService } from './managerAccountService.js';
 import { MobileRelay } from './mobileRelay.js';
 import { verifyTelemetryLicense } from './telemetryAuth.js';
@@ -75,6 +76,7 @@ export class MobileDashboard {
   // Each complete resource/day is replaced, never added to yesterday's totals.
   if(this.db){this.db.exec('BEGIN');try{for(const r of rows)this.db.prepare('INSERT INTO mobile_dashboard_data VALUES(?,?,?,?) ON CONFLICT(club_id,data_key) DO UPDATE SET payload=excluded.payload,captured_at=excluded.captured_at WHERE excluded.captured_at>=mobile_dashboard_data.captured_at').run(r.club_id,r.data_key,JSON.stringify(r.payload),r.captured_at);this.db.exec('COMMIT');}catch(e){this.db.exec('ROLLBACK');throw e;}}
   else await this.query(this.client.rpc('softech_mobile_snapshot_upsert',{p_rows:rows}));
+  await notifyLive(Number(club.id),'data');
   return {success:true};
  }
  async read(session,club,url){
@@ -121,7 +123,7 @@ export async function handleMobileDashboard(req,res,storage){
   if(action==='sync'&&req.method==='POST')result=await service.upload(body);
   else if(action==='login'&&req.method==='POST')result=await service.login(body,String(req.headers['x-forwarded-for']||req.socket?.remoteAddress||'unknown').split(',')[0]);
   else if(action==='logout'&&req.method==='POST')result=await service.logout(token);
-  else {const {session,club}=await service.authorize(token);if(action==='session'&&req.method==='GET')result=await service.sessionInfo(session,club);else if(action==='data'&&req.method==='GET')result=await service.read(session,club,url);else throw fail('Yo‘l topilmadi.',404);}
+  else {const {session,club}=await service.authorize(token);if(action==='live'&&req.method==='GET')result=liveTicket(Number(club.id),'mobile');else if(action==='session'&&req.method==='GET')result=await service.sessionInfo(session,club);else if(action==='data'&&req.method==='GET')result=await service.read(session,club,url);else throw fail('Yo‘l topilmadi.',404);}
   res.statusCode=200;res.end(JSON.stringify(result));
  }catch(e){res.statusCode=e.statusCode||(e instanceof SyntaxError?400:503);res.end(JSON.stringify({error:e.statusCode?e.message:'Mobil bulut xizmati javob bermadi.'}));}return true;
 }
