@@ -82,8 +82,10 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const quote=await desktop('/api/tariffs/calculate','POST',{computerId:pc.id,durationHours:1});assert.equal(quote.body.price,10000,JSON.stringify(quote));assert.equal(quote.body.currentRate,10000);
  const hour=await desktop('/api/sessions/start','POST',{computerId:pc.id,mode:'hours',durationMinutes:60,amount:23000,paymentType:'CASH'});assert.equal(hour.status,201,JSON.stringify(hour));assert.equal(hour.body.amount,10000,'Desktop one-hour session must charge the new mobile rate, even with a stale UI quote');
  await ageSession(hour.body.sessionId,24);
- const closedHour=await mobile('/api/sessions/'+hour.body.sessionId+'/stop-early','POST',{paymentType:'CASH'},cashierToken);assert.equal(closedHour.status,200,JSON.stringify(closedHour));assert.equal(closedHour.body.refundAmount,6000);assert.equal(closedHour.body.usedAmount,4000);
- const netReport=await desktop('/api/reports/financial');const retained=netReport.body.breakdown.rows.filter(r=>r.sessionId===hour.body.sessionId);assert.equal(retained.length,1);assert.equal(retained[0].amount,4000);assert.equal(netReport.body.sessions.find(s=>s.id===hour.body.sessionId).totalAmount,4000);
+ const closedHour=await mobile('/api/sessions/'+hour.body.sessionId+'/stop-early','POST',{paymentType:'CASH'},cashierToken);assert.equal(closedHour.status,200,JSON.stringify(closedHour));
+ assert.ok(closedHour.body.refundAmount>=5999&&closedHour.body.refundAmount<=6000,'Network delay may retain at most one extra so‘m');
+ assert.equal(closedHour.body.usedAmount,10000-closedHour.body.refundAmount);
+ const netReport=await desktop('/api/reports/financial');const retained=netReport.body.breakdown.rows.filter(r=>r.sessionId===hour.body.sessionId);assert.equal(retained.length,1);assert.equal(retained[0].amount,closedHour.body.usedAmount);assert.equal(netReport.body.sessions.find(s=>s.id===hour.body.sessionId).totalAmount,closedHour.body.usedAmount);
  assert.equal(netReport.body.summary.gameCash,netReport.body.breakdown.receipts.GAME.CASH);
  const header=await desktop('/api/stats');assert.equal(header.body.totalRevenue,netReport.body.breakdown.total,'Header must show retained receipts');
  const analytics=await desktop('/api/reports/analytics');assert.equal(analytics.status,200,JSON.stringify(analytics));

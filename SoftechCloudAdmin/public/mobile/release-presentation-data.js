@@ -1,3 +1,5 @@
+// These releases intentionally open without the full-screen presentation.
+export const presentationlessReleases=['1.3.5'];
 export const releaseNotes={
  '1.3.4':{
   title:'Mobil boshqaruv tezroq va tushunarli',
