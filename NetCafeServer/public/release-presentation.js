@@ -26,10 +26,11 @@ function render(){
 }
 function close(){try{localStorage.setItem(key(),new Date().toISOString());}catch{}document.getElementById('softechReleasePresentation')?.remove();}
 async function open(userRole,{force=false,identity='device'}={}){
+ if(window.softechSetupReady===false||window.SoftechOnboarding?.isActive())return;
  audience=String(identity||'device').replace(/[^a-zA-Z0-9_.:-]/g,'').slice(0,100)||'device';
  role=userRole==='manager'?'club_owner':userRole;
  if(!['club_owner','administrator'].includes(role))return;
- try{version=await currentVersion();active=releaseNotes[version];if(!active)return;if(!force&&localStorage.getItem(key()))return;index=0;render();}catch{}
+ try{version=await currentVersion();if(window.softechSetupReady===false||window.SoftechOnboarding?.isActive())return;active=releaseNotes[version];if(!active)return;if(!force&&localStorage.getItem(key()))return;index=0;render();}catch{}
 }
 window.SoftechReleasePresentation={showIfNeeded:(userRole,identity)=>open(userRole,{identity}),open:(userRole,identity)=>open(userRole,{force:true,identity})};
 window.addEventListener('softech:authenticated',event=>open(event.detail?.role,{identity:event.detail?.identity}));

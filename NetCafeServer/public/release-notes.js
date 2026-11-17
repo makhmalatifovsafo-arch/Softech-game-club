@@ -1,6 +1,16 @@
 // These releases intentionally open without the full-screen presentation.
 export const presentationlessReleases=['1.3.5','1.3.6'];
 export const releaseNotes={
+ '1.3.7':{
+  title:'Klubni tayyorlash va o‘rganish osonroq',
+  intro:'Server dasturida yangi sozlash ustasi, qisqa mashqlar va kerakli joyda yordam.',
+  slides:[
+   {roles:['club_owner','manager'],icon:'🛠️',title:'Yangi klubni bosqichma-bosqich sozlang',text:'Server dasturidagi usta xonalar, kompyuterlar va tariflarni ketma-ket tayyorlaydi. Ishni boshlashdan oldin barcha clientlar ulanishi va tariflar haftaning barcha soatlarini qoplashi tekshiriladi.',action:'Server → Sozlamalar → Klubni sozlash'},
+   {roles:['club_owner','manager','administrator'],icon:'🎮',title:'Bosib ko‘rib o‘rganing',text:'Serverdagi qisqa tanishtirish seans, bar va yakuniy hisobni namuna bilan tushuntiradi. Mashqlar haqiqiy seans ochmaydi va pul hisobiga ta’sir qilmaydi. Keyinroq davom ettirish ham mumkin.',action:'Server → Sozlamalar → Qisqa tanishtirish'},
+   {roles:['club_owner','manager','administrator'],icon:'❔',title:'Kerakli joyda qisqa yordam',text:'Serverdagi ayrim funksiyalar yonidagi «?» belgisi aynan shu funksiyani tushuntiradigan sahifani ochadi. Qisqa ko‘rsatmalar va misollar ishni tezroq tushunishga yordam beradi.',action:'Serverdagi «?» belgisini bosing'},
+   {roles:['club_owner','manager'],icon:'📊',title:'Hisobot kassani kamroq kutdiradi',text:'Server statistikasi alohida hisoblanadi, tayyor natija esa qayta ishlatiladi. Katta hisobot ochilganda seans va savdo amallariga tushadigan yuk kamayadi.',action:'Server → Statistika'}
+  ]
+ },
  '1.3.4':{
   title:'Mobil boshqaruv tezroq va tushunarli',
   intro:'v1.3.4 da kundalik ish uchun nimalar yaxshilanganini ko‘ring.',

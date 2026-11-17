@@ -1,4 +1,7 @@
 import { deliverScreenMessage } from './services/screenMessages.js';
+import { ClubSetupDrafts, evaluateSetupDraft, setupLiveClients } from './services/clubSetup.js';
+import { clubSetupContext } from './services/clubSetupContext.js';
+import { clubSetupStatus, finalizeClubSetup } from './services/clubSetupFinalize.js';
 import { UpdateProbation } from './services/updateProbation.js';
 import { stopService } from './services/serviceLifecycle.js';
 import { readServerConfig, recoverServerConfig } from './services/serverConfig.js';
@@ -78,6 +81,7 @@ if(updateProbation.pending){
 
 // 1. Bazani initsializatsiya qilish
 initDatabase();
+const setupDrafts = new ClubSetupDrafts(db);
 const analyticsCache=new AnalyticsCache(path.join(ROOT_DIR,'netcafe.db'));
 
 // OTA Avtomatik yangilanish tizimi
@@ -208,6 +212,64 @@ function handleRequest(req, res) {
     return;
   }
 
+  // First-run state is local and persistent; only unconfigured NEW clubs are gated.
+  if(url.pathname==='/api/setup/status'&&req.method==='GET'){
+    if(!authenticate(req,res,{roles:['club_owner','administrator']}))return;
+    res.setHeader('Cache-Control','no-store');
+    try{sendJson(res,200,clubSetupStatus(db,req.user.clubId));}catch(error){sendJson(res,error.statusCode||503,{error:error.message});}return;
+  }
+  if(url.pathname==='/api/setup/complete'&&req.method==='POST'){
+    if(!authenticate(req,res,{roles:['club_owner']}))return;
+    const clubId=req.user.clubId;
+    readBody(req,body=>{
+      if(!authenticate(req,res,{roles:['club_owner']}))return;
+      if(!clubId||req.user.clubId!==clubId||!req.user.club||CloudLicenseService.isBlocked()||!LicenseManager.isOperational())return sendJson(res,403,{error:'Klub yoki litsenziya holati o‘zgardi.'});
+      try{
+        const receipt=finalizeClubSetup(db,clubId,req.user.id,body,{clients:ClientManager.getAllClients(),maxComputers:Number(LicenseManager.licenseData?.maxPcs),heartbeatTimeoutMs:HeartbeatMonitor.TIMEOUT_MS});
+        // Delivery is best effort after COMMIT; a lost notification never makes
+        // a committed transaction look like a failed configuration.
+        try{broadcastAdminUpdate();mobileSnapshots.requestSoon();for(const c of ClientManager.getAllClients())ProtocolDispatcher.syncClientRate(c.pcId,clubId,c.name,{force:true});}catch(error){console.warn('[Setup notification]',error.message);}
+        sendJson(res,200,{success:true,receipt});
+      }catch(error){if(!error.statusCode)console.error('[Setup completion]',error.message);sendJson(res,error.statusCode||500,{error:error.statusCode?error.message:'Sozlamalar saqlanmadi. Qoralama saqlangan; qayta urinib ko‘ring.'});}
+    });return;
+  }
+  if (['/api/setup/draft','/api/setup/context'].includes(url.pathname)) {
+    if(!authenticate(req,res,{roles:['club_owner']}))return;
+    const clubId=req.user.clubId;
+    if(!Number.isSafeInteger(clubId)||clubId<1||!req.user.club){sendJson(res,403,{error:'Klub aniqlanmadi.'});return;}
+    res.setHeader('Cache-Control','no-store');
+    if(url.pathname==='/api/setup/context'){
+      if(req.method!=='GET'){res.setHeader('Allow','GET');sendJson(res,405,{error:'Faqat o‘qish mumkin.'});return;}
+      try{sendJson(res,200,clubSetupContext(db,clubId,{clients:ClientManager.getAllClients(),maxComputers:Number(LicenseManager.licenseData?.maxPcs),heartbeatTimeoutMs:HeartbeatMonitor.TIMEOUT_MS}));}
+      catch(error){sendJson(res,error.statusCode||500,{error:error.statusCode?error.message:'Mavjud klub sozlamalarini o‘qib bo‘lmadi.'});}
+      return;
+    }
+    const respond=(body)=>{
+      try {
+        const state=req.method==='PUT'?setupDrafts.save(clubId,req.user.id,body?.revision,body?.draft,body?.baseFingerprint):setupDrafts.read(clubId);
+        const readiness=evaluateSetupDraft(state.draft,{maxComputers:Number(LicenseManager.licenseData?.maxPcs),
+          heartbeatTimeoutMs:HeartbeatMonitor.TIMEOUT_MS,liveClients:setupLiveClients(db,clubId,ClientManager.getAllClients())});
+        sendJson(res,200,{...state,readiness});
+      } catch(error){sendJson(res,error.statusCode||500,{error:error.statusCode?error.message:'Sozlash qoralamasini saqlab bo‘lmadi.'});}
+    };
+    if(req.method==='GET')respond();
+    else if(req.method==='PUT')readBody(req,body=>{
+      // Recheck after body arrival: a logout, role change or license block can
+      // happen while the request is still being uploaded.
+      if(!authenticate(req,res,{roles:['club_owner']}))return;
+      if(req.user.clubId!==clubId||CloudLicenseService.isBlocked()||!LicenseManager.isOperational()){
+        sendJson(res,403,{error:'Klub yoki litsenziya holati o‘zgardi.'});return;
+      }
+      respond(body);
+    });
+    else {res.setHeader('Allow','GET, PUT');sendJson(res,405,{error:'Usul qo‘llab-quvvatlanmaydi.'});}
+    return;
+  }
+
+  if(mutating&&url.pathname.startsWith('/api/')&&!/^\/api\/(auth|setup|updates|license|cloud-announcements|internal)\//.test(url.pathname)){
+    if(!authenticate(req,res))return;
+    if(req.user.clubId&&clubSetupStatus(db,req.user.clubId).required){sendJson(res,409,{code:'SETUP_REQUIRED',error:'Menejer avval klub sozlamalarini yakunlashi kerak.'});return;}
+  }
   if (url.pathname === '/api/client/bar/catalog' && req.method === 'GET') {
     const items = db.prepare('SELECT id, name, category, sell_price, stock_quantity FROM bar_items WHERE club_id=1 AND is_active=1 AND stock_quantity>0 ORDER BY name').all();
     sendJson(res, 200, { success: true, items }); return;

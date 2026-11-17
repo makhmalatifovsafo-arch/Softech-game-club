@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Klubni sozlash · Softech</title>
+  <link rel="icon" href="/brand-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/club-setup.css">
+  <script type="module" src="/club-setup.js"></script>
+</head>
+<body>
+  <header class="setup-header">
+    <a class="brand" href="/" aria-label="Softech bosh oynasi"><img src="/brand-icon.svg" alt="" width="36" height="36"><span>SOFTECH<small>KLUBNI TAYYORLASH</small></span></a>
+    <div class="club-meta"><strong id="clubName">Klubni sozlash</strong><span id="clubLimit">Menejer uchun</span></div>
+    <a class="quiet" id="exitSetup" href="/">Yopish <span aria-hidden="true">↗</span></a>
+  </header>
+  <main id="setupMain">
+    <section id="loading" class="loading" aria-live="polite"><span class="signal"></span><h1>Klub sozlamalari yuklanmoqda…</h1><p>Saqlangan qoralama va clientlar tekshiriladi.</p></section>
+    <section id="loadError" class="loading" hidden><h1>Sozlash oynasi ochilmadi</h1><p id="loadErrorText" role="alert"></p><button id="reloadPage" class="primary">Qayta urinish</button><a class="quiet" href="/">Kirish oynasiga qaytish</a></section>
+    <div id="workspace" hidden>
+      <nav class="steps" aria-label="Sozlash bosqichlari">
+        <button data-step="rooms"><span>01</span><b>Xonalar</b><small>Zal rejasini chizing</small></button>
+        <button data-step="computers"><span>02</span><b>Kompyuterlar</b><small>Clientlarni biriktiring</small></button>
+        <button data-step="tariffs"><span>03</span><b>Tariflar</b><small>Narx va vaqtlar</small></button>
+        <button data-step="review"><span>04</span><b>Tekshirish</b><small>Hammasi joyidami?</small></button>
+      </nav>
+      <div class="stage-heading"><div><p class="eyebrow" id="stepKicker">01 / ZAL REJASI</p><h1 id="stepTitle" tabindex="-1">Klubingiz qanday joylashgan?</h1><p id="stepHint"></p></div><span class="draft-badge">QORALAMA</span></div>
+      <p class="notice">O‘zgarishlar avval qoralamada saqlanadi. Faqat oxirgi bosqichda tasdiqlaganingizdan keyin klubga qo‘llanadi. Har bir xona uchun 24/7 tarif va barcha clientlarning ulanishi kerak.</p>
+      <div id="saveError" class="error-banner" role="alert" hidden><span></span><div><button id="retrySave">Qayta saqlash</button><button id="downloadDraft">Qoralamani yuklab olish</button><button id="loadRemote" hidden>Serverdagi nusxani ochish</button></div></div>
+      <section id="roomsStage" data-panel="rooms">
+        <div class="workspace-grid">
+          <div class="map-card">
+            <div class="toolbar"><div class="tool-group"><button id="selectTool" class="selected" aria-pressed="true">↖ Tanlash</button><button id="drawTool" aria-pressed="false">▱ Xona chizish</button><button data-map-view="selected">Xonaga yaqinlashish</button><button data-map-view="all">Butun zal</button></div><button id="addRoom">+ Xona</button></div>
+            <div class="map-host" id="roomMapHost"></div>
+            <p class="map-caption" id="mapHint">Xonani suring yoki o‘lchamlarini o‘ng tomonda yozing. Klaviatura strelkalari bilan ham siljitish mumkin.</p>
+          </div>
+          <aside class="inspector"><label class="field">Klubdagi kompyuterlar soni<input id="expectedComputers" type="number" min="1" max="500" inputmode="numeric"></label><div class="divider"></div><div class="section-label">XONALAR <span id="roomCount">0</span></div><div id="roomList" class="entity-list"></div><div id="roomEditor"></div></aside>
+        </div>
+      </section>
+      <section id="computersStage" data-panel="computers" hidden>
+        <div class="pc-toolbar"><div><strong id="pcCount"></strong><p id="liveStatus" aria-live="polite">Clientlar tekshirilmoqda…</p></div><div class="tool-group"><button id="fillComputers">Rejadagi PC’larni qo‘shish</button><button id="addComputer">+ Bitta PC</button><button id="refreshClients">↻ Aloqani tekshirish</button></div></div>
+        <div class="workspace-grid"><div><div class="map-card"><div class="toolbar"><strong>Kompyuterni xonaga joylashtiring</strong><div class="tool-group"><button data-map-view="selected">Xonaga yaqinlashish</button><button data-map-view="all">Butun zal</button></div></div><div class="map-host" id="pcMapHost"></div><p class="map-caption">PC’ni suring yoki xonasini yon tomondan tanlang. IP kiritish Windows tarmoq manzilini o‘zgartirmaydi.</p></div><div id="pcList" class="pc-list"></div></div><aside class="inspector"><div id="pcEditor"></div></aside></div>
+      </section>
+      <section id="tariffsStage" data-panel="tariffs" hidden>
+        <div class="tariff-heading"><label class="field">Xonani tanlang<select id="tariffRoom"></select></label><button id="addTariff" class="primary">+ Vaqt oralig‘i</button></div>
+        <p class="muted">Har bir vaqt oralig‘i uchun kunlar va 1 soat narxini belgilang. Masalan: 08:00–18:00 va 18:00–08:00. Boshlanish va tugash bir xil bo‘lsa — tanlangan kun to‘liq olinadi.</p>
+        <div id="tariffList" class="tariff-list"></div>
+        <details id="otherTariffs" hidden><summary>Amaldagi umumiy va paket tariflari</summary><div></div></details>
+      </section>
+      <section id="reviewStage" data-panel="review" hidden>
+        <div id="reviewSummary" class="review-summary"></div><div class="review-grid"><section class="inspector"><h2>Tekshiruv natijasi</h2><div id="reviewChecks"></div></section><section class="inspector"><h2>Qanday o‘zgarishlar kiritildi?</h2><p class="muted">Usta ochilgan paytdagi klub sozlamalari bilan taqqoslash.</p><div id="draftChanges"></div><div id="contextNotices"></div></section></div>
+        <div class="finish-note"><span aria-hidden="true">◇</span><div><h2>Klubni ishga tayyorlang</h2><p>Saqlashdan oldin ulanishlar va tariflar yana tekshiriladi. Faol seans bo‘lsa, uni tugatgandan keyin sozlamalarni qo‘llang.</p><button id="rebaseDraft">Amaldagi holatni tekshirish</button><p id="baselineNotice"></p></div></div>
+      </section>
+      <section id="stepIssues" class="step-issues" aria-label="To‘ldirilishi kerak bo‘lgan joylar"></section>
+    </div>
+  </main>
+  <footer id="setupFooter" hidden><div><strong id="saveStatus" role="status" aria-live="polite">Qoralama</strong><small id="nextReason"></small></div><div class="footer-actions"><button id="previousStep">← Orqaga</button><button id="saveDraft">Qoralamani saqlash</button><button id="nextStep" class="primary">Keyingi →</button><button id="completeSetup" class="primary" hidden>Saqlash va ishni boshlash</button></div></footer>
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle"><h2 id="confirmTitle">Tasdiqlash</h2><p id="confirmMessage"></p><div class="dialog-actions"><button id="cancelConfirm">Bekor qilish</button><button id="acceptConfirm" class="primary">Davom etish</button></div></dialog>
+</body>
+</html>

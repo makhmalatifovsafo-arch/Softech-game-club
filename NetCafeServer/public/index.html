@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <html lang="uz" data-theme="dark">
 <head>
+  <script src="/setup-gate.js"></script>
   <link rel="stylesheet" href="/context-help.css">
   <script src="/context-help.js" defer></script>
   <link rel="icon" type="image/svg+xml" href="/brand-icon.svg">
   <meta charset="UTF-8">
   <script src="/version-label.js" defer></script>
+  <link rel="stylesheet" href="/onboarding.css">
+  <script src="/onboarding.js" defer></script>
   <script type="module" src="/release-presentation.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Softech OS — Game Club Boshqaruv Tizimi</title>
@@ -2016,7 +2019,11 @@
         <button onclick="closeModal('settingsModal')" class="text-[var(--text-muted)] hover:text-white text-lg leading-none p-1.5 rounded-lg hover:bg-[#27272a] transition">&times;</button>
       </div>
 
+      <button type="button" id="onboardingEntry" onclick="window.SoftechOnboarding?.open()" style="margin:12px 24px;padding:12px 16px;border:1px solid #526c2b;border-radius:10px;background:#17200e;color:#d9ff85;font-size:13px;text-align:left">◇ Qisqa tanishtirish <span style="display:block;color:#b2c49b;font-size:12px;margin-top:4px">Seans, bar va hisob-kitobni namuna bilan o‘rganing.</span></button>
       <!-- Navigation Tabs -->
+      <a id="clubSetupEntry" href="/club-setup.html" hidden style="margin:12px 24px;padding:12px 16px;border:1px solid #526c2b;border-radius:10px;background:#17200e;color:#d9ff85;text-decoration:none;font-size:13px;line-height:1.5">
+        <strong>Klubni sozlash →</strong><br><span style="color:#b2c49b;font-size:12px">Xonalar, kompyuterlar va tariflar uchun bosqichma-bosqich qoralama.</span>
+      </a>
       <div class="flex border-b border-[var(--border-color)] bg-[#09090b] px-6 gap-2">
         <button onclick="switchSettingsTab('computers')" id="tabBtn-computers" class="settings-tab-btn py-3 px-4 text-xs font-semibold border-b-2 border-[#38bdf8] text-white">
           🖥️ Kompyuterlar
@@ -4454,10 +4461,12 @@
         if (res.ok) {
           const data = await res.json();
           currentUser = data.user;
-          window.softechReleaseAudience={role:currentUser.role,identity:currentUser.id||currentUser.username};
+          if(!await window.SoftechSetupGate.check(authToken,currentUser))return;
           hideLoginModal();
           applyUserRbacUi();
           await fetchData();
+          window.SoftechOnboarding?.onAuthenticated(currentUser,window.softechSetupStatus);
+          window.softechReleaseAudience={role:currentUser.role,identity:currentUser.id||currentUser.username};
           window.dispatchEvent(new CustomEvent('softech:authenticated',{detail:{role:currentUser.role,identity:currentUser.id||currentUser.username}}));
         } else {
           showLoginModal();
@@ -4468,6 +4477,7 @@
     }
 
     function showLoginModal() {
+      window.SoftechOnboarding?.suspend();
       document.getElementById('loginModal').classList.remove('hidden');
     }
 
@@ -4500,12 +4510,14 @@
         if (res.ok && data.token) {
           authToken = data.token;
           currentUser = data.user;
-          window.softechReleaseAudience={role:currentUser.role,identity:currentUser.id||currentUser.username};
           localStorage.setItem('softech_token', authToken);
+          if(!await window.SoftechSetupGate.check(authToken,currentUser))return;
           window.SoftechMessages?.refresh();
           hideLoginModal();
           applyUserRbacUi();
-          fetchData();
+          await fetchData();
+          window.SoftechOnboarding?.onAuthenticated(currentUser,window.softechSetupStatus);
+          window.softechReleaseAudience={role:currentUser.role,identity:currentUser.id||currentUser.username};
           window.dispatchEvent(new CustomEvent('softech:authenticated',{detail:{role:currentUser.role,identity:currentUser.id||currentUser.username}}));
         } else {
           errEl.textContent = data.error || 'Login yoki parol noto\'g\'ri';
@@ -7402,6 +7414,7 @@
     // ========================================================================
     function openSettingsModal() {
       if (!currentUser) return;
+      document.getElementById('clubSetupEntry').hidden = currentUser.role !== 'club_owner';
       document.getElementById('settingsModal').classList.remove('hidden');
       renderAdminComputersTable();
       renderVipSettings();

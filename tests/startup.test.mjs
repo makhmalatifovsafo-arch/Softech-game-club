@@ -1,4 +1,6 @@
 import { checkCustomerCredentials } from './customer-credentials-flow.mjs';
+import { checkClubSetup } from './club-setup-flow.mjs';
+import { setupFirstRun } from './club-setup-first-run.mjs';
 import { checkMoneyOperations } from './money-operations-flow.mjs';
 import { checkMobileFlow } from './mobile-flow.mjs';
 import { checkPostpaidFlow } from './postpaid-flow.mjs';
@@ -81,6 +83,7 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     const localUrl = 'http://127.0.0.1:' + clubPort;
     const jsonHeaders = { 'Content-Type': 'application/json' };
     const adminHeaders = { ...jsonHeaders, Authorization: 'Bearer ' + accessToken };
+    assert.equal((await fetch(localUrl+'/api/setup/draft')).status,403,'unlicensed installation cannot access setup drafts');
     let requested;
     for (let attempt=0; attempt<50; attempt++) {
       const request = await fetch(localUrl + '/api/license/request-activation', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ clubName: "O'yin Club" }) });
@@ -128,15 +131,16 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     socket = new WebSocket('ws://127.0.0.1:' + clubPort + '/ws');
     await once(socket, 'open');
     const message = once(socket, 'message');
-    socket.send(JSON.stringify({ type: 'CLIENT_HELLO', payload: { pcNumber: 'PC-01', macAddress: '02:00:00:00:00:01', ipAddress: '127.0.0.1' } }));
+    socket.send(JSON.stringify({ type: 'CLIENT_HELLO', payload: { pcNumber: 'PC-01', macAddress: '02:00:00:00:00:01', ipAddress: '192.168.1.101' } }));
     const [raw] = await Promise.race([message, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('No handshake response: ' + s.logs())), 5000); timer.unref(); })]);
     assert.ok(JSON.parse(raw.toString()).type);
     // Malformed packets and repeated handshakes must not crash or disconnect a kiosk.
     socket.send('null');socket.send('[]');socket.send('{');
-    socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01'}}));
+    socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01',ipAddress:'192.168.1.101'}}));
     await new Promise(r=>setTimeout(r,100));assert.equal(socket.readyState,WebSocket.OPEN);
     assert.equal((await fetch(localUrl+'/api/health')).status,200);
 
+    await setupFirstRun({url:localUrl});
     let operations;
     try { operations = await checkClubOperations({ databasePath: path.join(club, "netcafe.db"), localUrl, cloudUrl: env.SOFTECH_CLOUD_URL, cloudToken: accessToken, cloudClubId: approved.club.id, socket }); }
     catch (error) { throw new Error(error.message + '\nSERVER LOG:\n' + s.logs() + '\nCLOUD LOG:\n' + c.logs(), { cause:error }); }
@@ -230,6 +234,7 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     assert.equal((await cashierApi('/api/bookings','POST',{computerId:pc.id,customerName:'Duplicate',startTime:bookingStart,endTime:end})).status,409);
     assert.equal((await cashierApi('/api/bookings/'+booking.body.booking.id+'/status','PUT',{status:'CANCELLED'})).status,200);
     const ownerLogin=await ownerStillWorks.json();const ownerHeaders={...jsonHeaders,Authorization:'Bearer '+ownerLogin.token};
+    await checkClubSetup({localUrl,ownerHeaders,cashierHeaders,databasePath:path.join(club,'netcafe.db')});
     socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01',ipAddress:'127.0.0.1'}}));
     await checkMobileFlow({cloudUrl:env.SOFTECH_CLOUD_URL,localUrl,clubId:approved.club.id,ownerToken:ownerLogin.token,ageSession:async(id,minutes)=>{
       const billingFixture=new DatabaseSync(path.join(club,'netcafe.db'));

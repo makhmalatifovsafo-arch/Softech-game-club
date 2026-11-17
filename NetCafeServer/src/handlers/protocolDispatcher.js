@@ -11,6 +11,7 @@ import { verifyPassword } from '../auth.js';
 import { calculateTimeFromAmount, resolveZoneIdForComputer, getActiveRateForMoment } from '../services/pricingEngine.js';
 import { LicenseManager } from '../services/licenseManager.js';
 import { normalizeMacAddress } from '../services/macAddress.js';
+import { clubSetupStatus } from '../services/clubSetupFinalize.js';
 
 export class ProtocolDispatcher {
   static getClientRateConfig(pcId, clubId = 1, pcName = '') {
@@ -313,6 +314,7 @@ export class ProtocolDispatcher {
     try {
       if (!LicenseManager.isOperational()) throw new Error('Litsenziya faol emas.');
       if (!pcId || !payload?.username || !payload?.password) throw new Error('Kompyuter, login va parol talab qilinadi.');
+      if(clubSetupStatus(db,1).required)throw Error('Menejer klubni sozlamoqda. Iltimos, administratorga murojaat qiling.');
       const result=startMemberSession(pcId,payload.username,payload.password,payload.durationMinutes);
       ClientManager.send(pcId,'MEMBER_LOGIN_SUCCESS',result);
       ClientManager.send(pcId,'START_SESSION',result);
