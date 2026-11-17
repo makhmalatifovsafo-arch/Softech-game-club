@@ -1,4 +1,5 @@
 import { db, getClubSettings } from '../db.js';
+import { recordSessionTransfer } from './sessionTransferHistory.js';
 import { createHash } from 'node:crypto';
 import { isPostpaidSession } from './sessionMode.js';
 import { postpaidGameAmount } from './clientSessionState.js';
@@ -78,12 +79,14 @@ export function transferSession(options) {
     if ((!postpaid && Math.abs(preview.oldRemainingSeconds-preview.newRemainingSeconds)>1 && !quoteRevision) ||
         (quoteRevision && quoteRevision!==preview.quoteRevision))
       throw fail('Ko‘chirish hisobini qayta ko‘rib, yangi vaqtni tasdiqlang.',409);
+    let transferGameAmount=postpaid?carriedAmount:preview.usedAmount;
     if (postpaid) {
       db.prepare('UPDATE sessions SET postpaid_carried_amount=?,postpaid_billing_started_at=? WHERE id=?')
         .run(carriedAmount,new Date(now).toISOString(),session.id);
     } else if (isLiveMember(session)) {
       const settled=settleMemberUsage(session.id,new Date(now),false,true);
       if (settled?.exhausted) throw fail('Mijoz balansi yoki seans vaqti tugagan.');
+      transferGameAmount=settled.totalAmount;
     } else {
       db.prepare('UPDATE sessions SET prepaid_rate_plan=?,ends_at=? WHERE id=?').run(JSON.stringify(plan),preview.newEndsAt,session.id);
     }
@@ -95,6 +98,7 @@ export function transferSession(options) {
       .run(to.id,from.name,to.name,session.id);
     db.prepare("UPDATE computers SET status='LOCKED',current_session_id=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(from.id);
     db.prepare("UPDATE computers SET status='OCCUPIED',current_session_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(session.id,to.id);
+    recordSessionTransfer(db,{session,from,to,now,gameAmount:transferGameAmount});
     const updated=db.prepare('SELECT * FROM sessions WHERE id=?').get(session.id);
     db.exec('COMMIT');
     return {session:updated,from,to,isPostpaid:postpaid,carriedAmount:preview.carriedAmount,preview,

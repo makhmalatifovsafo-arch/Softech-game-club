@@ -118,6 +118,8 @@ test('VIP transfer retains 5320 earned before restart and continues at the desti
     assert.equal(row.computer_id,'b');assert.equal(postpaidGameBill(row,Date.parse('2026-11-13T12:30:00Z')),12320);
     assert.throws(()=>transferSession({fromComputerId:'a',toComputerId:'b',clubId:1,now:Date.parse('2026-11-13T12:30:00Z')}));
     assert.ok(Math.abs(db.prepare("SELECT postpaid_carried_amount FROM sessions WHERE id='vip'").get().postpaid_carried_amount-5320)<1e-8);
+    const history=db.prepare("SELECT * FROM session_transfer_history WHERE session_id='vip'").all();
+    assert.equal(history.length,1);assert.equal(history[0].from_id,'a');assert.equal(history[0].to_id,'b');assert.ok(Math.abs(history[0].game_amount-5320)<1e-8);
   `);
 });
 

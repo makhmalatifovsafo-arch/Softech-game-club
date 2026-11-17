@@ -1,4 +1,5 @@
 import { checkCustomerCredentials } from './customer-credentials-flow.mjs';
+import { checkMoneyOperations } from './money-operations-flow.mjs';
 import { checkMobileFlow } from './mobile-flow.mjs';
 import { checkPostpaidFlow } from './postpaid-flow.mjs';
 import { checkPrepaidFlow } from './prepaid-flow.mjs';
@@ -197,6 +198,10 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     assert.ok(cashier,s.logs());assert.equal(cashier.user.role,'administrator');
     const cashierHeaders={...jsonHeaders,Authorization:'Bearer '+cashier.token};
     const cashierApi=async(route,method='GET',body)=>{const r=await fetch(localUrl+route,{method,headers:cashierHeaders,...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};};
+    await checkMoneyOperations(cashierApi,club,async()=>{
+      const exited=once(s.child,'exit');s.child.kill();await exited;
+      s=start(club,clubPort);await waitFor(localUrl+'/api/health',s.child,s.logs);
+    });
     const users=await cashierApi('/api/admin/users');assert.equal(users.status,200);assert.ok(!JSON.stringify(users.body).includes('password'));
     const owner=users.body.find(u=>u.role==='club_owner');assert.ok(owner);
     assert.equal((await cashierApi('/api/admin/users','POST',{username:'intruder',password:'bad-password',role:'club_owner'})).status,403);

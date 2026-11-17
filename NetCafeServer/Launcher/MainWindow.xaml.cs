@@ -177,6 +177,9 @@ public partial class MainWindow : Window
             CockpitWebView.NavigationCompleted -= CockpitWebView_NavigationCompleted;
             CockpitWebView.NavigationCompleted += CockpitWebView_NavigationCompleted;
 
+            CockpitWebView.CoreWebView2.NewWindowRequested -= OpenHelpInBrowser;
+            CockpitWebView.CoreWebView2.NewWindowRequested += OpenHelpInBrowser;
+
             // 5. Asosiy Kassa Dashboard manziliga yo'naltirish
             CockpitWebView.CoreWebView2.Navigate(NodeProcessManager.ServerUrl);
             _isInitialized = true;
@@ -186,6 +189,28 @@ public partial class MainWindow : Window
             if (!_closing) ShowError(ex.Message);
         }
         finally { _initializing = false; BtnRetry.IsEnabled = true; }
+    }
+
+    private void OpenHelpInBrowser(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        // Only the static help origin is opened through the Windows shell.
+        if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort ||
+            uri.Host != "softech-club-cyber.windygnome8193.chatgpt.site" ||
+            !uri.AbsolutePath.StartsWith("/help/", StringComparison.Ordinal) ||
+            uri.UserInfo.Length != 0) return;
+        e.Handled = true;
+        if (!e.IsUserInitiated) return;
+        try
+        {
+            // Do not forward cashier state, identifiers or URL query parameters.
+            Process.Start(new ProcessStartInfo(uri.GetLeftPart(UriPartial.Path)) { UseShellExecute = true });
+        }
+        catch
+        {
+            MessageBox.Show("Qo‘llanmani brauzerda ochib bo‘lmadi. Yordam: @softech_support yoki +998 99 563 45 16.",
+                "Softech yordam", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     private void CockpitWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)

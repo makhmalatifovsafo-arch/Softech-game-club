@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html lang="uz" data-theme="dark">
 <head>
+  <link rel="stylesheet" href="/context-help.css">
+  <script src="/context-help.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/brand-icon.svg">
   <meta charset="UTF-8">
   <script src="/version-label.js" defer></script>
   <script type="module" src="/release-presentation.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Softech OS — Game Club Boshqaruv Tizimi</title>
   <script src="/computer-state.js"></script>
+  <script src="/money-requests.js"></script>
   
   <!-- Shriftlar: Plus Jakarta Sans va JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -367,12 +371,7 @@
       
       <!-- Logo & Title -->
       <div class="text-center space-y-2">
-        <div class="w-12 h-12 mx-auto rounded-xl bg-white flex items-center justify-center shadow-md">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M18 7.5C18 5.567 15.3137 4 12 4C8.68629 4 6 5.567 6 7.5C6 9.433 8.68629 10.5 12 11.5C15.3137 12.5 18 13.567 18 15.5C18 17.433 15.3137 19 12 19C8.68629 19 6 17.433 6 15.5" 
-                  stroke="#09090b" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
-        </div>
+        <img src="/brand-icon.svg" width="48" height="48" class="mx-auto rounded-xl" alt="Softech">
         <h2 class="text-xl font-bold tracking-tight text-white font-sans">Softech Tizimiga Kirish</h2>
         <p class="text-xs text-[#71717a]">Game Club boshqaruv paneli autentifikatsiyasi</p>
       </div>
@@ -426,9 +425,7 @@
         <!-- Top: Logo & Network status -->
         <div class="p-4 border-b border-white/10 flex items-center justify-between relative bg-white/[0.02]">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-2xl bg-gradient-to-br from-emerald-400/20 via-sky-500/20 to-indigo-500/10 border border-white/20 backdrop-blur-md flex items-center justify-center text-white font-black text-sm shadow-[0_4px_16px_rgba(16,185,129,0.25)]">
-              <span class="text-base drop-shadow-[0_0_8px_rgba(56,189,248,0.8)]">⚡</span>
-            </div>
+            <img src="/brand-icon.svg" width="36" height="36" class="rounded-xl" alt="Softech">
             <div>
               <div class="flex items-center gap-1.5">
                 <span class="text-sm font-extrabold tracking-wider text-white font-mono drop-shadow-sm">SOFTECH</span>
@@ -1357,6 +1354,7 @@
   <!-- VIEW 4: STATS (KLUB STATISTIKASI VA CHART.JS ANALITIKA)                 -->
   <!-- ===================================================================== -->
   <section id="view-stats" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-6">
+    <p id="statsFreshness" role="status" class="text-xs text-[var(--text-muted)]"></p>
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
@@ -1456,6 +1454,7 @@
         <div class="relative w-full h-[280px]">
           <canvas id="chartComputerRanking"></canvas>
         </div>
+        <p id="statsUnattributedNotice" hidden class="text-xs text-amber-300 leading-relaxed"></p>
       </div>
 
       <!-- Grafik 4 (Bar / Area Chart): Kun davomida zalning bandlik soatlari (Peak hours) -->
@@ -1533,6 +1532,7 @@
       <!-- CHAP TOMON: Tovar Katalogi yoki Ombor Jadvali + Pastida Oxirgi Sotuvlar Lentasi (2 cols) -->
       <div class="lg:col-span-2 space-y-6">
         <!-- 1. Katalog Kartochkalari ko'rinishi -->
+        <div class="flex items-center text-xs text-zinc-400">PC hisobiga mahsulot qo‘shish <a class="softech-help-link" data-help-topic="bar.sale" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/bar-savdosi/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Bar savdosi — qisqa qo‘llanma" aria-label="Bar savdosi — qisqa qo‘llanma">?</a></div>
         <div id="barCatalogCardsView" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           <!-- Dinamik ravishda mahsulotlar yuklanadi -->
         </div>
@@ -2112,7 +2112,7 @@
         </div>
 
         <!-- TAB 2: TARIFFS & DYNAMIC SCHEDULES -->
-        <div id="tabContent-tariffs" class="flex flex-col gap-6 hidden">
+        <div id="tabContent-tariffs" class="flex flex-col gap-6 hidden"><div class="order-first flex items-center text-xs text-zinc-400">Tariflar qanday ishlaydi? <a class="softech-help-link" data-help-topic="tariff.schedule" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/dinamik-tariflar/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Dinamik tariflar — qisqa qo‘llanma" aria-label="Dinamik tariflar — qisqa qo‘llanma">?</a></div>
           <!-- 0. VIP POSTPAID BOSHQARUV BLOKI -->
           <div class="p-5 rounded-2xl border border-amber-500/30 bg-gradient-to-br from-[#121217] via-[#16141c] to-[#09090b] shadow-xl relative overflow-hidden">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#27272a]/80">
@@ -2518,7 +2518,7 @@
           <div>
             <h3 class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
               <span id="startModalPcTitle">PC-01</span>
-              <span class="text-xs font-normal text-[var(--text-muted)]">— Seans Ochish</span>
+              <span class="text-xs font-normal text-[var(--text-muted)]">— Seans Ochish</span><a class="softech-help-link" data-help-topic="session.start" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/seans-ochish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Seans ochish — qisqa qo‘llanma" aria-label="Seans ochish — qisqa qo‘llanma">?</a>
             </h3>
             <p class="text-[11px] text-[var(--text-muted)] font-mono">Tarif: <span id="startModalTariffRate" class="text-white font-medium">Dinamik soatlik</span></p>
           </div>
@@ -2624,7 +2624,7 @@
         <div id="startSection-postpaid" class="space-y-3 hidden">
           <div class="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2.5">
             <div class="flex items-center gap-2 text-amber-400 font-semibold text-xs">
-              <span>⭐ VIP Postpaid Rejimi</span>
+              <span>⭐ VIP Postpaid Rejimi</span><a class="softech-help-link" data-help-topic="session.vip" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/vip-postpaid/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="VIP Postpaid — qisqa qo‘llanma" aria-label="VIP Postpaid — qisqa qo‘llanma">?</a>
               <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">Cheksiz Vaqt</span>
             </div>
             <p class="text-xs text-[#d4d4d8] leading-relaxed">
@@ -2830,6 +2830,7 @@
             <p class="text-[11px] text-zinc-400">Muddatidan oldin yopish va hisob-kitob</p>
           </div>
         </div>
+        <a class="softech-help-link" data-help-topic="session.checkout" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/seansni-yopish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="To‘lov va qaytim — qisqa qo‘llanma" aria-label="To‘lov va qaytim — qisqa qo‘llanma">?</a>
         <button onclick="closeModal('refundModal')" class="text-zinc-500 hover:text-white text-lg">&times;</button>
       </div>
 
@@ -2906,6 +2907,7 @@
             <p id="checkoutModalSubtitle" class="text-[11px] text-amber-300/80">O'yin vaqti va bar buyurtmalari kassa to'lovi</p>
           </div>
         </div>
+        <a class="softech-help-link" data-help-topic="session.checkout" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/seansni-yopish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="To‘lov va qaytim — qisqa qo‘llanma" aria-label="To‘lov va qaytim — qisqa qo‘llanma">?</a>
         <button onclick="closeModal('vipCheckoutModal')" class="text-zinc-500 hover:text-white text-lg">&times;</button>
       </div>
 
@@ -3282,7 +3284,7 @@
         <div class="flex items-center gap-2.5">
           <span class="text-xl">🏰</span>
           <div>
-            <h3 id="quickRoomModalTitle" class="text-sm font-bold text-white tracking-tight">Xona va Dinamik Tariflar Modali</h3>
+            <h3 id="quickRoomModalTitle" class="text-sm font-bold text-white tracking-tight">Xona va Dinamik Tariflar Modali</h3><a class="softech-help-link" data-help-topic="tariff.schedule" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/dinamik-tariflar/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Xona tarifi — qisqa qo‘llanma" aria-label="Xona tarifi — qisqa qo‘llanma">?</a>
             <p id="quickRoomModalSubtitle" class="text-[11px] text-zinc-400">Xona parametrlari va unga biriktirilgan dinamik narxlar oraliqlari</p>
           </div>
         </div>
@@ -8220,6 +8222,8 @@
 
     async function handleTopupSubmit(e) {
       e.preventDefault();
+      const form = e.currentTarget;
+      if (form.dataset.pending === 'true') return;
       const userId = parseInt(document.getElementById('topupUserSelect').value, 10);
       const amount = parseFloat(document.getElementById('topupAmount').value);
       const paymentMethod = document.getElementById('topupMethod').value;
@@ -8228,28 +8232,23 @@
         alert('Iltimos, avval ro\'yxatdan mijozni tanlang!');
         return;
       }
+      if (!Number.isFinite(amount) || amount <= 0) { alert('To‘g‘ri summa kiriting.'); return; }
 
+      const submit = form.querySelector('[type=submit]');
+      const label = submit.textContent;
+      form.dataset.pending = 'true'; submit.disabled = true; submit.textContent = 'Tasdiq kutilmoqda…';
       try {
-        const res = await fetch('/api/clients/topup', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ userId, amount, paymentMethod })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          alert(`✓ Balans to'ldirildi! Yangi balans: ${data.newBalance.toLocaleString()} UZS`);
-          loadClientsManagement();
-          fetchData();
-        } else {
-          const err = await res.json();
-          alert(err.error || 'Balansni to\'ldirishda xatolik');
-        }
+        const name = document.getElementById('topupUserSelect').selectedOptions[0]?.textContent || String(userId);
+        const data = await postMoneyOperation('/api/clients/topup', { userId, amount, paymentMethod },
+          `${name}: ${amount.toLocaleString()} UZS balans to‘ldirish`);
+        document.getElementById('topupAmount').value = '';
+        alert(data.replayed ? '✓ Bu to‘lov avval saqlangan. Balansga ikkinchi marta pul qo‘shilmadi.' :
+          `✓ Balans to'ldirildi! Yangi balans: ${data.newBalance.toLocaleString()} UZS`);
+        loadClientsManagement();
+        fetchData();
       } catch (err) {
-        alert('Server bilan bog\'lanishda xatolik');
-      }
+        alert(err.message);
+      } finally { form.dataset.pending = 'false'; submit.disabled = false; submit.textContent = label; }
     }
 
     async function handleCreateClientAccount(e) {

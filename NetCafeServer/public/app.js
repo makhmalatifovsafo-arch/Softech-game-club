@@ -1517,7 +1517,15 @@ function renderStatsView() {
 /**
  * Backenddan 30 kunlik analitika ma'lumotlarini yuklash va grafiklarni qurish
  */
+let analyticsLoading=false,analyticsRefreshTimer;
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden && !document.getElementById('view-stats')?.classList.contains('hidden'))loadAnalyticsData();
+});
 async function loadAnalyticsData() {
+  if(analyticsLoading)return;
+  analyticsLoading=true;clearTimeout(analyticsRefreshTimer);
+  const freshness=document.getElementById('statsFreshness');
+  if(freshness && !freshness.textContent)freshness.textContent='Statistika tayyorlanmoqda…';
   const token = typeof authToken !== 'undefined' ? authToken : (localStorage.getItem('softech_token') || '');
 
   try {
@@ -1526,7 +1534,12 @@ async function loadAnalyticsData() {
     });
     if (!res.ok) throw new Error('Analitika ma\'lumotlarini olib bo\'lmadi');
     const data = await res.json();
-
+    if(freshness){
+      const captured=Date.parse(data.analytics?.generatedAt);
+      freshness.textContent=Number.isFinite(captured)
+        ? `Oxirgi hisob: ${new Date(captured).toLocaleString('uz-UZ',{hour12:false})}. `+
+          (data.analytics.error || (data.analytics.refreshing?'Yangi ma’lumotlar hisoblanmoqda…':data.analytics.stale?'Yangilanish kutilmoqda…':'')) : '';
+    }
     // 1. KPI kartalarini yangilash
     const kpis = data.kpis || {};
     const rate = Math.max(0, Math.min(100, Number(kpis.averageOccupancy) || 0));
@@ -1561,14 +1574,26 @@ async function loadAnalyticsData() {
     }
 
     // 2. Chart.js grafiklarini chizish
+    const historyNotice = document.getElementById('statsUnattributedNotice');
+    if (historyNotice) {
+      const unknown = data.unattributed || {};
+      historyNotice.hidden = !unknown.sessionsCount;
+      historyNotice.textContent = unknown.sessionsCount
+        ? `${unknown.sessionsCount} ta eski seansda kompyuter yoki ko‘chirish tarixi to‘liq saqlanmagan. ` +
+          `${Number(unknown.totalRevenue || 0).toLocaleString()} UZS va ${Number(unknown.totalHours || 0).toLocaleString()} soat alohida qoldirildi. ` +
+          'Tushum umumiy hisobotda saqlangan; kompyuterlar reytingida taxminiy raqam ko‘rsatilmaydi.' : '';
+    }
     initAnalyticsCharts(data);
 
-    if (typeof showToast === 'function') {
-      showToast('✓ Analitika grafikalari yangilandi', 'info');
-    }
   } catch (err) {
     console.error('loadAnalyticsData error:', err);
+    if(freshness)freshness.textContent='Statistika yangilanmadi. Oxirgi ko‘rsatilgan ma’lumot saqlandi; qayta tekshirilmoqda…';
     if (typeof showToast === 'function') showToast('Analitika ma\'lumotlarini yuklashda xatolik', 'error');
+  } finally {
+    analyticsLoading=false;
+    analyticsRefreshTimer=setTimeout(()=>{
+      if(!document.hidden && !document.getElementById('view-stats')?.classList.contains('hidden'))loadAnalyticsData();
+    },5000);
   }
 }
 
@@ -1725,9 +1750,9 @@ function initAnalyticsCharts(data) {
     }
     const ctx = pcRankCanvas.getContext('2d');
     const pcList = (data.computerStats || []).slice(0, 12);
-    const labels = pcList.map(p => p.name || `PC-${p.pcNumber}`);
+    const labels = pcList.map(p => (p.name || `PC-${p.pcNumber}`) + (p.archived ? ' (arxiv)' : ''));
     const values = pcList.map(p => p.totalRevenue);
-    const hours = pcList.map(p => p.totalHours);
+    const minutes = pcList.map(p => p.totalMinutes ?? Number(p.totalHours || 0) * 60);
 
     window.softechCharts.pcRank = new Chart(ctx, {
       type: 'bar',
@@ -1756,10 +1781,10 @@ function initAnalyticsCharts(data) {
             callbacks: {
               label: (ctx) => {
                 const idx = ctx.dataIndex;
-                const h = hours[idx] || 0;
+                const duration = Math.round(minutes[idx] || 0);
                 return [
                   ` Tushum: ${Number(ctx.raw || 0).toLocaleString()} UZS`,
-                  ` Ishlangan: ${h} soat`
+                  ` Ishlangan: ${Math.floor(duration / 60)} soat ${duration % 60} daqiqa`
                 ];
               }
             }
@@ -2311,6 +2336,7 @@ async function openPcBarOrder(pcId) {
   dialog.className = 'rounded-2xl p-6 bg-zinc-900 text-white border border-zinc-700';
   dialog.style.cssText = 'width:min(560px,95vw);max-height:85vh;overflow:auto';
   dialog.innerHTML = `<h2 class="text-lg font-bold"></h2>
+    <a class="softech-help-link" data-help-topic="bar.sale" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/bar-savdosi/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Bar savdosi — qisqa qo‘llanma" aria-label="Bar savdosi — qisqa qo‘llanma">?</a>
     <p class="text-sm text-zinc-400 my-2">Mahsulotlar seans hisobiga yoziladi. To‘lov seans yakunida olinadi.</p>
     <input type="search" placeholder="Mahsulot qidirish…" class="w-full p-2 rounded bg-zinc-800 my-2" aria-label="Mahsulot qidirish">
     <form><div data-products>Yuklanmoqda…</div><p data-error role="alert" class="text-rose-400 my-2"></p>
@@ -2364,12 +2390,9 @@ async function openPcBarOrder(pcId) {
     if (!items.length) { error.textContent = 'Kamida bitta mahsulot tanlang.'; return; }
     busy = true; submit.disabled = true; error.textContent = '';
     try {
-      const response = await fetch('/api/bar/orders', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ items, computerId: pcId, sessionId, paymentMethod: 'ON_PC_SESSION', paymentStatus: 'PENDING_AT_CHECKOUT' })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Buyurtma saqlanmadi.');
+      const data = await postMoneyOperation('/api/bar/orders',
+        { items, computerId: pcId, sessionId, paymentMethod: 'ON_PC_SESSION', paymentStatus: 'PENDING_AT_CHECKOUT' },
+        pc.name + ': ' + rows.filter(row => Number(row.input.value) > 0).map(row => `${row.product.name} × ${row.input.value}`).join(', '));
       dialog.close();
       showToast(`${pc.name}: ${Number(data.order?.totalAmount || 0).toLocaleString()} UZS hisobga qo‘shildi.`, 'success');
       await Promise.allSettled([fetchData(), loadBarProducts(), loadBarOrders()]);
@@ -2380,12 +2403,12 @@ async function openPcBarOrder(pcId) {
 }
 
 async function submitBarOrder() {
+  if (document.getElementById('btnSubmitBarOrder')?.disabled) return;
   if (barCart.length === 0) {
     if (typeof showToast === 'function') showToast('Savat bo\'sh! Mahsulot tanlang.', 'warning');
     return;
   }
 
-  const token = typeof authToken !== 'undefined' ? authToken : (localStorage.getItem('softech_token') || '');
   const btn = document.getElementById('btnSubmitBarOrder');
   const btnText = document.getElementById('btnSubmitBarOrderText');
 
@@ -2452,39 +2475,26 @@ async function submitBarOrder() {
     if (btn) btn.disabled = true;
     if (btnText) btnText.textContent = 'Qabul qilinmoqda...';
 
-    const res = await fetch('/api/bar/orders', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(orderPayload)
-    });
+    const data = await postMoneyOperation('/api/bar/orders', orderPayload,
+      barCart.map(item => `${item.name} × ${item.qty}`).join(', ') + ' — ' + paymentMethod);
+    const totalAmount = data.order?.totalAmount || 0;
+    const orderNum = data.order?.orderNumber || '';
 
-    if (res.ok) {
-      const data = await res.json();
-      const totalAmount = data.order?.totalAmount || 0;
-      const orderNum = data.order?.orderNumber || '';
-
-      clearBarCart();
-      if (typeof showToast === 'function') {
-        showToast(`✓ Savdo qabul qilindi: ${totalAmount.toLocaleString()} UZS (${orderNum})`, 'success');
-      }
-
-      // Ma'lumotlarni yangilash
-      await Promise.all([
-        loadBarProducts(),
-        loadBarOrders()
-      ]);
-
-      if (typeof fetchData === 'function') fetchData();
-      if (typeof renderHistoryView === 'function') renderHistoryView();
-    } else {
-      const err = await res.json();
-      if (typeof showToast === 'function') showToast(err.error || 'Savdoni amalga oshirishda xatolik yuz berdi.', 'error');
+    clearBarCart();
+    if (typeof showToast === 'function') {
+      showToast(`✓ Savdo qabul qilindi: ${totalAmount.toLocaleString()} UZS (${orderNum})`, 'success');
     }
+
+    // Ma'lumotlarni yangilash
+    await Promise.all([
+      loadBarProducts(),
+      loadBarOrders()
+    ]);
+
+    if (typeof fetchData === 'function') fetchData();
+    if (typeof renderHistoryView === 'function') renderHistoryView();
   } catch (err) {
-    if (typeof showToast === 'function') showToast('Server bilan bog\'lanishda xatolik: ' + err.message, 'error');
+    if (typeof showToast === 'function') showToast(err.message, 'error');
   } finally {
     if (btn) btn.disabled = false;
     setBarSaleMode(barSaleMode);

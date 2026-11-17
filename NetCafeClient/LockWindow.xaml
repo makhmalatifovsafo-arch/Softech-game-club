@@ -180,8 +180,8 @@
                     <!-- CHAP: Klub Brendi va Server Holati -->
                     <StackPanel x:Name="LogoBrandPanel" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Cursor="Hand" MouseLeftButtonDown="LogoBrandPanel_MouseLeftButtonDown">
                         <!-- Neon Cyber Icon -->
-                        <Border Width="44" Height="44" CornerRadius="12" Background="#141724" BorderBrush="#06B6D4" BorderThickness="1.5" Margin="0,0,14,0">
-                            <TextBlock Text="⚡" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#22D3EE"/>
+                        <Border Width="44" Height="44" CornerRadius="12" Background="#090A0C" BorderBrush="#C8FF31" BorderThickness="1.5" Margin="0,0,14,0">
+                            <Image Source="/app.ico" Width="40" Height="40"/>
                         </Border>
                         <StackPanel VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

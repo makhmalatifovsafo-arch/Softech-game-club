@@ -1,4 +1,6 @@
 import { ensureLocalOwner } from './services/localOwnerSetup.js';
+import { initializeMoneyOperations } from './services/moneyOperations.js';
+import { initializeTransferHistory } from './services/sessionTransferHistory.js';
 import { claimServerInstance } from './services/serverInstance.js';
 import { guardDatabase, markDatabase, snapshot, pruneBackups, verifyDatabase, startDatabaseBackups } from './services/databaseBackup.js';
 import { DatabaseSync } from 'node:sqlite';
@@ -45,6 +47,8 @@ export function initDatabase() {
   }
 
   migrateFinancialSchema();
+  initializeMoneyOperations(db);
+  initializeTransferHistory(db);
   seedInitialData();
   db.exec('COMMIT;');
   } catch (error) { db.exec('ROLLBACK;'); throw error; }

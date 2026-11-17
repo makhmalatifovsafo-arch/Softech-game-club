@@ -40,6 +40,10 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   const visibleAfterPlaceholder=await api('/api/computers');
   assert.equal(visibleAfterPlaceholder.body.length,list.length,'Legacy pc_number=0 must not become a ninth workstation');
   assert.equal((await api('/api/stats')).body.totalComputers,list.length,'Statistics count only real numbered kiosks');
+  const cleanAnalytics=await api('/api/reports/analytics?fresh=1');
+  assert.equal(cleanAnalytics.status,200,JSON.stringify(cleanAnalytics.body));
+  assert.equal(cleanAnalytics.body.computerStats.length,list.length,'Analytics must use the same physical inventory as the cashier');
+  assert.ok(cleanAnalytics.body.computerStats.every(row=>row.pcNumber>0));
   const added = await api('/api/admin/computers', 'POST', { name: 'Never connected test', pcNumber: 901 });
   assert.equal(added.status, 201, JSON.stringify(added.body));
   assert.equal(added.body.computer.status, 'OFFLINE');
@@ -129,7 +133,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.equal(shift.status,200);
   assert.equal(shift.body.shift.systemCash,15000+retainedGame);
   assert.equal(shift.body.shift.systemCard,0);
-  const analytics = await api('/api/reports/analytics');
+  const analytics = await api('/api/reports/analytics?fresh=1');
   assert.equal(analytics.status,200,JSON.stringify(analytics.body));
   assert.equal(analytics.body.dailyRevenue.at(-1).revenue,15000+retainedGame,'Statistics revenue must match the retained financial ledger');
   assert.equal(analytics.body.revenueSources.games,retainedGame,'Refunded prepaid money must not remain in game statistics');
@@ -139,6 +143,7 @@ export async function checkClubOperations({ databasePath, localUrl, cloudUrl, cl
   assert.ok(Number.isFinite(analytics.body.kpis.averageOccupancy));
   assert.ok(Number.isFinite(analytics.body.kpis.averageSessionMinutes));
   assert.equal(analytics.body.peakHours.length,24);
+  assert.ok(!analytics.body.computerStats.some(row=>row.id==='legacy-placeholder' || row.id==='archived_1'),'Neither a layout placeholder nor a deletion archive may appear as a PC');
   assert.equal(analytics.body.computerStats.find(row=>row.id===pc.id)?.totalRevenue,retainedGame);
   const stock=await api('/api/bar/items');
   const products=Array.isArray(stock.body)?stock.body:stock.body.items;

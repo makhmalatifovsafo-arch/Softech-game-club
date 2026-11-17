@@ -1,10 +1,10 @@
 // Softech Cockpit: fresh application files online, cached shell offline.
-const CACHE_NAME = 'softech-cockpit-v1.0.6';
+const CACHE_NAME = 'softech-cockpit-v1.0.7';
 const STATIC_ASSETS = [
   '/', '/index.html', '/views/login.html', '/manifest.json', '/layout.css',
   '/views/dashboard.js', '/views/clubsList.js', '/views/clubDetail.js',
   '/views/remoteControlModal.js', '/views/billing.js', '/views/analytics.js',
-  '/views/addClubModal.js', '/views/managerAccount.js', '/icons/icon-192.svg', '/icons/icon-512.svg',
+  '/views/addClubModal.js', '/views/managerAccount.js', '/icons/icon-192.svg', '/icons/icon-512.svg', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png',
   '/vendor/chart-4.4.7.js', '/vendor/tailwind-3.4.17.js'
 ];
 self.addEventListener('install', event => {

@@ -167,7 +167,7 @@
                     <!-- Klub Logotipi -->
                     <Border Background="#1E1B4B" BorderBrush="#6366F1" BorderThickness="1" CornerRadius="10" Padding="8,6" Margin="0,0,14,0">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⚡" FontSize="16" Foreground="#38BDF8" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <Image Source="/app.ico" Width="28" Height="28" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Text="SOFTECH" FontSize="14" FontWeight="Black" Foreground="White" VerticalAlignment="Center"/>
                             <TextBlock Text=" ARENA" FontSize="14" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center"/>
                         </StackPanel>

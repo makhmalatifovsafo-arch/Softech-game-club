@@ -88,7 +88,7 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const netReport=await desktop('/api/reports/financial');const retained=netReport.body.breakdown.rows.filter(r=>r.sessionId===hour.body.sessionId);assert.equal(retained.length,1);assert.equal(retained[0].amount,closedHour.body.usedAmount);assert.equal(netReport.body.sessions.find(s=>s.id===hour.body.sessionId).totalAmount,closedHour.body.usedAmount);
  assert.equal(netReport.body.summary.gameCash,netReport.body.breakdown.receipts.GAME.CASH);
  const header=await desktop('/api/stats');assert.equal(header.body.totalRevenue,netReport.body.breakdown.total,'Header must show retained receipts');
- const analytics=await desktop('/api/reports/analytics');assert.equal(analytics.status,200,JSON.stringify(analytics));
+ const analytics=await desktop('/api/reports/analytics?fresh=1');assert.equal(analytics.status,200,JSON.stringify(analytics));
  assert.equal(analytics.body.dailyRevenue.find(day=>day.date===netReport.body.filter.from).revenue,netReport.body.breakdown.total,'Daily chart must exclude refunded money');
  const syncedNet=await(await fetch(cloudUrl+'/api/mobile/dashboard/data?resource=reports',{headers:{Authorization:'Bearer '+cloudLogin.body.token}})).json();assert.deepEqual(syncedNet.data.breakdown,netReport.body.breakdown);
  console.log('PASS 10000 prepaid - 6000 refund = 4000 in desktop rows, summaries and cloud mobile reports');

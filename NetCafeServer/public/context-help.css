@@ -1,0 +1,9 @@
+.softech-help-link{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;min-width:28px;margin-inline:6px;border:1px solid #758447;border-radius:50%;background:#c8ff3110;color:#c8ff31;font:700 14px/1 "Segoe UI",sans-serif;text-decoration:none;vertical-align:middle;cursor:pointer}
+.softech-help-link:hover{background:#c8ff31;color:#090a0c}
+.softech-help-link:focus-visible{outline:2px solid #c8ff31;outline-offset:3px}
+.softech-help-dialog{width:min(440px,calc(100% - 32px));max-height:80vh;overflow:auto;margin:auto;padding:24px;border:1px solid #758447;border-radius:16px;background:#121215;color:#f4f4f5;font:14px/1.65 "Segoe UI",sans-serif;box-shadow:0 20px 70px #0008}
+.softech-help-dialog::backdrop{background:#0009}
+.softech-help-dialog h2{font-size:20px;font-weight:700;margin:0 0 14px}
+.softech-help-dialog p{margin:12px 0}.softech-help-dialog a{color:#c8ff31;text-decoration:underline}
+.softech-help-muted{color:#a1a1aa;font-size:12px}
+.softech-help-dialog button{display:block;margin-top:20px;padding:10px 18px;background:#c8ff31;border:0;border-radius:8px;color:#090a0c;font-weight:700;cursor:pointer}

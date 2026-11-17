@@ -11,7 +11,8 @@ import { clientSessionState, sessionGameAmount } from './services/clientSessionS
 import { isPostpaidSession } from './services/sessionMode.js';
 import { validateSchedule } from './services/tariffValidation.js';
 import { getFinancialBreakdown } from './services/financialBreakdown.js';
-import { buildServerAnalytics } from './services/analyticsService.js';
+import { AnalyticsCache } from './services/analyticsCache.js';
+import { runMoneyOperation } from './services/moneyOperations.js';
 import { autoWakeComputer } from './services/autoWake.js';
 import { normalizeMacAddress } from './services/macAddress.js';
 import { MobileAgent } from './services/mobileAgent.js';
@@ -23,6 +24,7 @@ import { createBooking, updateBookingStatus } from './services/bookingService.js
 import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage, freezePrepaidRates, prepaidRefund } from './services/memberBilling.js';
 import { confirmClientBarOrder, payPendingBarOrder } from './services/clientBarOrders.js';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -76,6 +78,7 @@ if(updateProbation.pending){
 
 // 1. Bazani initsializatsiya qilish
 initDatabase();
+const analyticsCache=new AnalyticsCache(path.join(ROOT_DIR,'netcafe.db'));
 
 // OTA Avtomatik yangilanish tizimi
 if(updateProbation.pending)ServerUpdater.init();
@@ -100,6 +103,7 @@ function handleRequest(req, res) {
   }
   req.res = res; // Body-parser callbacks need the response on Node IncomingMessage.
   const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  if(mutating)res.once('finish',()=>{if(res.statusCode>=200 && res.statusCode<300)analyticsCache.invalidate();});
   if (ServerUpdater.applying && mutating) {
     res.writeHead(503, { 'Content-Type': 'application/json', 'Retry-After': '2' });
     res.end(JSON.stringify({ error: 'Server is restarting. Please retry.' }));
@@ -2680,11 +2684,11 @@ function handleRequest(req, res) {
 
     readBody(req, (data) => {
       try {
-        const { userId, amount, paymentMethod = 'CASH' } = data;
+        const { userId, amount, paymentMethod = 'CASH', requestId } = data;
         const numAmount = Number(amount);
 
         if (!userId || !Number.isFinite(numAmount) || numAmount <= 0) {
-          sendJson(res, 400, { error: 'Foydalanuvchi ID va to\'g\'ri summa kiritilishi shart.' });
+          sendJson(res, 400, { error: 'Foydalanuvchi ID va to\'g\'ri summa kiritilishi shart.', operationNotApplied: true, requestId });
           return;
         }
 
@@ -2696,39 +2700,45 @@ function handleRequest(req, res) {
           : db.prepare('SELECT id, club_id, username, balance FROM users WHERE id = ? AND club_id = ?').get(userId, clubId);
 
         if (!user) {
-          sendJson(res, 404, { error: 'Bunday mijoz topilmadi.' });
+          sendJson(res, 404, { error: 'Bunday mijoz topilmadi.', operationNotApplied: true, requestId });
           return;
         }
 
-        db.exec('BEGIN IMMEDIATE');
-        const newBalance = Number(user.balance || 0) + numAmount;
-        db.prepare('UPDATE users SET balance = ? WHERE id = ?').run(newBalance, userId);
+        const result = runMoneyOperation(db, {
+          clubId: user.club_id || clubId, actorId: currentUserId, operation: 'TOPUP', requestId,
+          payload: { userId, amount, paymentMethod }
+        }, () => {
+          const balance = db.prepare('SELECT balance FROM users WHERE id=?').get(userId);
+          const newBalance = Number(balance.balance || 0) + numAmount;
+          db.prepare('UPDATE users SET balance = ? WHERE id = ?').run(newBalance, userId);
 
-        // 2. client_transactions ga yozish (club_id bilan)
-        db.prepare(`
-          INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method)
-          VALUES (?, ?, ?, 'TOPUP', ?)
-        `).run(user.club_id || clubId, userId, numAmount, validMethod);
+          // 2. client_transactions ga yozish (club_id bilan)
+          db.prepare(`
+            INSERT INTO client_transactions (club_id, user_id, amount, type, payment_method)
+            VALUES (?, ?, ?, 'TOPUP', ?)
+          `).run(user.club_id || clubId, userId, numAmount, validMethod);
 
-        // 3. Umumiy kassa tranzaksiyasiga ham kiritish (club_id bilan)
-        db.prepare(`
-          INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
-          VALUES (?, ?, null, ?, ?, ?, ?)
-        `).run(`tx_topup_${Date.now().toString(36)}`, user.club_id || clubId, numAmount, validMethod, String(currentUserId), `CLIENT_TOPUP:${user.username}`);
+          // 3. Umumiy kassa tranzaksiyasiga ham kiritish (club_id bilan)
+          db.prepare(`
+            INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
+            VALUES (?, ?, null, ?, ?, ?, ?)
+          `).run(`tx_topup_${crypto.randomUUID()}`, user.club_id || clubId, numAmount, validMethod, String(currentUserId), `CLIENT_TOPUP:${user.username}`);
 
-        db.exec('COMMIT');
-        broadcastAdminUpdate();
-        sendJson(res, 200, {
-          success: true,
-          userId,
-          username: user.username,
-          addedAmount: numAmount,
-          newBalance,
-          paymentMethod: validMethod
+          return { status: 200, body: {
+            success: true,
+            userId,
+            username: user.username,
+            addedAmount: numAmount,
+            newBalance,
+            paymentMethod: validMethod
+          } };
         });
+        // A disconnected screen must not turn a committed top-up into an error.
+        try { broadcastAdminUpdate(); } catch (error) { console.warn('[Top-up notification]', error.message); }
+        sendJson(res, result.status, { ...result.body, replayed: result.replayed });
       } catch (err) {
-        try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, 500, { error: 'Balans to\'ldirishda xatolik: ' + err.message });
+        sendJson(res, err.statusCode || 500, { error: 'Balans to\'ldirishda xatolik: ' + err.message,
+          ...(err.operationNotApplied ? { operationNotApplied: true, requestId: data.requestId } : {}) });
       }
     });
     return;
@@ -2992,19 +3002,22 @@ function handleRequest(req, res) {
           paymentStatus = 'PAID',
           computerId = null,
           sessionId = null,
-          userId = null
+          userId = null,
+          requestId
         } = body;
 
         if (!Array.isArray(items) || items.length === 0) {
-          sendJson(res, 400, { error: 'Kamida bitta tovar tanlanishi shart.' });
+          sendJson(res, 400, { error: 'Kamida bitta tovar tanlanishi shart.', operationNotApplied: true, requestId });
           return;
         }
 
         const validPayMethod = ['CASH', 'CARD', 'CLIENT_BALANCE', 'ON_PC_SESSION'].includes(paymentMethod) ? paymentMethod : 'CASH';
         const validPayStatus = ['PAID', 'PENDING_AT_CHECKOUT', 'CANCELLED'].includes(paymentStatus) ? paymentStatus : 'PAID';
 
-        db.exec('BEGIN TRANSACTION;');
-        try {
+        const result = runMoneyOperation(db, {
+          clubId, actorId: currentUserId, operation: 'BAR_SALE', requestId,
+          payload: { items, paymentMethod, paymentStatus, computerId, sessionId, userId }
+        }, () => {
           if(validPayMethod==='CLIENT_BALANCE'){
             const client=db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(userId||null,clubId);
             if(!client)throw new Error('Balansdan to‘lash uchun shu klub mijozini tanlang.');
@@ -3108,7 +3121,7 @@ function handleRequest(req, res) {
             db.prepare(`
               INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by, notes)
               VALUES (?, ?, ?, ?, ?, ?, 'BAR_SALE', ?, ?)
-            `).run(`tx_bar_${Date.now().toString(36)}`, clubId, targetSessionId, calculatedTotal, validPayMethod, validPayMethod, String(currentUserId), `BAR_SALE:${orderNum}`);
+            `).run(`tx_bar_${crypto.randomUUID()}`, clubId, targetSessionId, calculatedTotal, validPayMethod, validPayMethod, String(currentUserId), `BAR_SALE:${orderNum}`);
           }
 
           // 7. Agar kompyuter seansiga (ON_PC_SESSION) yozilgan bo'lsa, sessiyaga qo'shish
@@ -3120,24 +3133,7 @@ function handleRequest(req, res) {
             `).run(orderNum, targetSessionId);
           }
 
-          db.exec('COMMIT;');
-
-          // 8. Tizim auditiga yozish va WebSocket orqali Real-Time uzatish
-          logAuditEvent(clubId, null, 'BAR_SALE', {
-            orderId,
-            orderNumber: orderNum,
-            totalAmount: calculatedTotal,
-            paymentMethod: validPayMethod,
-            paymentStatus: effectivePayStatus,
-            computerId,
-            sessionId,
-            itemsCount: processedItems.length,
-            items: processedItems.map(i => `${i.itemName} x${i.quantity}`)
-          });
-
-          broadcastAdminUpdate();
-
-          sendJson(res, 201, {
+          return { status: 201, body: {
             success: true,
             order: {
               id: orderId,
@@ -3149,13 +3145,24 @@ function handleRequest(req, res) {
               sessionId,
               items: processedItems
             }
+          } };
+        });
+        // The receipt is already durable. Audit/push failures cannot report a
+        // failed sale or produce another audit entry when that sale is retried.
+        if (!result.replayed) try {
+          const order = result.body.order;
+          logAuditEvent(clubId, null, 'BAR_SALE', {
+            orderId: order.id, orderNumber: order.orderNumber, totalAmount: order.totalAmount,
+            paymentMethod: order.paymentMethod, paymentStatus: order.paymentStatus,
+            computerId, sessionId, itemsCount: order.items.length,
+            items: order.items.map(i => `${i.itemName} x${i.quantity}`)
           });
-        } catch (txErr) {
-          try { db.exec('ROLLBACK;'); } catch (_) {}
-          throw txErr;
-        }
+        } catch (error) { console.warn('[Bar audit]', error.message); }
+        try { broadcastAdminUpdate(); } catch (error) { console.warn('[Bar notification]', error.message); }
+        sendJson(res, result.status, { ...result.body, replayed: result.replayed });
       } catch (err) {
-        sendJson(res, 400, { error: 'Bar buyurtmasini yaratishda xatolik: ' + err.message });
+        sendJson(res, err.statusCode || 400, { error: 'Bar buyurtmasini yaratishda xatolik: ' + err.message,
+          ...(err.operationNotApplied ? { operationNotApplied: true, requestId: body.requestId } : {}) });
       }
     });
     return;
@@ -3881,120 +3888,15 @@ function handleRequest(req, res) {
     return;
   }
 
-  // 2. GET /api/reports/analytics (Chart.js uchun 30 kunlik trend, PC reytingi, tushum manbalari, bandlik)
+  // Reporting runs off the request thread, with bounded caching and work queue.
   if (url.pathname === '/api/reports/analytics' && req.method === 'GET') {
     if (!authenticate(req, res, { roles: ['superadmin', 'club_owner'] })) return;
-    const clubId = getTenantClubId(req);
-
-    try {
-      sendJson(res, 200, buildServerAnalytics(db, {
-        clubId,
-        days: url.searchParams.get('days') || 30
-      }));
-      return;
-
-      const daysCount = parseInt(url.searchParams.get('days') || '30', 10) || 30;
-      const today = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-
-      // 2.1 Oxirgi 30 kunlik umumiy daromad dinamikasi
-      const dailyRevenue = [];
-      for (let i = daysCount - 1; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        const dStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-        const dayLabel = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`;
-
-        // Shu kungi tushum
-        const netDay = getFinancialBreakdown(db,dStr,dStr,clubId);
-
-        const barRow = clubId === null
-          ? db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE date(created_at, 'localtime') = ? AND payment_status = 'PAID'`).get(dStr)
-          : db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total FROM bar_orders WHERE club_id = ? AND date(created_at, 'localtime') = ? AND payment_status = 'PAID'`).get(clubId, dStr);
-
-        dailyRevenue.push({
-          date: dStr,
-          label: dayLabel,
-          revenue: netDay.total,
-          barRevenue: Number(barRow?.total || 0)
-        });
-      }
-
-      // 2.2 Har bir kompyuterning ishlagan soati va keltirgan tushumi reytingi
-      const pcStatsQuery = clubId === null
-        ? db.prepare(`
-            SELECT c.id, c.name, c.pc_number, c.zone,
-                   COALESCE(SUM(s.total_amount), 0) as total_revenue,
-                   COALESCE(SUM(MAX(0, (julianday(CASE WHEN s.status='ACTIVE' THEN MIN(s.ends_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) ELSE s.ends_at END) - julianday(s.started_at)) * 24)), 0) as played_hours,
-                   COUNT(s.id) as sessions_count
-            FROM computers c
-            LEFT JOIN sessions s ON (s.computer_id = c.id OR s.computer_id = c.pc_number)
-            GROUP BY c.id
-            ORDER BY total_revenue DESC
-          `).all()
-        : db.prepare(`
-            SELECT c.id, c.name, c.pc_number, c.zone,
-                   COALESCE(SUM(s.total_amount), 0) as total_revenue,
-                   COUNT(s.id) as sessions_count
-            FROM computers c
-            LEFT JOIN sessions s ON (s.computer_id = c.id OR s.computer_id = c.pc_number) AND s.club_id = ?
-            WHERE c.club_id = ?
-            GROUP BY c.id
-            ORDER BY total_revenue DESC
-          `).all(clubId, clubId);
-
-      const computerStats = pcStatsQuery.map(pc => {
-        const rev = Number(pc.total_revenue || 0);
-        const hours = Number(pc.played_hours || 0).toFixed(1);
-        return {
-          id: pc.id,
-          name: pc.name,
-          pcNumber: pc.pc_number,
-          zone: pc.zone,
-          totalRevenue: rev,
-          totalHours: parseFloat(hours),
-          sessionsCount: Number(pc.sessions_count || 0)
-        };
-      });
-
-      // 2.3 Daromad manbalari ulushi (O'yinlar vs Bar vs Top-up)
-      const retained = getFinancialBreakdown(db,'0001-01-01','9999-12-31',clubId);
-      const gameSum = retained.gameReceipts + retained.gameBalance;
-      const barSum = retained.receipts.BAR.CASH + retained.receipts.BAR.CARD + retained.barBalance;
-      const topupSum = retained.topupReceipts;
-
-      // 2.4 Kun davomida zalning bandlik soatlari (Peak Hours 00:00 - 23:00)
-      const hourlyDistribution = Array(24).fill(0);
-      const allSessions = clubId === null
-        ? db.prepare(`SELECT started_at, ends_at FROM sessions WHERE started_at IS NOT NULL LIMIT 500`).all()
-        : db.prepare(`SELECT started_at, ends_at FROM sessions WHERE club_id = ? AND started_at IS NOT NULL LIMIT 500`).all(clubId);
-
-      for (const sess of allSessions) {
-        try {
-          const h = new Date(sess.started_at).getHours();
-          if (h >= 0 && h < 24) {
-            hourlyDistribution[h] += 1;
-          }
-        } catch (_) {}
-      }
-
-      const maxSessions = Math.max(...hourlyDistribution, 1);
-      const normalizedPeakHours = hourlyDistribution.map(count => Math.round(count / maxSessions * 100));
-
-      sendJson(res, 200, {
-        success: true,
-        dailyRevenue,
-        computerStats,
-        revenueSources: {
-          games: gameSum,
-          bar: barSum,
-          topup: topupSum
-        },
-        peakHours: normalizedPeakHours
-      });
-    } catch (err) {
-      sendJson(res, 500, { error: 'Analitika ma\'lumotlarini shakllantirishda xatolik: ' + err.message });
-    }
+    const clubId=getTenantClubId(req);
+    void analyticsCache.get({clubId,days:url.searchParams.get('days')||30,fresh:url.searchParams.get('fresh')==='1'}).then(report=>{
+      if(!res.destroyed){res.setHeader('Cache-Control','no-store');sendJson(res,200,report);}
+    }).catch(()=>{
+      if(!res.destroyed)sendJson(res,503,{error:'Statistika hozir tayyor emas. Birozdan so‘ng qayta urining.'});
+    });
     return;
   }
 
@@ -4188,6 +4090,7 @@ ServerUpdater.onShutdown = () => {
 };
 
 process.on('SIGINT', () => {
+  void analyticsCache.close();
   HeartbeatMonitor.stop();
   SessionScheduler.stop();
   server.close(() => {

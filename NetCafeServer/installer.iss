@@ -22,6 +22,7 @@ OutputBaseFilename=SoftechServerSetup_Inno
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=app.ico
 PrivilegesRequired=lowest
 
 [Languages]
