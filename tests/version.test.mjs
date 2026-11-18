@@ -4,6 +4,13 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+test('release notes start with the current version and a nonempty changelog', () => {
+  const entry = fs.readFileSync('RELEASE-NOTES.txt', 'utf8').trim().split(/(?:\r?\n){2}/)[0];
+  const header = entry.match(/^\d{4}-\d{2}-\d{2}: (\d+\.\d+\.\d+)\s+(.+)/);
+  assert.ok(header, 'Release notes need a dated version header');
+  assert.equal(header[1], version, 'Update RELEASE-NOTES.txt when changing the source version');
+  assert.match(entry, /\r?\n- \S+/, 'Release notes need at least one change');
+});
 test('all source packages and Windows build metadata share the release version', () => {
   for (const file of ['NetCafeServer/package.json', 'SoftechCloudAdmin/package.json', 'package-lock.json'])
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).version, version, file);

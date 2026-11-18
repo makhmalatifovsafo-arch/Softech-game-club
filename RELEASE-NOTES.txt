@@ -1,3 +1,15 @@
+2026-11-18: 1.3.10 clear Softech branding and shared website hosting
+- Use the website's vector logo and bundled Manrope font in the Client lock
+  screen, Server launcher and cashier UI for sharp rendering at different scales.
+- Load native branding resources in each window so standalone window hosts and
+  Windows protocol/layout checks do not depend on application startup resources.
+- Include the static marketing website at /site/ in the existing Vercel build;
+  preserve the super-admin, mobile panel and API routes.
+- Open contextual help at /site/help/ and retain support for older Sites links.
+- Validate the release-notes version before publishing applications or creating
+  archives, and check it with the source-version tests.
+- Set Server, Client, cloud panels and Windows build metadata to 1.3.10.
+
 2026-11-18: 1.3.9 room drawing in the club setup wizard
 - Add rectangle and pen tools, including concave/L-shaped rooms, with concise
   instructions for the selected tool.

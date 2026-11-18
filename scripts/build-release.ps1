@@ -7,6 +7,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $projectRoot
+# Fail before expensive publishing or creating a partial release directory.
+$notes = Get-Content -LiteralPath (Join-Path $projectRoot 'RELEASE-NOTES.txt') -Raw -Encoding UTF8
+$releaseEntry = ($notes -split '(?:\r?\n){2}', 2)[0].Trim()
+if ($releaseEntry -notmatch ('^\d{4}-\d{2}-\d{2}: ' + [regex]::Escape($Version) + '(?:\s|$)')) {
+    throw "RELEASE-NOTES.txt must start with notes for $Version."
+}
 $releaseDir = Join-Path $projectRoot "Releases/v$Version"
 if (Test-Path -LiteralPath $releaseDir) { throw "Release directory already exists: $releaseDir. Use a new version." }
 $work = Join-Path $projectRoot ('.tools/package-work/' + [guid]::NewGuid().ToString('N'))
@@ -76,11 +82,6 @@ function Write-OtaZip([string]$Folder,[string]$Destination) {
 Write-OtaZip $client (Join-Path $releaseDir 'SoftechClient.zip')
 Write-OtaZip $server (Join-Path $releaseDir 'SoftechServer.zip')
 $assetBase = "https://github.com/$Repository/releases/download/v$Version"
-$notes = Get-Content -LiteralPath (Join-Path $projectRoot 'RELEASE-NOTES.txt') -Raw -Encoding UTF8
-$releaseEntry = ($notes -split '(?:\r?\n){2}', 2)[0].Trim()
-if ($releaseEntry -notmatch ('^\d{4}-\d{2}-\d{2}: ' + [regex]::Escape($Version) + '(?:\s|$)')) {
-    throw "RELEASE-NOTES.txt must start with notes for $Version."
-}
 $manifest = @{
     version=$Version; releaseDate=(Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
     client=@{ downloadUrl="$assetBase/SoftechClient.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechClient.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
