@@ -12,6 +12,11 @@ class ClientProtocolAudit
   System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
   // Exercise the real login form without showing a window or installing hooks.
   var loginWindow=new LockWindow();
+  if(app.Resources.Contains("SoftechMark"))throw new Exception("Fixture must not inject application branding resources");
+  if(loginWindow.FindResource("SoftechMark") is not System.Windows.Media.DrawingImage)throw new Exception("Kiosk vector resource missing");
+  var brandFont=(System.Windows.Media.FontFamily)loginWindow.FindResource("SoftechWordmarkFont");
+  if(!new System.Windows.Media.Typeface(brandFont,FontStyles.Normal,FontWeights.ExtraBold,FontStretches.Normal).TryGetGlyphTypeface(out var brandFace)||!brandFace.FamilyNames.Values.Contains("Manrope"))throw new Exception("Kiosk bundled brand font missing");
+  Console.WriteLine("PASS native kiosk loads its own vector logo and bundled Manrope without App.xaml");
   var loginInput=(System.Windows.Controls.TextBox)loginWindow.FindName("TxtPhone");
   var passwordInput=(System.Windows.Controls.PasswordBox)loginWindow.FindName("TxtPassword");
   string sentLogin=null,sentPassword=null;int sentMinutes=0;

@@ -13,6 +13,11 @@
         Focusable="True">
 
     <Window.Resources>
+      <ResourceDictionary>
+        <ResourceDictionary.MergedDictionaries>
+            <!-- Resolve from this assembly even when a test/helper hosts the window. -->
+            <ResourceDictionary Source="/NetCafeClient;component/Branding/Brand.xaml" />
+        </ResourceDictionary.MergedDictionaries>
         <!-- Modern Rounded Input Template -->
         <ControlTemplate x:Key="ModernTextBoxTemplate" TargetType="{x:Type TextBox}">
             <Border x:Name="border"
@@ -104,6 +109,7 @@
                                   Margin="{TemplateBinding Padding}"/>
             </Border>
         </ControlTemplate>
+      </ResourceDictionary>
     </Window.Resources>
 
     <Grid x:Name="RootGrid">
