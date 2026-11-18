@@ -19,3 +19,5 @@ Check-Bounds @(0,0,1366,768) @(0,48,1366,768) @(0,48,1366,720)
 Check-Bounds @(-1920,0,0,1080) @(-1872,0,0,1080) @(48,0,1872,1080)
 Check-Bounds @(1920,-2160,5760,0) @(1920,-2160,5760,-96) @(0,0,3840,2064)
 Write-Output 'PASS native C# compilation and work-area bounds: bottom/top/left taskbar, secondary monitor, high resolution'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File (Join-Path $PSScriptRoot 'launcher-resize.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Launcher native resize test failed' }

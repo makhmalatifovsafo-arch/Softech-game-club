@@ -28,6 +28,7 @@ test('final setup atomically applies registered PCs and room pricing; receipt su
     assert.equal(clubSetupStatus(db,1).required,true);
     db.exec("INSERT INTO sessions(id,club_id,computer_id,tariff_id,ends_at,status,total_amount) VALUES('history',1,'stable-pc','historical-rate','2026-01-01','COMPLETED',10000)");
     const receipt=finalizeClubSetup(db,1,10,request,f.options);
+    assert.equal(f.store.read(1).appliedDraft,true,'completed draft must reopen from current room settings');
     assert.equal(clubSetupStatus(db,1).required,false);assert.equal(db.prepare('SELECT id FROM computers WHERE club_id=1').get().id,'stable-pc');
     assert.equal(db.prepare("SELECT price_per_hour FROM tariffs WHERE zone_id IS NOT NULL AND is_active=1").get().price_per_hour,7000);
     assert.equal(db.prepare("SELECT total_amount FROM sessions WHERE id='history'").get().total_amount,10000);
@@ -77,6 +78,7 @@ test('all room types keep compatible legacy PC categories and existing setup can
       const saved=f.store.read(1),oldRate=f.db.prepare('SELECT id FROM tariffs WHERE zone_id IS NOT NULL AND is_active=1').get().id;
       saved.draft.tariffs[0].price_per_hour=8000;
       f.store.save(1,10,saved.revision,saved.draft,setupFingerprint(f.db,1));
+      assert.equal(f.store.read(1).appliedDraft,false,'an unfinished edit must still resume its draft');
       finalizeClubSetup(f.db,1,10,{requestId:'room-type-request-0002',revision:saved.revision+1},f.options);
       assert.equal(f.db.prepare('SELECT is_active FROM tariffs WHERE id=?').get(oldRate).is_active,0,'historical rate ID retained');
       assert.equal(f.db.prepare('SELECT count(*) n FROM zones').get().n,1,'existing room reused');

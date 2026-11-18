@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { validateSchedule } from './tariffValidation.js';
 import { normalizeMacAddress } from './macAddress.js';
+import { setupIp, setupConnection, setupConnectionMessage } from './setupConnection.js';
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const steps = ['rooms', 'computers', 'tariffs', 'review'];
@@ -72,7 +73,7 @@ export function normalizeSetupDraft(raw) {
     rooms:list(raw.rooms,64).map(r=>({id:id(r.id),name:text(r.name,80,'Xona nomi'),type:['STANDARD','VIP','PS5','BOOTCAMP_5V5'].includes(r.type)?r.type:'STANDARD',
       x:coordinate(r.x),y:coordinate(r.y),width:coordinate(r.width),height:coordinate(r.height),...shape(r)})),
     computers:list(raw.computers,500).map(c=>({id:id(c.id),number:Number.isInteger(c.number)?c.number:0,name:text(c.name,80,'PC nomi'),roomId:c.roomId?id(c.roomId):'',
-      ip:text(c.ip,64,'IP manzil'),mac:text(c.mac??'',32,'MAC manzil'),x:coordinate(c.x),y:coordinate(c.y)})),
+      ip:setupIp(text(c.ip,64,'IP manzil')),mac:text(c.mac??'',32,'MAC manzil'),x:coordinate(c.x),y:coordinate(c.y)})),
     tariffs:list(raw.tariffs,256).map(t=>({id:id(t.id),roomId:t.roomId?id(t.roomId):'',name:text(t.name,120,'Tarif nomi'),
       start_time:text(t.start_time,5,'Boshlanish'),end_time:text(t.end_time,5,'Tugash'),
       days_of_week:Array.isArray(t.days_of_week)&&t.days_of_week.length<=7?[...t.days_of_week]:[],
@@ -82,13 +83,14 @@ export function normalizeSetupDraft(raw) {
   return draft;
 }
 
-const cleanIp = value => String(value||'').replace(/^::ffff:/i,'');
 const usableIp = value => isIP(value)===4 && ![0,127].includes(Number(value.split('.')[0])) && Number(value.split('.')[0])<224;
 // Only exact database IDs from this tenant can contribute live readiness.
 // Never use ClientManager's user-friendly/fuzzy PC name lookup here.
 export function setupLiveClients(db, clubId, clients) {
-  const ids=new Set(db.prepare('SELECT id FROM computers WHERE club_id=? AND pc_number>0').all(clubId).map(row=>row.id));
-  return [...clients].filter(c=>ids.has(c.pcId)).map(c=>({number:Number(c.pcNumber),ip:cleanIp(c.ipAddress),mac:c.macAddress,
+  const rows=new Map(db.prepare('SELECT id,mac_address FROM computers WHERE club_id=? AND pc_number>0').all(clubId).map(row=>[row.id,row]));
+  // Older clients can omit MAC in HELLO. The same registered database PC
+  // retains its last known MAC; a newly reported MAC always takes precedence.
+  return [...clients].filter(c=>rows.has(c.pcId)).map(c=>({number:Number(c.pcNumber),ip:setupIp(c.ipAddress),mac:c.macAddress||rows.get(c.pcId).mac_address||'',
     connected:c.socket?.readyState===1 && c.isAlive!==false,lastHeartbeat:c.lastHeartbeat}));
 }
 export function evaluateSetupDraft(raw, { maxComputers, liveClients = [], now = Date.now(), heartbeatTimeoutMs = 15000 } = {}) {
@@ -102,12 +104,13 @@ export function evaluateSetupDraft(raw, { maxComputers, liveClients = [], now = 
     if(r.width<120||r.height<120)add('rooms','ROOM_SIZE','Xona o‘lchami kamida 120 × 120 bo‘lsin.',r.id);
   }
   if(!rooms.size)add('rooms','NO_ROOMS','Kamida bitta xona qo‘shing.');
-  if(draft.expectedComputers<1)add('computers','PC_COUNT','Kompyuterlar sonini kiriting.');
-  if(draft.computers.length!==draft.expectedComputers)add('computers','COUNT_MISMATCH','Kiritilgan kompyuterlar soni rejangizga mos emas.');
+  if(draft.expectedComputers<1)add('computers','PC_COUNT','Kamida bitta kompyuter qo‘shing.');
+  if(draft.computers.length!==draft.expectedComputers)add('computers','COUNT_MISMATCH',`Ro‘yxatda ${draft.computers.length} ta PC, saqlangan son esa ${draft.expectedComputers}. Kompyuterlar bosqichini qayta ochib saqlang.`);
   if(!Number.isInteger(maxComputers)||maxComputers<1)add('computers','LIMIT_UNKNOWN','Litsenziyadagi kompyuterlar limiti aniqlanmadi.');
   else if(draft.expectedComputers>maxComputers||draft.computers.length>maxComputers)add('computers','LICENSE_LIMIT',`Litsenziya ${maxComputers} ta kompyuter uchun.`);
   const numbers=new Set(),ids=new Set(),ips=new Set(),macs=new Set();
   let onlineCount=0;
+  const freshClients=liveClients.filter(c=>Number.isFinite(c.lastHeartbeat)&&now-c.lastHeartbeat>=0&&now-c.lastHeartbeat<=heartbeatTimeoutMs);
   for(const pc of draft.computers){
     const label=pc.name||`PC-${pc.number}`;
     if(!pc.name)add('computers','PC_NAME','Kompyuter nomini kiriting.',pc.id);
@@ -120,11 +123,9 @@ export function evaluateSetupDraft(raw, { maxComputers, liveClients = [], now = 
     let mac=null;
     try{mac=normalizeMacAddress(pc.mac);if(mac&&macs.has(mac))throw Error();if(mac)macs.add(mac);}
     catch{add('computers','PC_MAC',`${label}: MAC manzil noto‘g‘ri yoki takrorlangan.`,pc.id);}
-    const matches=liveClients.filter(c=>c.number===pc.number && cleanIp(c.ip)===pc.ip && c.connected===true &&
-      Number.isFinite(c.lastHeartbeat) && now-c.lastHeartbeat>=0 && now-c.lastHeartbeat<=heartbeatTimeoutMs &&
-      (!pc.mac || (mac && String(c.mac||'').replace(/[:-]/g,'').toUpperCase()===mac.replaceAll(':',''))));
-    if(matches.length===1)onlineCount++;
-    else add('computers','PC_OFFLINE',`${label}: client aloqasini tekshiring. Raqam va IP ham mos bo‘lishi kerak.`,pc.id);
+    const connection=setupConnection(pc,freshClients);
+    if(connection.ok)onlineCount++;
+    else add('computers','PC_OFFLINE',setupConnectionMessage(pc,connection),pc.id);
   }
   const tariffIds=new Set(),coverage=new Map();
   for(const tariff of draft.tariffs){
@@ -161,7 +162,8 @@ export class ClubSetupDrafts {
     const row=this.db.prepare('SELECT * FROM club_setup_drafts WHERE club_id=?').get(clubId);
     if(!row)throw fail('Klubning sozlash holati topilmadi.',404);
     let draft;try{draft=normalizeSetupDraft(JSON.parse(row.draft_json));}catch{throw fail('Sozlash qoralamasini o‘qib bo‘lmadi. Mavjud klub sozlamalari o‘zgarmadi.',503);}
-    return {installationKind:row.installation_kind,revision:row.revision,updatedAt:row.updated_at,completedAt:row.completed_at,
+    const appliedDraft=Boolean(row.completed_at&&this.db.prepare('SELECT 1 FROM club_setup_receipts WHERE club_id=? AND revision=?').get(clubId,row.revision-1));
+    return {installationKind:row.installation_kind,revision:row.revision,updatedAt:row.updated_at,completedAt:row.completed_at,appliedDraft,
       baseFingerprint:row.base_fingerprint,draft};
   }
   save(clubId,actorId,revision,raw,baseFingerprint){

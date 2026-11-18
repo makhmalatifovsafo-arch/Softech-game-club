@@ -108,7 +108,7 @@ export function getActiveRateForMoment(momentDate, isVip = false, clubId = 1, zo
       pricePerHour:Number(rate.price_per_hour), isVip:Boolean(rate.is_vip_postpaid_allowed),
       isVipPostpaidAllowed:Boolean(rate.is_vip_postpaid_allowed), zoneId:Number(zoneId) };
     // Explicit room rules define the room's coverage; gaps never inherit another price.
-    if (rates.length) return missing;
+    if (rates.length || db.prepare('SELECT * FROM zones WHERE id=? AND club_id=?').get(zoneId,clubId||1)?.tariff_source==='ROOM') return missing;
   }
   const rates = db.prepare('SELECT * FROM tariff_schedules WHERE club_id=? ORDER BY priority DESC,id DESC').all(clubId || 1);
   const rate = rates.find(rate => (!rate.is_vip || isVip) && matchesRate(rate,date));

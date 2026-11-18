@@ -26,7 +26,8 @@
         <button data-step="review"><span>04</span><b>Tekshirish</b><small>Hammasi joyidami?</small></button>
       </nav>
       <div class="stage-heading"><div><p class="eyebrow" id="stepKicker">01 / ZAL REJASI</p><h1 id="stepTitle" tabindex="-1">Klubingiz qanday joylashgan?</h1><p id="stepHint"></p></div><span class="draft-badge">QORALAMA</span></div>
-      <p class="notice">O‘zgarishlar avval qoralamada saqlanadi. Faqat oxirgi bosqichda tasdiqlaganingizdan keyin klubga qo‘llanadi. Har bir xona uchun 24/7 tarif va barcha clientlarning ulanishi kerak.</p>
+      <p class="notice">Xonalar → kompyuterlar → tariflar. Tayyor bo‘lgach, oxirgi bosqichda “Saqlash va ishni boshlash”ni bosing.</p>
+      <p class="source-notice" id="sourceNotice" hidden></p>
       <div id="saveError" class="error-banner" role="alert" hidden><span></span><div><button id="retrySave">Qayta saqlash</button><button id="downloadDraft">Qoralamani yuklab olish</button><button id="loadRemote" hidden>Serverdagi nusxani ochish</button></div></div>
       <section id="roomsStage" data-panel="rooms">
         <div class="workspace-grid">
@@ -35,11 +36,12 @@
             <div class="map-host" id="roomMapHost"></div>
             <p class="map-caption" id="mapHint">Xonani suring yoki o‘lchamlarini o‘ng tomonda yozing. Klaviatura strelkalari bilan ham siljitish mumkin.</p>
           </div>
-          <aside class="inspector"><label class="field">Klubdagi kompyuterlar soni<input id="expectedComputers" type="number" min="1" max="500" inputmode="numeric"></label><div class="divider"></div><div class="section-label">XONALAR <span id="roomCount">0</span></div><div id="roomList" class="entity-list"></div><div id="roomEditor"></div></aside>
+          <aside class="inspector"><div class="section-label">XONALAR <span id="roomCount">0</span></div><div id="roomList" class="entity-list"></div><div id="roomEditor"></div></aside>
         </div>
       </section>
       <section id="computersStage" data-panel="computers" hidden>
-        <div class="pc-toolbar"><div><strong id="pcCount"></strong><p id="liveStatus" aria-live="polite">Clientlar tekshirilmoqda…</p></div><div class="tool-group"><button id="fillComputers">Rejadagi PC’larni qo‘shish</button><button id="addComputer">+ Bitta PC</button><button id="refreshClients">↻ Aloqani tekshirish</button></div></div>
+        <div class="pc-toolbar"><div><strong id="pcCount"></strong><p id="liveStatus" aria-live="polite">Clientlar tekshirilmoqda…</p></div><div class="tool-group"><button id="addComputer">+ Bitta PC</button><button id="refreshClients">↻ Aloqani tekshirish</button></div></div>
+        <div class="pc-add"><label class="field">Qaysi xonaga?<select id="addPcRoom"></select></label><label class="field quantity-field">Nechta qo‘shilsin?<input id="computerQuantity" type="number" min="1" max="500" value="1" inputmode="numeric"></label><button id="fillComputers" class="primary">Kompyuterlarni qo‘shish</button><small>Mavjud PC’lar saqlanadi. Son ro‘yxatga qarab avtomatik hisoblanadi.</small></div>
         <div class="workspace-grid"><div><div class="map-card"><div class="toolbar"><strong>Kompyuterni xonaga joylashtiring</strong><div class="tool-group"><button data-map-view="selected">Xonaga yaqinlashish</button><button data-map-view="all">Butun zal</button></div></div><div class="map-host" id="pcMapHost"></div><p class="map-caption">PC’ni suring yoki xonasini yon tomondan tanlang. IP kiritish Windows tarmoq manzilini o‘zgartirmaydi.</p></div><div id="pcList" class="pc-list"></div></div><aside class="inspector"><div id="pcEditor"></div></aside></div>
       </section>
       <section id="tariffsStage" data-panel="tariffs" hidden>
@@ -49,7 +51,7 @@
         <details id="otherTariffs" hidden><summary>Amaldagi umumiy va paket tariflari</summary><div></div></details>
       </section>
       <section id="reviewStage" data-panel="review" hidden>
-        <div id="reviewSummary" class="review-summary"></div><div class="review-grid"><section class="inspector"><h2>Tekshiruv natijasi</h2><div id="reviewChecks"></div></section><section class="inspector"><h2>Qanday o‘zgarishlar kiritildi?</h2><p class="muted">Usta ochilgan paytdagi klub sozlamalari bilan taqqoslash.</p><div id="draftChanges"></div><div id="contextNotices"></div></section></div>
+        <div id="reviewSummary" class="review-summary"></div><div class="review-grid"><section class="inspector"><h2>Tekshiruv natijasi</h2><div id="reviewChecks"></div></section><section class="inspector"><h2>Saqlanadigan sozlamalar</h2><div id="draftChanges"></div><div id="contextNotices"></div></section></div>
         <div class="finish-note"><span aria-hidden="true">◇</span><div><h2>Klubni ishga tayyorlang</h2><p>Saqlashdan oldin ulanishlar va tariflar yana tekshiriladi. Faol seans bo‘lsa, uni tugatgandan keyin sozlamalarni qo‘llang.</p><button id="rebaseDraft">Amaldagi holatni tekshirish</button><p id="baselineNotice"></p></div></div>
       </section>
       <section id="stepIssues" class="step-issues" aria-label="To‘ldirilishi kerak bo‘lgan joylar"></section>

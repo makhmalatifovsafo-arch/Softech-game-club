@@ -1,3 +1,4 @@
+import {setupConnection} from './setup-connection.js';
 export const steps=['rooms','computers','tariffs','review'];
 export const dayNames=['Du','Se','Ch','Pa','Ju','Sh','Ya'];
 export const newId=prefix=>prefix+'_'+crypto.randomUUID();
@@ -26,7 +27,7 @@ export function addComputer(draft,roomId){
   if(draft.computers.length>=500)throw Error('500 tadan ko‘p PC qo‘shib bo‘lmaydi.');
   const taken=new Set(draft.computers.map(c=>c.number));let number=1;while(taken.has(number))number++;
   const pc={id:newId('pc'),number,name:'PC-'+String(number).padStart(2,'0'),roomId:'',ip:'',mac:'',x:0,y:0};
-  placeInRoom(draft,pc,roomId||draft.rooms[0]?.id);draft.computers.push(pc);return pc;
+  placeInRoom(draft,pc,roomId||draft.rooms[0]?.id);draft.computers.push(pc);draft.expectedComputers=draft.computers.length;return pc;
 }
 export function bindClient(draft,pcId,client){
   const pc=draft.computers.find(c=>c.id===pcId);if(!pc||!client?.connected)throw Error('Ulangan clientni tanlang.');
@@ -36,14 +37,13 @@ export function bindClient(draft,pcId,client){
   pc.number=client.number;pc.ip=client.ip;pc.mac=client.mac||'';
 }
 export function connected(pc,clients){
-  const clean=value=>String(value||'').replace(/[:-]/g,'').toUpperCase();
-  return clients.filter(c=>c.connected&&c.number===pc.number&&c.ip===pc.ip&&(!pc.mac||clean(c.mac)===clean(pc.mac))).length===1;
+  return setupConnection(pc,clients).ok;
 }
 export function stepProblems(readiness,step){
   if(!readiness)return [];
   // Connecting every client is required at final readiness, but tariffs can be
   // prepared while an installer is still connecting the other computers.
-  return [...readiness.issues,...(readiness.warnings||[])].filter(i=>step==='rooms'?(i.step==='rooms'||['PC_COUNT','LICENSE_LIMIT','LIMIT_UNKNOWN'].includes(i.code)):
+  return [...readiness.issues,...(readiness.warnings||[])].filter(i=>step==='rooms'?i.step==='rooms':
     i.step===step&&(step!=='computers'||i.code!=='PC_OFFLINE'));
 }
 export function draftChanges(current,baseline){

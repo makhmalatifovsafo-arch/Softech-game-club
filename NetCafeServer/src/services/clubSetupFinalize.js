@@ -37,6 +37,7 @@ export function finalizeClubSetup(db,clubId,actorId,input,options={}){
       else zoneId=Number(db.prepare('INSERT INTO zones(club_id,name,zone_type,x,y,width,height,polygon_points) VALUES(?,?,?,?,?,?,?,?)')
         .run(clubId,room.name,room.type,room.x,room.y,room.width,room.height,room.polygonPoints?JSON.stringify(room.polygonPoints):null).lastInsertRowid);
       roomIds.set(room.id,zoneId);
+      db.prepare("UPDATE zones SET tariff_source='ROOM' WHERE id=? AND club_id=?").run(zoneId,clubId);
       // Retain old tariff IDs and values for historical sessions.
       db.prepare("UPDATE tariffs SET is_active=0 WHERE club_id=? AND zone_id=? AND type='HOURLY'").run(clubId,zoneId);
     }

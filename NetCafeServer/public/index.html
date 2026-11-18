@@ -2147,7 +2147,7 @@
             </div>
 
             <!-- VIP Options (faol bo'lganda ko'rinadi) -->
-            <div id="vipPricingOptionsContainer" class="mt-4 space-y-3 transition-all duration-200">
+            <fieldset id="vipPricingOptionsContainer" class="mt-4 space-y-3 transition-all duration-200" oninput="vipSettingsDirty = true" onchange="vipSettingsDirty = true">
               <label class="block text-[11px] uppercase tracking-wider font-bold text-zinc-400">VIP Narxlash Tizimi (Tarif Tanlovi)</label>
               
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2179,83 +2179,23 @@
                 </label>
               </div>
 
-              <!-- Save button for VIP settings -->
+            </fieldset>
+              <!-- Saving the enabled/disabled state must remain available. -->
               <div class="flex justify-end pt-2">
                 <button type="button" onclick="saveVipSettings()" id="btnSaveVipSettings" class="bg-amber-500 hover:bg-amber-600 text-black font-bold text-xs py-2 px-5 rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
                   <span>✓</span>
                   <span>VIP Sozlamalarini Saqlash</span>
                 </button>
               </div>
-            </div>
 
             <!-- VIP O'chirilgan holatdagi xabar -->
             <div id="vipDisabledNotice" class="mt-3 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-300 text-xs flex items-center gap-2 hidden">
               <span>⚠️</span>
-              <span>VIP Postpaid rejimi to'liq o'chirildi. Tizimda "VIP Postpaid" seans ochish cheklandi ("Menejer tomonidan o'chirilgan").</span>
+              <span>VIP o‘chiq holatda yangi VIP seans ochilmaydi. Boshlangan seanslar davom etadi. O‘zgarishni qo‘llash uchun «Saqlash» tugmasini bosing.</span>
             </div>
           </div>
 
           <section id="roomPricingSettings" class="order-2 p-4 rounded-xl border border-sky-500/30 bg-sky-500/5"></section>
-          <div id="generalTariffSettings" class="order-1 space-y-4">
-          <p class="text-xs text-amber-300">Tarif belgilanmagan kun yoki vaqtga seans ochilmaydi. Xonaga alohida tarif kiritilgan bo‘lsa, o‘sha xona tariflari ishlaydi. Boshlanish va tugash bir xil bo‘lsa, tarif tanlangan kunlarda 24 soat amal qiladi.</p>
-          <!-- 1. Yangi Dinamik Jadval Qo'shish -->
-          <form onsubmit="handleCreateSchedule(event)" class="p-4 rounded-xl border border-[#27272a] bg-[#09090b] space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-white uppercase tracking-wider">+ Yangi vaqt oralig'i qo'shish</span>
-              <span class="text-[11px] text-[#71717a]">Soat oralig'i va kunlar bo'yicha narxlash</span>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div>
-                <label class="block text-[11px] text-[#71717a] mb-1">Tarif Nomi</label>
-                <input type="text" id="schedName" required placeholder="Kunduzgi tarif"
-                       class="w-full bg-[#141418] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-sky-500">
-              </div>
-              <div>
-                <label class="block text-[11px] text-[#71717a] mb-1">Oraliq (Boshlanish - Tugash)</label>
-                <div class="flex items-center gap-1.5">
-                  <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" id="schedStart" value="10:00" required class="w-1/2 bg-[#141418] border border-[#27272a] rounded-lg px-2 py-1.5 text-xs text-white">
-                  <span class="text-zinc-500">-</span>
-                  <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" id="schedEnd" value="17:00" required class="w-1/2 bg-[#141418] border border-[#27272a] rounded-lg px-2 py-1.5 text-xs text-white">
-                </div>
-              </div>
-              <div>
-                <label class="block text-[11px] text-[#71717a] mb-1">Narxi (UZS/soat)</label>
-                <input type="number" id="schedRate" value="7000" min="1000" step="500" required
-                       class="w-full bg-[#141418] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-emerald-400 font-mono font-bold focus:outline-none focus:border-emerald-500">
-              </div>
-              <div>
-                <label class="block text-[11px] text-[#71717a] mb-1">Hafta Kunlari</label>
-                <div id="schedDays" class="grid grid-cols-4 sm:grid-cols-7 gap-1">
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="1" checked><span>Du</span></label>
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="2" checked><span>Se</span></label>
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="3" checked><span>Ch</span></label>
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="4" checked><span>Pa</span></label>
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="5" checked><span>Ju</span></label>
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="6" checked><span>Sh</span></label>
-                  <label class="flex items-center justify-center gap-1 p-2 rounded-lg bg-[#141418] border border-[#27272a] text-xs cursor-pointer"><input type="checkbox" data-schedule-day value="7" checked><span>Ya</span></label>
-                </div>
-              </div>
-            </div>
-            <div class="flex justify-end pt-1">
-              <button type="button" id="schedCancel" onclick="cancelScheduleEdit()" class="hidden text-xs px-4">Bekor qilish</button>
-              <button type="submit" id="schedSave" class="softech-btn-primary text-xs !py-1.5 px-4 font-semibold">
-                + Qoidani Saqlash
-              </button>
-            </div>
-          </form>
-
-          <!-- 2. Mavjud Dinamik Jadval Qoidalari -->
-          <div>
-            <div class="flex items-center justify-between mb-2">
-              <h4 class="text-xs font-bold text-white uppercase tracking-wider">Amaldagi dinamik tariflar</h4>
-              <span class="text-[11px] text-zinc-500">Avtomatik vaqt kesish va narx hisoblash</span>
-            </div>
-            <div id="dynamicSchedulesList" class="space-y-2">
-              <!-- Dinamik -->
-            </div>
-          </div>
-
-          </div>
         </div>
 
         <!-- TAB 3: CLIENTS & PREPAID TOP-UP -->
@@ -3346,30 +3286,9 @@
           </div>
         </div>
 
-        <!-- 2-BO'LIM: Dinamik Narxlar (Zone Tariffs) -->
-        <div class="space-y-3 pt-2 border-t border-zinc-800">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="text-xs font-bold text-sky-400 uppercase tracking-wider">2-Bo'lim: Dinamik Narxlar (Zone Tariffs)</span>
-              <p class="text-[10px] text-zinc-400">Vaqt oraliqlari va ularga mos soatlik tariflar</p>
-            </div>
-            <button type="button" onclick="addZoneTariffRow()" class="px-2.5 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-semibold transition cursor-pointer flex items-center gap-1">
-              <span>+</span> Yangi oraliq qo'shish
-            </button>
-          </div>
-
-          <!-- Oraliqlar ro'yxati -->
-          <div id="zoneTariffRowsContainer" class="space-y-2 max-h-56 overflow-y-auto pr-1">
-            <!-- JavaScript orqali dinamik qatorlar qo'shiladi -->
-          </div>
-
-          <!-- VIP Postpaid Checkbox -->
-          <div class="p-3 rounded-xl bg-purple-500/10 border border-purple-500/25 flex items-center justify-between">
-            <label for="zoneVipPostpaidAllowed" class="text-xs font-bold text-purple-200 cursor-pointer flex items-center gap-2 select-none">
-              <input type="checkbox" id="zoneVipPostpaidAllowed" checked class="w-4 h-4 rounded text-purple-500 bg-zinc-900 border-zinc-700 focus:ring-0 cursor-pointer">
-              <span>Ushbu xonada VIP Postpaid (Keyin to'lash) ga ruxsat berish</span>
-            </label>
-          </div>
+        <div class="p-3 rounded-xl border border-sky-500/30 bg-sky-500/5 text-xs text-zinc-300">
+          <p>Vaqt va narxlar Sozlamalar → Dinamik tariflar oynasida xona bo‘yicha belgilanadi.</p>
+          <button id="quickRoomPricingLink" type="button" onclick="openRoomPricingSettings()" class="mt-2 text-sky-400 font-bold">Xona tariflarini ochish →</button>
         </div>
 
         <div id="quickRoomDimensionsContainer" class="flex items-center justify-between text-[11px] text-zinc-500 font-mono pt-2 border-t border-[#27272a]">
@@ -3546,6 +3465,7 @@
     <!-- Faol seans amallari (Band bo'lsa) -->
     <div id="ctxActiveSessionGroup" class="space-y-0.5">
       <button onclick="openPcBarOrder(currentCtxPcId); closeContextMenu()" class="w-full text-left px-2.5 py-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/20">🛒 Bardan mahsulot qo‘shish</button>
+      <div id="ctxExtendGroup">
       <div class="px-2 pt-1.5 pb-0.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">⏱️ Tezkor Vaqt Qo'shish</div>
       <button onclick="handleCtxQuickExtend(15)" class="w-full text-left px-2.5 py-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-sky-500/15 flex items-center justify-between transition">
         <span>+ 15 daqiqa</span>
@@ -3564,6 +3484,7 @@
         <span class="text-[10px] text-zinc-500">⚙️</span>
       </button>
       <div class="h-px bg-[#27272a] my-1"></div>
+      </div>
       <button onclick="handleCtxStopSession()" class="w-full text-left px-2.5 py-1.5 rounded-lg text-rose-400 hover:text-white hover:bg-rose-500/20 flex items-center gap-2 transition font-medium">
         <span>🛑</span> Seansni To'xtatish & Qaytim
       </button>
@@ -3622,7 +3543,6 @@
     let selectedPcIds = new Set();
     let lastSelectedPcIndex = -1;
     let targetSelectedPcIds = [];
-    let dynamicSchedulesData = [];
     let clientsData = [];
     let calcDebounceTimer = null;
     let priceCalculationRevision = 0;
@@ -3717,11 +3637,16 @@
     }
 
     // Grid and table are different presentations of the same PC actions.
+    function canExtendPcSession(pc) {
+      const session = pc?.activeSession || pc?.active_session;
+      return Boolean(session) && !session.isPostpaid;
+    }
+
     function pcActionsHtml(pc) {
       const id = escapeHtml(String(pc.id));
       const occupied = pc.status === 'OCCUPIED' || Boolean(pc.activeSession || pc.active_session);
       return `<div class="flex items-center justify-end gap-1.5 w-full" onclick="event.stopPropagation()">
-        ${occupied ? `<button type="button" data-pc-id="${id}" onclick="openExtendModal(this.dataset.pcId)" class="px-2 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 text-xs font-semibold">+ Vaqt</button>
+        ${occupied ? `${canExtendPcSession(pc) ? `<button type="button" data-pc-id="${id}" onclick="openExtendModal(this.dataset.pcId)" class="px-2 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 text-xs font-semibold">+ Vaqt</button>` : ''}
         <button type="button" data-pc-id="${id}" onclick="requestStopSession(this.dataset.pcId)" class="px-2 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 text-xs font-semibold">Yopish</button>`
         : `<button type="button" data-pc-id="${id}" onclick="startPcSession(this.dataset.pcId)" class="softech-btn-primary flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold">Seans ochish</button>`}
         <button type="button" data-pc-id="${id}" onclick="openPcActions(this.dataset.pcId,event)" aria-label="Kompyuter amallari" title="Kompyuter amallari" class="p-2 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white">&#9881;</button>
@@ -3773,6 +3698,7 @@
 
       const activeGroup = document.getElementById('ctxActiveSessionGroup');
       const inactiveGroup = document.getElementById('ctxInactiveSessionGroup');
+      document.getElementById('ctxExtendGroup').classList.toggle('hidden', !canExtendPcSession(pc));
       const btnWol = document.getElementById('ctxBtnWol');
       const btnReboot = document.getElementById('ctxBtnReboot');
       const btnShutdown = document.getElementById('ctxBtnShutdown');
@@ -3838,15 +3764,14 @@
       const pc = computersData.find(c => c.id === pcId);
       closeContextMenu();
 
-      if (!pc || !pc.activeSession) return;
+      if (!canExtendPcSession(pc)) return;
 
       let hourlyRate = 12000;
       if (tariffsData && tariffsData.length > 0) {
         const hourly = tariffsData.find(t => t.price_per_hour > 0);
         if (hourly) hourlyRate = hourly.price_per_hour;
       }
-      const isPostpaid = Boolean(pc.activeSession.isPostpaid);
-      const amount = isPostpaid ? 0 : Math.round((minutes / 60) * hourlyRate);
+      const amount = Math.round((minutes / 60) * hourlyRate);
 
       try {
         const res = await fetch(`/api/sessions/${pcId}/extend`, {
@@ -4056,10 +3981,10 @@
             <span>⏹️</span>
             <span>Seansni Tugatish</span>
           </button>
-          <button onclick="openExtendModal('${pc.id}')" class="px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-950/25 hover:bg-amber-900/40 text-amber-400 hover:text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Vaqt qo'shish / uzaytirish">
+          ${canExtendPcSession(pc) ? `<button onclick="openExtendModal('${pc.id}')" class="px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-950/25 hover:bg-amber-900/40 text-amber-400 hover:text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Vaqt qo'shish / uzaytirish">
             <span>➕</span>
             <span>Vaqt Qo'shish</span>
-          </button>
+          </button>` : ''}
           <button onclick="openTransferModal('${pc.id}')" class="px-3 py-1.5 rounded-xl border border-[#27272a] bg-[#18181b] hover:bg-[#27272a] text-sky-400 hover:text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Boshqa kompyuterga ko'chirish">
             <span>🔄</span>
             <span>Ko'chirish</span>
@@ -6018,59 +5943,10 @@
     // ========================================================================
     // ZONE CREATION & PRICING MODAL HANDLERS
     // ========================================================================
-    let zoneTariffCounter = 0;
-
-    function addZoneTariffRow(data = {}) {
-      const container = document.getElementById('zoneTariffRowsContainer');
-      if (!container) return;
-
-      zoneTariffCounter++;
-      const rowId = `ztr_${zoneTariffCounter}`;
-      const name = data.name || (container.children.length === 0 ? 'Kunduzgi' : 'Kechki / Tun');
-      const startTime = data.start_time || (container.children.length === 0 ? '10:00' : '18:00');
-      const endTime = data.end_time || (container.children.length === 0 ? '18:00' : '10:00');
-      const price = data.price_per_hour || (container.children.length === 0 ? 12000 : 18000);
-
-      const row = document.createElement('div');
-      row.id = rowId;
-      row.className = 'grid grid-cols-12 gap-2 items-center p-2 rounded-xl bg-zinc-900/80 border border-zinc-800 text-xs';
-      row.innerHTML = `
-        <div class="col-span-3">
-          <label class="text-[10px] text-zinc-500 block mb-0.5">Nomi</label>
-          <input type="text" value="${escapeHtml(name)}" class="ztr-name w-full bg-black/60 border border-zinc-700 rounded-lg px-2 py-1 text-white text-xs font-medium focus:border-sky-500 outline-none">
-        </div>
-        <div class="col-span-2">
-          <label class="text-[10px] text-zinc-500 block mb-0.5">Boshlanish</label>
-          <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" value="${escapeHtml(startTime)}" class="ztr-start w-full bg-black/60 border border-zinc-700 rounded-lg px-1.5 py-1 text-white font-mono text-xs focus:border-sky-500 outline-none text-center">
-        </div>
-        <div class="col-span-2">
-          <label class="text-[10px] text-zinc-500 block mb-0.5">Tugash</label>
-          <input type="text" inputmode="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" value="${escapeHtml(endTime)}" class="ztr-end w-full bg-black/60 border border-zinc-700 rounded-lg px-1.5 py-1 text-white font-mono text-xs focus:border-sky-500 outline-none text-center">
-        </div>
-        <div class="col-span-4">
-          <label class="text-[10px] text-zinc-500 block mb-0.5">Soatlik Narx (UZS)</label>
-          <div class="relative">
-            <input type="number" step="500" min="0" value="${price}" class="ztr-price w-full bg-black/60 border border-zinc-700 rounded-lg pl-2 pr-8 py-1 text-sky-400 font-mono font-bold text-xs focus:border-sky-500 outline-none">
-            <span class="absolute right-2 top-1 text-[10px] text-zinc-500 font-mono pointer-events-none">so'm</span>
-          </div>
-        </div>
-        <div class="col-span-1 flex justify-center pt-3.5">
-          <button type="button" onclick="removeZoneTariffRow('${rowId}')" class="text-zinc-500 hover:text-rose-400 p-1 text-base transition cursor-pointer" title="O'chirish">&times;</button>
-        </div>
-      `;
-      container.appendChild(row);
-    }
-
-    function removeZoneTariffRow(rowId) {
-      const row = document.getElementById(rowId);
-      if (row) {
-        const container = document.getElementById('zoneTariffRowsContainer');
-        if (container && container.children.length <= 1) {
-          showToast('Kamida bitta oraliq bo\'lishi shart', 'info');
-          return;
-        }
-        row.remove();
-      }
+    function openRoomPricingSettings() {
+      const id=document.getElementById('quickRoomEditingId').value;
+      if(!id){showToast('Avval xonani saqlang, keyin tariflarini belgilang.','info');return;}
+      selectedZoneId=Number(id);closeQuickRoomModal();openSettingsModal();switchSettingsTab('tariffs');
     }
 
     function openQuickRoomModal(params) {
@@ -6084,12 +5960,11 @@
       const dimContainer = document.getElementById('quickRoomDimensionsContainer');
       const dimLabel = document.getElementById('quickRoomDimensionsLabel');
       const coordLabel = document.getElementById('quickRoomCoordsLabel');
-      const container = document.getElementById('zoneTariffRowsContainer');
       const submitBtn = document.getElementById('quickRoomSubmitBtn');
 
       if (editInput) editInput.value = '';
-      if (titleEl) titleEl.textContent = '🏰 Yangi Xona va Dinamik Tariflar';
-      if (subtitleEl) subtitleEl.textContent = 'Chizilgan xona uchun parametrlar va dinamik tariflar';
+      if (titleEl) titleEl.textContent = '🏰 Yangi xona';
+      if (subtitleEl) subtitleEl.textContent = 'Xona nomi, turi va rangi';
       if (submitBtn) submitBtn.textContent = '+ Xonani Joylashtirish ↵';
 
       if (modal) modal.classList.remove('hidden');
@@ -6105,14 +5980,7 @@
       if (dimLabel && params) dimLabel.textContent = `O'lcham: ${params.width || 360} × ${params.height || 240} px`;
       if (coordLabel && params) coordLabel.textContent = `X: ${params.x || 40}, Y: ${params.y || 40}`;
 
-      // 2 ta standart boshlang'ich oraliq
-      if (container) {
-        container.innerHTML = '';
-        addZoneTariffRow({ name: 'Kunduzgi', start_time: '10:00', end_time: '18:00', price_per_hour: 12000 });
-        addZoneTariffRow({ name: 'Kechki / Tun', start_time: '18:00', end_time: '10:00', price_per_hour: 18000 });
-      }
-      const vipChk = document.getElementById('zoneVipPostpaidAllowed');
-      if (vipChk) vipChk.checked = true;
+      document.getElementById('quickRoomPricingLink').hidden=true;
     }
 
     async function openEditZoneModal(zoneId) {
@@ -6134,12 +6002,11 @@
       const nameInput = document.getElementById('quickRoomName');
       const typeSelect = document.getElementById('quickRoomTypeSelect');
       const dimContainer = document.getElementById('quickRoomDimensionsContainer');
-      const container = document.getElementById('zoneTariffRowsContainer');
       const submitBtn = document.getElementById('quickRoomSubmitBtn');
 
       if (editInput) editInput.value = String(zone.id);
       if (titleEl) titleEl.textContent = `🏰 Xonani Tahrirlash: ${zone.name}`;
-      if (subtitleEl) subtitleEl.textContent = `Xona ma'lumotlari va dinamik narxlari jadvalini o'zgartirish`;
+      if (subtitleEl) subtitleEl.textContent = 'Xona nomi, turi va rangi. Tariflar alohida saqlanadi.';
       if (submitBtn) submitBtn.textContent = 'Saqlash ↵';
 
       if (nameInput) nameInput.value = zone.name || '';
@@ -6152,37 +6019,7 @@
       if (dimContainer) dimContainer.classList.add('hidden');
       if (modal) modal.classList.remove('hidden');
 
-      // Mavjud tariflarni serverdan yuklash
-      if (container) {
-        container.innerHTML = '<div class="text-center py-4 text-xs text-zinc-500">Tariflar yuklanmoqda...</div>';
-      }
-
-      try {
-        const res = await fetch(`/api/zones/${zone.id}/tariffs`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          const list = resData.tariffs || (Array.isArray(resData) ? resData : []);
-          if (container) {
-            container.innerHTML = '';
-            if (Array.isArray(list) && list.length > 0) {
-              list.forEach(t => addZoneTariffRow(t));
-              const vipChk = document.getElementById('zoneVipPostpaidAllowed');
-              if (vipChk) vipChk.checked = list[0]?.is_vip_postpaid_allowed !== 0;
-            } else {
-              addZoneTariffRow({ name: 'Kunduzgi', start_time: '10:00', end_time: '18:00', price_per_hour: 12000 });
-              addZoneTariffRow({ name: 'Kechki / Tun', start_time: '18:00', end_time: '10:00', price_per_hour: 18000 });
-            }
-          }
-        }
-      } catch (e) {
-        if (container) {
-          container.innerHTML = '';
-          addZoneTariffRow({ name: 'Kunduzgi', start_time: '10:00', end_time: '18:00', price_per_hour: 12000 });
-          addZoneTariffRow({ name: 'Kechki / Tun', start_time: '18:00', end_time: '10:00', price_per_hour: 18000 });
-        }
-      }
+      document.getElementById('quickRoomPricingLink').hidden=false;
     }
 
     function closeQuickRoomModal() {
@@ -6219,34 +6056,6 @@
       const typeSelect = document.getElementById('quickRoomTypeSelect');
       const zoneType = typeSelect ? typeSelect.value : 'STANDARD';
       const color = document.getElementById('quickRoomColorInput').value || '#38bdf8';
-      const isVipAllowed = document.getElementById('zoneVipPostpaidAllowed')?.checked ? 1 : 0;
-
-      // Oraliqlarni yig'ish
-      const container = document.getElementById('zoneTariffRowsContainer');
-      const rows = container ? container.children : [];
-      const tariffsPayload = [];
-
-      for (const row of rows) {
-        const tName = row.querySelector('.ztr-name')?.value.trim() || 'Tarif';
-        const tStart = row.querySelector('.ztr-start')?.value || '10:00';
-        const tEnd = row.querySelector('.ztr-end')?.value || '18:00';
-        const tPrice = parseFloat(row.querySelector('.ztr-price')?.value) || 12000;
-        tariffsPayload.push({
-          name: tName,
-          start_time: tStart,
-          end_time: tEnd,
-          price_per_hour: tPrice,
-          days_of_week: [1,2,3,4,5,6,7],
-          is_vip_postpaid_allowed: isVipAllowed
-        });
-      }
-
-      if (tariffsPayload.length === 0) {
-        tariffsPayload.push(
-          { name: 'Kunduzgi', start_time: '10:00', end_time: '18:00', price_per_hour: 12000, days_of_week: [1,2,3,4,5,6,7], is_vip_postpaid_allowed: isVipAllowed },
-          { name: 'Kechki / Tun', start_time: '18:00', end_time: '10:00', price_per_hour: 18000, days_of_week: [1,2,3,4,5,6,7], is_vip_postpaid_allowed: isVipAllowed }
-        );
-      }
 
       try {
         if (editId) {
@@ -6261,7 +6070,6 @@
               name,
               zoneType,
               color,
-              tariffs: tariffsPayload
             })
           });
 
@@ -6277,7 +6085,7 @@
             existingZone.zone_type = zoneType;
             existingZone.color = color;
           }
-          showToast(`✓ "${name}" xonasi va dinamik narxlari yangilandi!`, 'success');
+          showToast(`✓ "${name}" xonasi saqlandi. Tariflar o‘zgarmadi!`, 'success');
         } else {
           // POST /api/zones
           const bounds = activeQuickRoomBounds || { x: 40, y: 40, width: 360, height: 240 };
@@ -6296,7 +6104,7 @@
               width: bounds.width,
               height: bounds.height,
               polygonPoints: bounds.polygonPoints || null,
-              tariffs: tariffsPayload
+              tariffSource: 'ROOM',
             })
           });
 
@@ -6321,7 +6129,7 @@
           if (!zonesData) zonesData = [];
           zonesData.push(createdZone);
           selectedZoneId = createdZone.id;
-          showToast(`✓ "${name}" xonasi va dinamik tariflari yaratildi!`, 'success');
+          showToast(`✓ "${name}" xonasi yaratildi. Endi xona tariflarini belgilang!`, 'success');
         }
 
         closeQuickRoomModal();
@@ -6330,6 +6138,7 @@
         renderFloorPlan();
         renderInspector();
         await fetchData();
+        if (!editId) { openSettingsModal(); switchSettingsTab('tariffs'); }
       } catch (err) {
         console.error('QuickRoom Error:', err);
         if (window.location.protocol === 'file:') {
@@ -7417,6 +7226,7 @@
       document.getElementById('clubSetupEntry').hidden = currentUser.role !== 'club_owner';
       document.getElementById('settingsModal').classList.remove('hidden');
       renderAdminComputersTable();
+      vipSettingsDirty = false;
       renderVipSettings();
 
       loadDynamicSchedules();
@@ -7670,6 +7480,8 @@
     // ========================================================================
     // VIP POSTPAID ENGINE & SETTINGS CONTROLS
     // ========================================================================
+    let vipSettingsDirty = false;
+    let vipSettingsSaving = false;
     function updateVipUiState() {
       const firstPc = (typeof targetSelectedPcIds !== 'undefined' && targetSelectedPcIds.length > 0)
         ? (computersData || []).find(c => c.id === targetSelectedPcIds[0])
@@ -7683,6 +7495,7 @@
       const vipTab = document.getElementById('startTab-postpaid');
       const lockedBadge = document.getElementById('vipTabLockedBadge');
       if (vipTab) {
+        vipTab.disabled = !isEnabled;
         if (!isEnabled) {
           vipTab.classList.add('opacity-40');
           vipTab.title = !isClubVipEnabled 
@@ -7701,7 +7514,7 @@
     }
 
     function renderVipSettings() {
-      if (!clubSettingsData) return;
+      if (!clubSettingsData || vipSettingsDirty || vipSettingsSaving) return;
       const isEnabled = Boolean(clubSettingsData.vip_enabled !== false);
       const mode = clubSettingsData.vip_pricing_mode || 'SCHEDULE';
       const customPrice = clubSettingsData.vip_custom_price || 15000;
@@ -7739,13 +7552,16 @@
       });
 
       if (customInput) customInput.value = customPrice;
+      if (optionsContainer) optionsContainer.disabled = !isEnabled;
       onVipPricingModeChange(mode, false);
     }
 
     function toggleVipControls(enabled) {
+      vipSettingsDirty = true;
       const badge = document.getElementById('vipStatusBadge');
       const optionsContainer = document.getElementById('vipPricingOptionsContainer');
       const disabledNotice = document.getElementById('vipDisabledNotice');
+      if (optionsContainer) optionsContainer.disabled = !enabled;
 
       if (badge) {
         if (enabled) {
@@ -7793,11 +7609,21 @@
     }
 
     async function saveVipSettings() {
+      if (vipSettingsSaving) return;
       const isEnabled = document.getElementById('vipEnabledToggle')?.checked ?? true;
       let selectedMode = 'SCHEDULE';
       const radios = document.getElementsByName('vipPricingMode');
       radios.forEach(r => { if (r.checked) selectedMode = r.value; });
-      const customPrice = parseFloat(document.getElementById('vipCustomPriceInput')?.value) || 15000;
+      const customPrice = Number(document.getElementById('vipCustomPriceInput')?.value);
+      if (isEnabled && (!Number.isFinite(customPrice) || customPrice <= 0)) {
+        showToast('VIP uchun 0 dan katta soatlik narxni kiriting.', 'error');
+        return;
+      }
+      // Disabling VIP never rewrites pricing used by existing open sessions.
+      const body = isEnabled ? {vip_enabled:true, vip_pricing_mode:selectedMode, vip_custom_price:customPrice} : {vip_enabled:false};
+      vipSettingsSaving = true;
+      document.getElementById('vipEnabledToggle').disabled = true;
+      document.getElementById('vipPricingOptionsContainer').disabled = true;
 
       const btn = document.getElementById('btnSaveVipSettings');
       if (btn) {
@@ -7812,16 +7638,13 @@
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
           },
-          body: JSON.stringify({
-            vip_enabled: isEnabled,
-            vip_pricing_mode: selectedMode,
-            vip_custom_price: customPrice
-          })
+          body: JSON.stringify(body)
         });
 
         if (res.ok) {
           const data = await res.json();
           clubSettingsData = data.settings;
+          vipSettingsDirty = false;
           updateVipUiState();
           showToast('✓ VIP Postpaid sozlamalari muvaffaqiyatli saqlandi!', 'success');
         } else {
@@ -7831,6 +7654,10 @@
       } catch (err) {
         alert('Server bilan bog\'lanishda xatolik: ' + err.message);
       } finally {
+        vipSettingsSaving = false;
+        document.getElementById('vipEnabledToggle').disabled = false;
+        document.getElementById('vipPricingOptionsContainer').disabled = !document.getElementById('vipEnabledToggle').checked;
+        renderVipSettings();
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = '<span>✓</span><span>VIP Sozlamalarini Saqlash</span>';
@@ -7979,158 +7806,9 @@
     }
 
     // --- TAB 2: TARIFFS & PRICING ---
-    // --- TAB 2 CONTINUED: DYNAMIC SCHEDULES ENGINE ---
+    // --- TAB 2 CONTINUED: one editor for the actual room rules ---
     async function loadDynamicSchedules() {
-      window.SoftechRoomPricing?.load({token:authToken,preferredZoneId:typeof selectedZoneId==='undefined'?null:selectedZoneId,refresh:async()=>{await fetchData();}});
-
-      try {
-        const res = await fetch('/api/tariff-schedules', {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (res.ok) {
-          dynamicSchedulesData = await res.json();
-          const listEl = document.getElementById('dynamicSchedulesList');
-          if (!listEl) return;
-          listEl.innerHTML = '';
-          if (dynamicSchedulesData.length === 0) {
-            listEl.innerHTML = '<div class="p-3 text-center text-xs text-zinc-500 bg-[#09090b] rounded-xl border border-[#27272a]">Tarif kiritilmagan. Seans ochish uchun kun, vaqt va soatlik narxni kiriting.</div>';
-            return;
-          }
-          const daysMap = {
-            '[1,2,3,4,5]': 'Dush - Juma (Ish kunlari)',
-            '[6,7]': 'Shanba - Yakshanba (Dam olish)',
-            '[1,2,3,4,5,6,7]': 'Barcha kunlar (Har kuni)',
-            '1,2,3,4,5': 'Dush - Juma (Ish kunlari)',
-            '6,7': 'Shanba - Yakshanba (Dam olish)',
-            '1,2,3,4,5,6,7': 'Barcha kunlar (Har kuni)'
-          };
-          dynamicSchedulesData.forEach(s => {
-            const row = document.createElement('div');
-            row.className = 'p-3 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between text-xs hover:border-zinc-600 transition';
-            const daysKey = Array.isArray(s.days_of_week) ? JSON.stringify(s.days_of_week) : String(s.days_of_week);
-            const daysLabel = daysMap[daysKey] || daysMap[s.days_of_week] || s.days_of_week;
-            row.innerHTML = `
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="font-bold text-white text-xs">${escapeHtml(s.name)}</span>
-                  <span class="font-mono text-[11px] text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">${escapeHtml(s.start_time)} - ${escapeHtml(s.end_time)}</span>
-                  <span class="text-[10px] text-zinc-400 bg-zinc-800 px-1.5 py-0.5 rounded">${escapeHtml(String(daysLabel))}</span>
-                </div>
-                <div class="text-[11px] font-mono font-bold text-emerald-400 mt-1">
-                  ${(s.price_per_hour || 0).toLocaleString()} UZS / soat
-                </div>
-              </div>
-              <div class="flex items-center gap-2"><button onclick="editSchedule(${Number(s.id)})" class="text-sky-400 p-1.5">Tahrirlash</button><button onclick="deleteSchedule(${Number(s.id)})" class="text-zinc-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition text-xs" title="O'chirish">
-                🗑️
-              </button></div>
-            `;
-            listEl.appendChild(row);
-          });
-        }
-      } catch (err) {
-        console.error('Load schedules error:', err);
-      }
-    }
-
-    let editingScheduleId = null;
-    function setScheduleDays(values = [1,2,3,4,5,6,7]) {
-      let parsed = values;
-      if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch { parsed = parsed.split(',').map(Number); } }
-      const selected = new Set((Array.isArray(parsed) ? parsed : []).map(Number));
-      document.querySelectorAll('[data-schedule-day]').forEach(input => { input.checked = selected.has(Number(input.value)); });
-    }
-    function cancelScheduleEdit() {
-      editingScheduleId = null;
-      document.getElementById('schedName').value = '';
-      document.getElementById('schedStart').value = '10:00';
-      document.getElementById('schedEnd').value = '17:00';
-      document.getElementById('schedRate').value = '7000';
-      setScheduleDays();
-      document.getElementById('schedSave').textContent = '+ Qoidani Saqlash';
-      document.getElementById('schedCancel').classList.add('hidden');
-    }
-    function editSchedule(id) {
-      const schedule = dynamicSchedulesData.find(item => Number(item.id) === id);
-      if (!schedule) return;
-      editingScheduleId = id;
-      document.getElementById('schedName').value = schedule.name;
-      document.getElementById('schedStart').value = schedule.start_time;
-      document.getElementById('schedEnd').value = schedule.end_time;
-      document.getElementById('schedRate').value = schedule.price_per_hour;
-      setScheduleDays(schedule.days_of_week);
-      document.getElementById('schedSave').textContent = 'O‘zgarishlarni saqlash';
-      document.getElementById('schedCancel').classList.remove('hidden');
-      document.getElementById('schedName').focus();
-    }
-
-    async function handleCreateSchedule(e) {
-      e.preventDefault();
-      const name = document.getElementById('schedName').value.trim();
-      const startTime = document.getElementById('schedStart').value;
-      const endTime = document.getElementById('schedEnd').value;
-      const pricePerHour = parseFloat(document.getElementById('schedRate').value);
-      const daysOfWeek = [...document.querySelectorAll('[data-schedule-day]:checked')].map(input => Number(input.value));
-
-      if (!name) {
-        alert('Iltimos, tarif nomini kiriting.');
-        return;
-      }
-      if (!daysOfWeek.length) {
-        alert('Kamida bitta hafta kunini tanlang.');
-        return;
-      }
-
-      try {
-        const existing = dynamicSchedulesData.find(item => Number(item.id) === editingScheduleId);
-        const res = await fetch('/api/admin/tariff-schedules' + (editingScheduleId ? '/' + editingScheduleId : ''), {
-          method: editingScheduleId ? 'PUT' : 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: JSON.stringify({
-            name,
-            startTime,
-            endTime,
-            pricePerHour,
-            daysOfWeek,
-            start_time: startTime,
-            end_time: endTime,
-            price_per_hour: pricePerHour,
-            days_of_week: daysOfWeek,
-            is_vip: existing?.is_vip || 0,
-            priority: existing?.priority ?? 1
-          })
-        });
-        if (res.ok) {
-          cancelScheduleEdit();
-          await loadDynamicSchedules();
-        } else {
-          const err = await res.json();
-          alert(err.error || 'Tarif qoidasini yaratishda xatolik yuz berdi');
-        }
-      } catch (err) {
-        alert('Server bilan bog\'lanishda xatolik');
-      }
-    }
-
-    async function deleteSchedule(id) {
-      if (!confirm('Ushbu dinamik tarif qoidasini o\'chirmoqchimisiz?')) return;
-      try {
-        const res = await fetch(`/api/admin/tariff-schedules/${id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (res.ok) {
-          if (editingScheduleId === Number(id)) cancelScheduleEdit();
-          await loadDynamicSchedules();
-        } else {
-          const err = await res.json();
-          alert(err.error || 'O\'chirishda xatolik yuz berdi');
-        }
-      } catch (err) {
-        alert('Server bilan bog\'lanishda xatolik');
-      }
+      await window.SoftechRoomPricing?.load({token:authToken,preferredZoneId:typeof selectedZoneId==='undefined'?null:selectedZoneId,refresh:async()=>{await fetchData();}});
     }
 
     // --- TAB 3: CLIENTS & PREPAID TOP-UP ---
@@ -9545,7 +9223,7 @@
 
     function openExtendModal(pcId) {
       const pc = computersData.find(c => c.id === pcId);
-      if (!pc || !pc.activeSession) return;
+      if (!canExtendPcSession(pc)) return;
 
       document.getElementById('extendPcId').value = pcId;
       document.getElementById('extendPcTitle').textContent = pc.name;
@@ -9618,6 +9296,10 @@
     async function handleExtendSubmit(e) {
       e.preventDefault();
       const pcId = document.getElementById('extendPcId').value;
+      if (!canExtendPcSession(computersData.find(c => String(c.id) === String(pcId)))) {
+        closeModal('extendModal');
+        return;
+      }
       const minutes = parseInt(document.getElementById('extMinutesInput').value, 10) || 60;
       const amount = parseFloat(document.getElementById('extAmountInput').value) || 0;
       const paymentTypeEl = document.querySelector('input[name="extPaymentType"]:checked');
@@ -10194,6 +9876,7 @@ async function refreshManagerSetup(){
 }
 refreshManagerSetup();setInterval(refreshManagerSetup,5000);
 </script>
+<link rel="stylesheet" href="/room-pricing.css">
 <script src="/room-pricing.js" defer></script>
 </body>
 </html>

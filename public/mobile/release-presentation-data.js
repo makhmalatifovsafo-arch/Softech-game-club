@@ -1,6 +1,16 @@
 // These releases intentionally open without the full-screen presentation.
 export const presentationlessReleases=['1.3.5','1.3.6'];
 export const releaseNotes={
+ '1.3.8':{
+  title:'Tariflar va klubni sozlash tushunarliroq',
+  intro:'Xona narxlari bitta joyda, sozlash oynalari esa soddaroq.',
+  slides:[
+   {roles:['club_owner','manager'],icon:'🕒',title:'Xona tariflari bitta joyda',text:'Xonani tanlab, vaqt oralig‘i, hafta kunlari va soatlik narxni o‘zgartiring. Oraliq qo‘shish va olib tashlash ham shu yerda. O‘zgarishlar «Tariflarni saqlash» bosilganda qo‘llanadi.',action:'Server → Sozlamalar → Dinamik tariflar'},
+   {roles:['club_owner','manager'],icon:'🛠️',title:'Sozlash ustasi amaldagi narxlarni oladi',text:'Tugatilgan ustani qayta ochganda hozirgi xona tariflari ko‘rinadi. Kompyuterlar soni va yakuniy tekshiruv ham soddalashtirildi. Tariflarni o‘zgartirish uchun xonadagi faol seanslar tugashini kuting.',action:'Server → Sozlamalar → Klubni sozlash'},
+   {roles:['club_owner','manager','administrator'],icon:'🎮',title:'VIP Postpaid uchun ortiqcha tugma yo‘q',text:'VIP Postpaid seansi yopilguncha davom etadi, shuning uchun unga «Vaqt qo‘shish» ko‘rsatilmaydi. Menejer VIP rejimini o‘chirib saqlasa, yangi VIP seans ochish ham to‘xtaydi.',action:'Server yoki mobil dastur → Kompyuterlar'},
+   {roles:['club_owner','manager','administrator'],icon:'🖥️',title:'Kassa oynasini o‘zingizga moslang',text:'Serverdagi dastur oynasini cheti yoki burchagidan ushlab kattalashtirish va kichraytirish mumkin.',action:'Serverdagi dastur oynasining chetidan torting'}
+  ]
+ },
  '1.3.7':{
   title:'Klubni tayyorlash va o‘rganish osonroq',
   intro:'Server dasturida yangi sozlash ustasi, qisqa mashqlar va kerakli joyda yordam.',

@@ -8,6 +8,21 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
   };
   const db=new DatabaseSync(databasePath);db.exec('PRAGMA busy_timeout=5000');
   const previous=(await api('/api/settings')).body.settings;
+  async function rejectsExtension(id,pc) {
+    const before=db.prepare('SELECT * FROM sessions WHERE id=?').get(id);
+    const transactions=db.prepare('SELECT COUNT(*) AS n FROM transactions').get().n;
+    for(const [route,body] of [
+      ['/api/sessions/'+id+'/extend',{additionalMinutes:30}],
+      ['/api/sessions/'+pc+'/extend',{addHours:1}],
+      ['/api/sessions/extend',{sessionId:id,addAmount:10000}]
+    ]) {
+      const result=await api(route,'POST',body);
+      assert.equal(result.status,409,JSON.stringify(result));
+      assert.equal(result.body.code,'POSTPAID_EXTENSION_NOT_ALLOWED');
+    }
+    assert.deepEqual(db.prepare('SELECT * FROM sessions WHERE id=?').get(id),before,'Rejected VIP extension must preserve the entire session');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM transactions').get().n,transactions,'Rejected VIP extension must not collect money');
+  }
   try {
     const room=await api('/api/zones','POST',{name:'Postpaid regression room',tariffs:[{name:'Room 10000',price_per_hour:10000,start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7],is_vip_postpaid_allowed:true}]});
     assert.equal(room.status,201,JSON.stringify(room.body));
@@ -28,12 +43,28 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
       const start=await api('/api/sessions/start','POST',{computerId:pcs[0],mode:'postpaid',paymentType:'POSTPAID'});
       assert.equal(start.status,201,JSON.stringify(start.body));
       const id=start.body.sessionId;
+      await rejectsExtension(id,pcs[0]);
+      const disabled=await api('/api/admin/settings','POST',{vip_enabled:false});
+      assert.equal(disabled.status,200,JSON.stringify(disabled));
+      assert.equal(disabled.body.settings.vip_enabled,false);
+      assert.equal(disabled.body.settings.vip_pricing_mode,mode);
+      assert.equal(disabled.body.settings.vip_custom_price,9000);
+      assert.equal((await api('/api/settings')).body.settings.vip_enabled,false);
+      assert.equal((await api('/api/computers')).body.find(p=>p.id===pcs[1]).isVipPostpaidAllowed,false);
+      for(const body of [{mode:'postpaid'},{mode:'VIP'},{mode:'vip'},{isPostpaid:true},{paymentType:'POSTPAID'}]) {
+        assert.equal((await api('/api/sessions/start','POST',{computerId:pcs[1],...body})).status,403,'All VIP start aliases must respect the club switch');
+      }
+      assert.equal((await api('/api/sessions/start-preview','POST',{computerId:pcs[1],mode:'postpaid'})).status,403);
+      const blockedBatch=await api('/api/sessions/batch-start','POST',{computerIds:[pcs[1]],mode:'VIP'});
+      assert.ok(blockedBatch.status>=400,JSON.stringify(blockedBatch));
+      assert.equal(db.prepare('SELECT current_session_id FROM computers WHERE id=?').get(pcs[1]).current_session_id,null);
       const startedAt=Date.now()-30*60000;
       db.prepare('UPDATE sessions SET started_at=? WHERE id=?').run(new Date(startedAt).toISOString(),id);
       const live=(await api('/api/computers')).body.find(p=>p.id===pcs[0]).activeSession;
       assert.equal(live.isPostpaid,true);assert.equal(live.remainingSeconds,-1);assert.equal(live.billingError,null);
       assert.equal(live.totalAmount,Math.round((live.asOf-startedAt)/3600000*rate));
       assert.ok(live.totalAmount>=rate/2 && live.totalAmount<rate/2+20);
+      assert.equal(db.prepare('SELECT status FROM sessions WHERE id=?').get(id).status,'ACTIVE','Disabling VIP does not close an existing session');
       assert.equal(live.totalWithBar,live.totalAmount);
       assert.equal(db.prepare('SELECT total_amount FROM sessions WHERE id=?').get(id).total_amount,0,'Live bill must not mutate payment history');
       const preview=await api('/api/sessions/'+id+'/checkout-preview');assert.equal(preview.status,200,JSON.stringify(preview.body));
@@ -54,6 +85,8 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
       assert.equal(barPreview.status,200);assert.equal(barPreview.body.isPostpaid,true);
       assert.equal(barPreview.body.barBill,6000);assert.ok(barPreview.body.gameBill>=rate/2);
       assert.equal(barPreview.body.amountToCollect,barPreview.body.gameBill+6000);
+      await rejectsExtension(id,pcs[0]);
+      assert.equal((await api('/api/settings','PUT',{vip_enabled:true})).status,200);
       // A real transfer appends a suffix; generic /stop must still collect a postpaid payment.
       const transfer=await api('/api/sessions/transfer','POST',{fromComputerId:pcs[0],toComputerId:pcs[1]});
       assert.equal(transfer.status,200,JSON.stringify(transfer.body));
@@ -63,6 +96,7 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
       await addBar(pcs[1]);
       const withSecondBar=(await api('/api/computers')).body.find(p=>p.id===pcs[1]).activeSession;
       assert.equal(withSecondBar.isPostpaid,true);assert.equal(withSecondBar.barPendingAmount,12000);
+      await rejectsExtension(id,pcs[1]);
       assert.ok(withSecondBar.totalAmount>=rate/2);
       const stop=await api('/api/sessions/stop','POST',{sessionId:id,paymentType:'CASH'});
       assert.equal(stop.status,200,JSON.stringify(stop.body));
@@ -80,6 +114,7 @@ export async function checkPostpaidFlow({localUrl,token,databasePath}) {
     assert.equal(batch.status,201,JSON.stringify(batch.body));
     const id=db.prepare('SELECT current_session_id AS id FROM computers WHERE id=?').get(pcs[0]).id;
     db.prepare("UPDATE sessions SET started_at=?,notes='BATCH_VIP' WHERE id=?").run(new Date(Date.now()-1800000).toISOString(),id);
+    await rejectsExtension(id,pcs[0]);
     assert.equal((await api('/api/computers')).body.find(p=>p.id===pcs[0]).activeSession.isPostpaid,true);
     db.prepare("UPDATE tariffs SET days_of_week='[]' WHERE zone_id=?").run(room.body.zone.id);
     const missing=(await api('/api/computers')).body.find(p=>p.id===pcs[0]);

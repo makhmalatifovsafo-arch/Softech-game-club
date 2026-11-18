@@ -10,33 +10,8 @@ const source=html.slice(html.indexOf('    // --- TAB 2 CONTINUED:'),html.indexOf
 const browser=await chromium.launch({channel:'msedge',headless:true});
 try {
   const page=await browser.newPage();
-  await page.setContent(markup);
-  await page.locator('#tabContent-tariffs').evaluate(el=>el.classList.remove('hidden'));
-  await page.locator('#dynamicSchedulesList').evaluate(el=>{ for(let node=el;node;node=node.parentElement) node.classList.remove('hidden'); });
-  await page.addScriptTag({content:`let authToken='test',dynamicSchedulesData=[];const requests=[];
-    const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
-    let rules=[{id:1,name:'Day <img src=x>',start_time:'10:00',end_time:'17:00',price_per_hour:7000,days_of_week:[1,2,3,4,5],is_vip:1,priority:4}];
-    window.confirm=()=>true;window.alert=msg=>{throw Error(msg)};
-    window.fetch=async(url,options={})=>{
-      requests.push({url,...options});
-      if(options.method==='PUT'){const body=JSON.parse(options.body);rules=[{id:1,...body}];}
-      if(options.method==='DELETE') rules=[];
-      return {ok:true,json:async()=>rules};
-    };
-    ${source}`});
-  await page.evaluate(()=>loadDynamicSchedules());
-  assert.equal(await page.locator('#dynamicSchedulesList img').count(),0);
-  await page.evaluate(()=>editSchedule(1));
-  assert.equal(await page.locator('#schedRate').inputValue(),'7000');
-  await page.evaluate(()=>{document.getElementById('schedRate').value='9000';document.getElementById('schedSave').click();});
-  await page.waitForFunction(()=>requests.some(r=>r.method==='PUT'));
-  const saved=await page.evaluate(()=>JSON.parse(requests.find(r=>r.method==='PUT').body));
-  assert.equal(saved.price_per_hour,9000);assert.equal(saved.is_vip,1);assert.equal(saved.priority,4);
-  await page.evaluate(()=>editSchedule(1));
-  await page.evaluate(()=>document.getElementById('schedCancel').click());
-  assert.equal(await page.locator('#schedSave').innerText(),'+ Qoidani Saqlash');
-  await page.evaluate(()=>deleteSchedule(1));
-  await page.waitForFunction(()=>document.getElementById('dynamicSchedulesList').textContent.includes('Tarif kiritilmagan'));
+  assert.equal(html.includes('id="generalTariffSettings"'),false);
+  await page.addScriptTag({content:"let authToken='test';"});
   const quote=html.slice(html.indexOf('    function quoteDurationLabel('),html.indexOf('    function setHoursPreset('));
   await page.setContent(['btnSubmitStart','startModalPrice','startModalPerPcPrice','hoursCalculatedMins','startModalDurationSummary','startModalTotalLabel'].map(id=>`<${id==='btnSubmitStart'?'button':'div'} id="${id}"></${id==='btnSubmitStart'?'button':'div'}>`).join(''));
   await page.addScriptTag({content:`let targetSelectedPcIds=['pc'],priceCalculationRevision=0,currentHourlyRate=7000,calcDebounceTimer;
@@ -61,5 +36,5 @@ try {
   await page.waitForFunction(()=>document.getElementById('startModalPrice').textContent.includes('17:00'));
   assert.equal(await page.locator('#btnSubmitStart').isDisabled(),true);
   console.log('PASS member single/group quote uses each room interval price and blocks uncovered times');
-  console.log('PASS tariff editing, preserved priority/VIP, cancel/delete, safe names and missing-time message blocking start');
+  console.log('PASS room quotes block missing-time sessions');
 } finally {await browser.close();}

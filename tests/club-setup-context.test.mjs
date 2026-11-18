@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {clubSetupContext} from '../NetCafeServer/src/services/clubSetupContext.js';
+import {evaluateSetupDraft} from '../NetCafeServer/src/services/clubSetup.js';
+import {connected} from '../NetCafeServer/public/club-setup-model.js';
 function fixture(){
   const db=new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE clubs(id INTEGER,name TEXT); INSERT INTO clubs VALUES(1,'First'),(2,'Other');
@@ -41,5 +43,28 @@ test('setup import IDs remain stable when a different tariff is inserted; invali
     assert.equal(clubSetupContext(db,1).initialDraft.tariffs.find(t=>t.name==='Hour').id,id);
     db.exec("UPDATE zones SET polygon_points='broken' WHERE id=10");assert.throws(()=>clubSetupContext(db,1),{statusCode:422});
     assert.equal(db.prepare('SELECT polygon_points FROM zones WHERE id=10').get().polygon_points,'broken');
+  }finally{db.close();}
+});
+
+test('a registered legacy client without a MAC is ready on desktop and server; stale, mismatched and foreign clients are not',()=>{
+  const db=fixture();try{
+    const now=1800000000000;
+    const legacy={pcId:'first',pcNumber:1,ipAddress:' ::ffff:192.168.1.101 ',macAddress:'',socket:{readyState:1},lastHeartbeat:now};
+    const get=(clients=[legacy],time=now)=>clubSetupContext(db,1,{clients,maxComputers:20,now:time});
+    const initial=get();
+    assert.equal(initial.liveClients[0].mac,'02:00:00:00:00:01');
+    assert.equal(connected(initial.initialDraft.computers[0],initial.liveClients),true);
+    assert.equal(evaluateSetupDraft(initial.initialDraft,{maxComputers:20,liveClients:initial.liveClients,now}).onlineCount,1);
+    for(const patch of [{macAddress:'02:00:00:00:00:02'},{pcId:'other'},{isAlive:false},{socket:{readyState:3}},{lastHeartbeat:now-16000}]){
+      const context=get([{...legacy,...patch}]);
+      assert.equal(connected(context.initialDraft.computers[0],context.liveClients),false,JSON.stringify(patch));
+      assert.equal(evaluateSetupDraft(context.initialDraft,{maxComputers:20,liveClients:context.liveClients,now}).onlineCount,0);
+    }
+    for(const [patch,expected] of [[{pcNumber:2},/PC-2 raqami/],[{ipAddress:'192.168.1.110'},/192\.168\.1\.110/],[{macAddress:'02:00:00:00:00:02'},/MAC/]]){
+      const context=get([{...legacy,...patch}]);
+      const result=evaluateSetupDraft(context.initialDraft,{maxComputers:20,liveClients:context.liveClients,now});
+      assert.match(result.issues.find(i=>i.code==='PC_OFFLINE').message,expected);
+    }
+    assert.equal(db.prepare("SELECT mac_address FROM computers WHERE id='first'").get().mac_address,'02:00:00:00:00:01');
   }finally{db.close();}
 });

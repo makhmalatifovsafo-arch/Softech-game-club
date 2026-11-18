@@ -11,12 +11,13 @@
         MinHeight="600" MinWidth="900"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
+        ResizeMode="CanResize"
         Background="#09090B"
         Icon="app.ico">
 
     <!-- Modern Windows Aero Snap & Resizing Integration -->
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="40"
+        <WindowChrome CaptionHeight="46"
                       ResizeBorderThickness="6"
                       GlassFrameThickness="0"
                       CornerRadius="0" />
@@ -68,6 +69,19 @@
         </Style>
     </Window.Resources>
 
+    <!-- Keep the native WebView2 child HWND away from the resize border.
+         Otherwise it consumes pointer events on the left/right/bottom edges. -->
+    <Border x:Name="ResizeFrame" Background="#09090B" BorderBrush="#27272A">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="BorderThickness" Value="6" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                        <Setter Property="BorderThickness" Value="0" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
     <!-- Main Grid -->
     <Grid Background="#09090B">
         <Grid.RowDefinitions>
@@ -213,4 +227,5 @@
             </Grid>
         </Grid>
     </Grid>
+    </Border>
 </Window>

@@ -76,11 +76,16 @@ function Write-OtaZip([string]$Folder,[string]$Destination) {
 Write-OtaZip $client (Join-Path $releaseDir 'SoftechClient.zip')
 Write-OtaZip $server (Join-Path $releaseDir 'SoftechServer.zip')
 $assetBase = "https://github.com/$Repository/releases/download/v$Version"
+$notes = Get-Content -LiteralPath (Join-Path $projectRoot 'RELEASE-NOTES.txt') -Raw -Encoding UTF8
+$releaseEntry = ($notes -split '(?:\r?\n){2}', 2)[0].Trim()
+if ($releaseEntry -notmatch ('^\d{4}-\d{2}-\d{2}: ' + [regex]::Escape($Version) + '(?:\s|$)')) {
+    throw "RELEASE-NOTES.txt must start with notes for $Version."
+}
 $manifest = @{
     version=$Version; releaseDate=(Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
     client=@{ downloadUrl="$assetBase/SoftechClient.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechClient.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
     server=@{ downloadUrl="$assetBase/SoftechServer.zip"; sha256=(Get-FileHash -LiteralPath (Join-Path $releaseDir 'SoftechServer.zip') -Algorithm SHA256).Hash.ToLowerInvariant() }
-    changelog='Server resilience, paid session continuity, safe settings recovery, diagnostics, emergency timed sessions and bounded update storage. Install ServerSetup once for the independent Windows service. Cloud diagnostics require the 20261113_server_diagnostics.sql migration.'
+    changelog=($releaseEntry -replace '\r?\n', ' ')
 }
 [IO.File]::WriteAllText((Join-Path $releaseDir 'version.json'), ($manifest | ConvertTo-Json -Depth 10), $utf8)
 # Build bootstrap installers from the exact same versioned payloads.

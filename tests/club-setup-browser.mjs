@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {emptySetupDraft,normalizeSetupDraft,evaluateSetupDraft} from '../NetCafeServer/src/services/clubSetup.js';
 const root=resolve('NetCafeServer/public');
 let state={installationKind:'NEW',revision:0,draft:emptySetupDraft()},delay=0,failSave=false,failRead=false;
-let live=[1,2].map(number=>({number,ip:'192.168.1.'+(100+number),mac:'02:00:00:00:00:0'+number,connected:true,lastHeartbeat:Date.now()}));
+let live=[1,2,3].map(number=>({number,ip:'192.168.1.'+(100+number),mac:'02:00:00:00:00:0'+number,connected:true,lastHeartbeat:Date.now()}));
 let baseline=emptySetupDraft();const writes=[];
 const fingerprint='a'.repeat(64);let activeSessions=2,loseCompletion=false,receipt=null,applyCount=0,completionRequests=[];
 let gateRequired=false,gateError=false;
@@ -72,7 +72,7 @@ try{
   const points=await page.locator('#roomMapHost svg').evaluate(svg=>[new DOMPoint(40,40),new DOMPoint(400,300)].map(p=>{const q=p.matrixTransform(svg.getScreenCTM());return {x:q.x,y:q.y};}));
   await page.mouse.move(points[0].x,points[0].y);await page.mouse.down();await page.mouse.move(points[1].x,points[1].y,{steps:8});await page.mouse.up();
   assert.equal(await page.locator('#roomList button').count(),1);
-  await page.locator('#roomEditor [name=name]').fill('Oddiy zal');await page.locator('#expectedComputers').fill('2');await saved();
+  await page.locator('#roomEditor [name=name]').fill('Oddiy zal');await saved();
   assert.equal(state.draft.rooms[0].width,360);assert.equal(state.draft.rooms[0].height,260);
   await page.locator('#addRoom').click();await page.locator('#roomEditor [name=name]').fill('VIP xona');await saved();
   await layout();
@@ -88,13 +88,19 @@ try{
   mkdirSync('.test-output/setup-ui',{recursive:true});
   await page.screenshot({path:'.test-output/setup-ui/01-rooms.png',fullPage:true});
   await page.locator('#nextStep').click();await page.locator('#computersStage').waitFor({state:'visible'});
-  await page.locator('#fillComputers').click();await saved();assert.equal(state.draft.computers.length,2);
+  await page.locator('#computerQuantity').fill('2');await page.locator('#fillComputers').click();await saved();assert.equal(state.draft.computers.length,2);
+  await page.locator('#addComputer').click();await saved();assert.equal(state.draft.computers.length,3);assert.equal(state.draft.expectedComputers,3);
   const ids=state.draft.computers.map(c=>c.id);
   await page.locator(`[data-pc="${ids[0]}"]`).click();await page.locator('#bindClient').selectOption('1');await saved();
   await page.locator(`[data-pc="${ids[1]}"]`).click();assert.equal(await page.locator('#bindClient option[value="1"]').isDisabled(),true);
   await page.locator('#bindClient').selectOption('2');await page.locator('#pcEditor [name=roomId]').selectOption(state.draft.rooms[0].id);await saved();
+  await page.locator(`[data-pc="${ids[2]}"]`).click();await page.locator('#bindClient').selectOption('3');await saved();
   const x=state.draft.computers[1].x;await page.locator(`[data-map-pc="${ids[1]}"]`).focus();await page.keyboard.press('ArrowRight');await saved();assert.equal(state.draft.computers[1].x,x+10);
-  assert.equal(state.draft.computers.length,2);assert.match(await page.locator('#liveStatus').innerText(),/2 ta/);
+  assert.equal(state.draft.computers.length,3);assert.match(await page.locator('#liveStatus').innerText(),/3 ta/);
+  assert.equal(await page.locator('#nextStep').isEnabled(),true,'third PC and automatically placed coordinates must not block Next');
+  // Removing a draft-only PC also updates the total, then adding it restores it.
+  await page.locator(`[data-pc="${ids[2]}"]`).click();await page.locator('[data-delete-pc]').click();await page.locator('#acceptConfirm').click();await saved();
+  assert.equal(state.draft.expectedComputers,2);await page.locator('#addComputer').click();await page.locator('#bindClient').selectOption('3');await saved();assert.equal(state.draft.expectedComputers,3);
   await layout();
   await page.locator('#nextStep').click();await page.locator('#tariffsStage').waitFor({state:'visible'});
   await page.locator('#tariffRoom').selectOption(state.draft.rooms[0].id);
@@ -109,10 +115,12 @@ try{
   await page.screenshot({path:'.test-output/setup-ui/03-tariffs.png',fullPage:true});
   await page.locator('#nextStep').click();await page.locator('#reviewStage').waitFor({state:'visible'});await saved();
   assert.match(await page.locator('#reviewChecks').innerText(),/o‘tdi/);assert.match(await page.locator('#draftChanges').innerText(),/Yangi/);
+  assert.match(await page.locator('#draftChanges').innerText(),/Har kuni · 24 soat/);
+  assert.doesNotMatch(await page.locator('#draftChanges').innerText(),/Oldin:|Qoralama:|MAC|STANDARD/);
   assert.equal(await page.locator('#nextStep').isVisible(),false);
   assert.equal(await page.locator('#completeSetup').isDisabled(),true,'active sessions prevent reconfiguration');
   const readyDraft=structuredClone(state.draft);
-  await page.reload();await page.locator('#reviewStage').waitFor({state:'visible'});assert.equal(state.draft.computers.length,2);
+  await page.reload();await page.locator('#reviewStage').waitFor({state:'visible'});assert.equal(state.draft.computers.length,3);
   for(const viewport of [{width:1366,height:768},{width:1024,height:600},{width:390,height:844}]){
     await page.setViewportSize(viewport);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,JSON.stringify(viewport));
@@ -141,7 +149,30 @@ try{
   baseline=structuredClone(state.draft);baseline.step='rooms';state={installationKind:'EXISTING',revision:0,draft:emptySetupDraft()};
   const beforeWrites=writes.length;await page.reload();await page.locator('#roomsStage').waitFor({state:'visible'});
   await page.waitForTimeout(800);assert.equal(writes.length,beforeWrites);assert.equal(await page.locator('#roomList button').count(),2);
+  assert.match(await page.locator('#sourceNotice').innerText(),/avval saqlangan 2 ta xona va 3 ta PC/);
+  assert.equal(await page.locator('[data-delete-room]').isDisabled(),true);
   await page.locator('#saveDraft').click();await saved();assert.deepEqual(state.draft,baseline);
+  // Old drafts kept an unrelated planned count. Reopening and saving reconciles
+  // that count without removing the third PC or changing existing room geometry.
+  state.draft.expectedComputers=2;state.draft.step='computers';
+  const existingPcs=structuredClone(state.draft.computers);
+  await page.reload();await page.locator('#computersStage').waitFor({state:'visible'});
+  await page.locator('#saveDraft').click();await saved();
+  assert.equal(state.draft.expectedComputers,3);assert.deepEqual(state.draft.computers,existingPcs);
+  assert.equal(await page.locator('#nextStep').isEnabled(),true);
+  assert.equal(await page.locator('[data-delete-pc]').isDisabled(),true);
+  // A completed wizard must import the CURRENT room prices when reopened,
+  // not the old completed draft (which may predate settings edits).
+  baseline=structuredClone(state.draft);baseline.step='tariffs';baseline.tariffs[0].price_per_hour=9000;
+  state.appliedDraft=true;state.completedAt=new Date().toISOString();state.draft.tariffs[0].price_per_hour=12000;
+  await page.reload();await page.locator('#tariffsStage').waitFor({state:'visible'});
+  await page.locator('#tariffRoom').selectOption(baseline.rooms[0].id);
+  assert.equal(await page.locator('[name=price_per_hour]').inputValue(),'9000');
+  const beforeImport=writes.length;await page.waitForTimeout(800);assert.equal(writes.length,beforeImport,'reopen is read-only');
+  await page.locator('#saveDraft').click();await saved();assert.equal(state.draft.tariffs[0].price_per_hour,9000);
+  state.appliedDraft=false;state.draft.tariffs[0].price_per_hour=8500;
+  await page.reload();await page.locator('#tariffsStage').waitFor({state:'visible'});
+  assert.equal(await page.locator('[name=price_per_hour]').inputValue(),'8500','unfinished edits still resume');
   const denied=await browser.newContext();const deniedPage=await denied.newPage();await deniedPage.goto(origin+'/club-setup.html');await deniedPage.locator('#loadError').waitFor({state:'visible'});
   assert.equal(await deniedPage.locator('#workspace').isVisible(),false);await denied.close();
   // All-day coverage is mandatory, not merely an advisory warning.

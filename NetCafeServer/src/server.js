@@ -1,5 +1,6 @@
 import { deliverScreenMessage } from './services/screenMessages.js';
 import { ClubSetupDrafts, evaluateSetupDraft, setupLiveClients } from './services/clubSetup.js';
+import { roomTariffState, saveRoomTariffs } from './services/roomTariffs.js';
 import { clubSetupContext } from './services/clubSetupContext.js';
 import { clubSetupStatus, finalizeClubSetup } from './services/clubSetupFinalize.js';
 import { UpdateProbation } from './services/updateProbation.js';
@@ -1077,6 +1078,15 @@ function handleRequest(req, res) {
 
   // 9c. GET /api/zones/:id/tariffs — Xonaning barcha tariflari
   const zoneTariffsMatch = url.pathname.match(/^\/api\/zones\/(\d+)\/tariffs$/);
+  if (zoneTariffsMatch && req.method === 'PUT') {
+    if (!authenticate(req, res, { roles:['superadmin','club_owner'], permission:'tariffs:manage' })) return;
+    const clubId=getTenantClubId(req)||1,zoneId=Number(zoneTariffsMatch[1]);
+    readBody(req,body=>{
+      try { const result=saveRoomTariffs(db,clubId,zoneId,body);broadcastAdminUpdate();sendJson(res,200,{success:true,...result}); }
+      catch(error){sendJson(res,error.statusCode||400,{error:error.message});}
+    });
+    return;
+  }
   if (zoneTariffsMatch && req.method === 'GET') {
     if (!authenticate(req, res, { allowExpiredClub: true })) return;
     const clubId = getTenantClubId(req) || 1;
@@ -1101,6 +1111,7 @@ function handleRequest(req, res) {
       }));
 
       sendJson(res, 200, {
+        ...roomTariffState(db,clubId,zoneId),
         success: true,
         zone,
         tariffs: formattedTariffs
@@ -1159,6 +1170,7 @@ function handleRequest(req, res) {
         try {
           const resZone = insertZone.run(clubId, name, validZoneType, parseInt(x, 10) || 40, parseInt(y, 10) || 40, parseInt(width, 10) || 360, parseInt(height, 10) || 240, color, polyStr);
           createdZoneId = Number(resZone.lastInsertRowid);
+          if(body.tariffSource==='ROOM')db.prepare("UPDATE zones SET tariff_source='ROOM' WHERE id=? AND club_id=?").run(createdZoneId,clubId);
 
           intervalsToSave.forEach((t, i) => {
             const tariffId = `trf_z${createdZoneId}_${i + 1}_${Date.now().toString(36)}`;
@@ -1720,7 +1732,7 @@ function handleRequest(req, res) {
         roomType: pc.room_type ?? null,
         currentRate: currentRateInfo.pricePerHour,
         currentRateName: currentRateInfo.name,
-        isVipPostpaidAllowed: currentRateInfo.isVipPostpaidAllowed !== false,
+        isVipPostpaidAllowed: getClubSettings(pc.club_id || clubId || 1).vip_enabled && currentRateInfo.isVipPostpaidAllowed !== false,
         isVisible: pc.is_visible ?? 1,
         barPendingAmount: barPending,
         totalWithBar: billingError ? null : (pc.session_id ? gameAmount : 0) + barPending,
@@ -2265,6 +2277,11 @@ function handleRequest(req, res) {
 
         if (clubId !== null && sessionRow.club_id && sessionRow.club_id !== clubId) {
           sendJson(res, 403, { error: 'Boshqa klubga tegishli seansni uzaytirish taqiqlangan.' });
+          return;
+        }
+
+        if (isPostpaidSession(sessionRow)) {
+          sendJson(res, 409, { code: 'POSTPAID_EXTENSION_NOT_ALLOWED', error: 'VIP Postpaid seansi vaqt bilan cheklanmagan. Unga vaqt qo‘shilmaydi.' });
           return;
         }
 

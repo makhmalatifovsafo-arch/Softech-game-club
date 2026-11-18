@@ -57,7 +57,7 @@ Barcha sinovlar alohida test bazalarida bajarildi. Usta UI hali yo‘qligi sabab
 
 - `public/club-setup.html`, `.css`, `.js` va `club-setup-model.js`: qora/yashil, tashqi kutubxona yoki internetga bog‘liq bo‘lmagan alohida ekran.
 - Xonalar: sichqoncha bilan to‘rtburchak chizish, nom/tur/o‘lcham/joylashuv, sudrash va klaviatura strelkalari, tanlangan xonaga yaqinlashish. Mavjud ko‘pburchak shakli saqlanadi; uning cho‘qqilarini tahrirlash bu ustaga qo‘shilmagan.
-- Kompyuterlar: rejalangan son, mavjudlarini saqlagan holda yetishmayotganlarini qo‘shish, xona va xaritadagi joy, IP/MAC, haqiqiy ulangan clientdan tanlash. Tanlash yangi PC yaratmaydi; bir clientni ikki PC’ga bog‘lash rad etiladi.
+- Kompyuterlar: xona va qo‘shiladigan sonni tanlash, mavjudlarini saqlagan holda yangi PC’lar qo‘shish, xaritadagi joy, IP/MAC, haqiqiy ulangan clientdan tanlash. Umumiy son ro‘yxatdan olinadi; alohida «reja» kiritilmaydi. Tanlash yangi PC yaratmaydi; bir clientni ikki PC’ga bog‘lash rad etiladi.
 - Tariflar: xonaga tegishli vaqt oralig‘ini qo‘shish/o‘chirish, nom, hafta kunlari, 24 soatlik vaqt maydonlari, soatlik narx va VIP Postpaid ruxsati.
 - Serverning mavjud tekshiruvlari “Keyingi” holatini belgilaydi. Client ulanishi tugallanmagan bo‘lsa ham tariflarni tayyorlash mumkin; barcha clientlar ulanganligi yakuniy tayyorlik talabidir.
 - Qoralama tahrirdan keyin avtomatik saqlanadi. Yozish davomida fokus saqlanadi, kechikkan javob yangi matnni bosmaydi. Xatoda aniq saqlanmagan holat, takror urinish, to‘qnashuvda qoralamani yuklab olish va server nusxasiga tasdiq bilan qaytish bor.
@@ -120,7 +120,26 @@ Tekshiruv: `node tests/onboarding-browser.mjs` haqiqiy kassa HTML maketi bilan E
 
 ## Keyingi bosqichda aniqlashtiriladigan tafsilotlar
 
+2026-11-18: foydalanuvchining VM sinovidan keyingi tuzatishlar:
+
+- Avvalgi o‘rnatishdagi xona va PC’lar saqlanadi; ularning qayerdan olingani ustada aniq yoziladi. Yangi klubga namuna xona yoki PC yaratilmaydi.
+- PC qo‘shish/o‘chirish bilan umumiy son birga yangilanadi. Eski qoralamadagi alohida rejalangan son ochilganda ro‘yxatga moslanadi; faqat saqlash/tahrirdan keyin qoralamaga yoziladi.
+- Xona o‘lchamlari va PC koordinatalari 10 ga karrali bo‘lishi shart emas: avtomatik joylashtirish hosil qilgan koordinata «Keyingi»ni bloklamaydi.
+- Ulangan eski client MAC yubormasa, aynan o‘sha bazadagi PC’ning avval saqlangan MAC manzili ishlatiladi. Jonli socket, to‘g‘ri raqam/IP, tenant va heartbeat talabi saqlangan. Client yangi MAC yuborsa, u ustun turadi. Mos kelmaslik sababi alohida ko‘rsatiladi.
+- «Tekshirish» xona nomi, PC soni, hafta kunlari, vaqt va narxni ko‘rsatadi; koordinata va oldin/keyin texnik matnlari olib tashlandi. Amaldagi PC/xonani o‘chirish tugmasi o‘chiq, yangi qoralama elementlarini o‘chirish mumkin.
+- Launcher chetida WebView2 qoplamaydigan 6 px joy ajratildi. Windows yon/past chetlar va burchaklardan o‘lcham o‘zgartiradi; maksimal holatda shu joy olib tashlanadi.
+- Tekshiruv: 18 ta setup unit testi, izolyatsiyalangan brauzer testi, ikkala bulut nusxasi bilan haqiqiy server/WebSocket integratsiyasi, launcher Release build va haqiqiy XAML + native child oynasi bilan resize sinovi o‘tdi. Klub kompyuteridagi yakuniy setup.exe bilan LAN sinovi alohida bajarilishi kerak.
+
 - Xona chizish uchun biznes amallaridan ajratilgan SVG tahrirlagich tanlandi. Bir xil geometriya ma’lumotlari ishlatiladi, mavjud kassa xaritasi qayta tuzilmagan.
 - Ish kunlari/soatlarini alohida cheklash hozir qo‘shilmaydi: foydalanuvchi barcha klublarga 24/7 talabini tasdiqladi.
 - Ulangan clientdan tanlash qoralamada raqam/IP/MACni birga yangilaydi. Amaldagi PC ID yakunlashda saqlanadi; MAC maydoni bo‘sh bo‘lsa avval avtomatik topilgan MAC yo‘qotilmaydi.
 - Installerning oxirgi oynasi faqat dastur tayyorligini tushuntiradi; klub qoralamasi setup.exe ichida saqlanmaydi.
+
+2026-11-18: tariflarni bitta xona muharririga birlashtirish:
+
+- Server sozlamalarida faqat «Xonaga alohida tarif» muharriri qoldi: ustadagi kabi kunlar, boshlanish/tugash, narx va VIP ruxsati kartochkalarda tahrirlanadi. Qo‘shish/o‘chirish «Tariflarni saqlash» bosilmaguncha bazaga yozilmaydi.
+- 2D xaritada xona nomi/rangini saqlash tariflarni qayta yaratmaydi va hafta kunlarini o‘zgartirmaydi. Yangi xona bo‘sh tarif bilan yaratiladi; soxta 12 000/18 000 narxlar qo‘yilmaydi.
+- Xona jadvali bitta tranzaksiyada saqlanadi. Eski tarif IDlari tarix uchun saqlanadi; boshqa oynadagi yangi nusxa ustiga eski nusxa yozilmaydi. Faol seansli xonada narxni almashtirish bloklanadi.
+- Oxirgi oraliq o‘chirilganda eski umumiy narx yashirincha qaytmaydi. `zones.tariff_source=ROOM` bu holatni ajratadi. Yangilanish mavjud umumiy tariflardan foydalanayotgan eski xonalarning hisobini o‘zgartirmaydi.
+- Tugatilgan usta qayta ochilganda amaldagi xona tariflarini o‘qiydi. Tugatilmagan tahrir qoralamasi esa avvalgidek davom ettiriladi.
+- Sinovlar: `room-tariffs.test.mjs`, `prepaid-flow.mjs`, `room-pricing-browser.mjs`, `tariff-browser.mjs`, `club-setup-browser.mjs` — ajratilgan bazalar va loopback serverlarda; real klublarga so‘rov yuborilmaydi.

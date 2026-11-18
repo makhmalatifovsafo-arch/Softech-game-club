@@ -15,12 +15,25 @@ export async function checkPrepaidFlow({localUrl,token,databasePath}) {
       const added=await api('/api/admin/computers','POST',{name:'Prepaid-'+i,pcNumber:973+i});assert.equal(added.status,201);
       pcs.push(added.body.computer.id);db.prepare('UPDATE computers SET zone_id=? WHERE id=?').run(room.body.zone.id,pcs[i]);
     }
-    // Settings edits the existing room tariff by ID, not the unrelated global schedule.
-    const roomTariff=db.prepare("SELECT * FROM tariffs WHERE zone_id=? AND type='HOURLY'").get(rooms[0]);
+    // The unified room editor persists one batch and the real session API reads it.
+    const editRoute='/api/zones/'+rooms[0]+'/tariffs';
+    const current=(await api(editRoute)).body;
+    assert.equal((await fetch(localUrl+editRoute,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:current.revision,tariffs:[]})})).status,401);
+    const edited=await api(editRoute,'PUT',{revision:current.revision,tariffs:current.tariffs.map(t=>({...t,price_per_hour:8000}))});
+    assert.equal(edited.status,200,JSON.stringify(edited.body));
+    assert.equal((await api('/api/tariffs/calculate','POST',{computerId:pcs[0],durationHours:1})).body.price,8000);
+    assert.equal((await api(editRoute,'PUT',{revision:current.revision,tariffs:[]})).status,409);
+    assert.equal((await api('/api/zones/'+rooms[0],'PUT',{name:'Renamed room',zoneType:'STANDARD',color:'#38bdf8'})).status,200);
+    assert.equal((await api(editRoute)).body.tariffs[0].price_per_hour,8000,'room appearance edits never replace rates');
+    assert.equal((await api(editRoute,'PUT',{revision:edited.body.revision,tariffs:edited.body.tariffs.map(t=>({...t,price_per_hour:7000}))})).status,200);
+    // Older clients can still edit the room tariff through the compatible API.
+    const roomTariff=db.prepare("SELECT * FROM tariffs WHERE zone_id=? AND type='HOURLY' AND is_active=1").get(rooms[0]);
     db.prepare('UPDATE tariffs SET price_per_hour=12000 WHERE id=?').run(roomTariff.id);
     const oldSession=await api('/api/sessions/start','POST',{computerId:pcs[0],mode:'hours',durationMinutes:60,paymentType:'CASH'});
     assert.equal(oldSession.status,201);assert.equal(oldSession.body.amount,12000);
     const oldRow=db.prepare('SELECT * FROM sessions WHERE id=?').get(oldSession.body.sessionId);
+    const busy=(await api(editRoute)).body;
+    assert.equal((await api(editRoute,'PUT',{revision:busy.revision,tariffs:[]})).status,409,'editor must not change active-session rates');
     const update=await api('/api/admin/tariffs','PUT',{tariffs:[{id:roomTariff.id,price_per_hour:7000}]});assert.equal(update.status,200);
     const preserved=db.prepare('SELECT * FROM sessions WHERE id=?').get(oldRow.id);
     for(const field of ['tariff_id','paid_amount','total_amount','started_at','ends_at'])assert.equal(preserved[field],oldRow[field]);

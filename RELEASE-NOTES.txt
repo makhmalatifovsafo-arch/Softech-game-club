@@ -1,3 +1,19 @@
+2026-11-18: 1.3.8 room tariffs and setup corrections
+- Use one room tariff editor in Server settings, with time ranges, weekdays,
+  hourly prices, VIP permissions and add/remove actions matching the setup wizard.
+- Save room schedules atomically, retain historical tariff records and reject
+  stale edits or changes to rooms with active sessions. Deleting the last interval
+  no longer reactivates a hidden old general price.
+- Reopening a completed setup wizard imports current room settings. Editing a
+  room's name or colour no longer overwrites its tariff prices or weekdays.
+- Simplify PC counts and final setup review, preserve existing test installations,
+  and recognise connected older clients that do not send a MAC in their handshake.
+- Keep Save usable when VIP Postpaid is disabled and hide time-extension actions
+  for VIP Postpaid sessions in both desktop and mobile panels.
+- Restore resizing the cashier window by dragging its edges and corners.
+- Include version-matched Server/Client installers and OTA archives. Existing
+  club credentials, balances, sessions and configuration are not bundled.
+
 2026-11-17: 1.3.7 guided club setup and practical introduction
 - Set Server, Client, cloud panels and Windows installer metadata to 1.3.7.
 - New clubs receive a manager-only setup wizard for rooms, connected computers

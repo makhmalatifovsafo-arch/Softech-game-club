@@ -14,7 +14,7 @@ try{
   Object.assign(window,{currentZoneFilter:'ALL',pcSearchQuery:'',selectedPcIds:new Set(),isMainLayoutEdit:false,currentCtxPcId:null,calls:[],escapeHtml:s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';'),formatTime:()=> '00:10:00',sessionBillLabel:()=> '7000',postpaidTimeLabel:()=> '00:10:00',handleCardClick(){}});
   for(const name of ['openStartModal','openExtendModal','requestStopSession','openTransferModal','openMessageModal','openPcBarOrder','openPowerMenu','setPowerActionChoice'])window[name]=(...args)=>calls.push([name,...args]);
  });
- for(const name of ['openPcActions','startPcSession','pcActionsHtml','openContextMenu','closeContextMenu','handleCtxTransfer','handleCtxSendMessage','handleCtxStartSession','handleCtxPower','renderPcTable','renderComputers'])await page.addScriptTag({content:fn(name)});
+ for(const name of ['canExtendPcSession','openPcActions','startPcSession','pcActionsHtml','openContextMenu','closeContextMenu','handleCtxTransfer','handleCtxSendMessage','handleCtxStartSession','handleCtxPower','renderPcTable','renderComputers'])await page.addScriptTag({content:fn(name)});
  await page.evaluate(()=>{renderComputers(computersData);renderPcTable(computersData);});
  for(const selector of ['#pc-card-pc-off','#pcTableBody tr[data-pc-id="pc-off"]']){
   const card=page.locator(selector);assert.equal(await card.getByRole('button',{name:'Seans ochish',exact:true}).count(),1);assert.doesNotMatch(await card.innerText(),/WoL/);
@@ -29,6 +29,16 @@ try{
   assert.equal(await page.locator('#ctxBtnWol').isVisible(),false);assert.equal(await page.locator('#ctxBtnShutdown').isVisible(),true);
   await page.locator('#ctxActiveSessionGroup button').first().click();assert.deepEqual(await page.evaluate(()=>calls.at(-1)),['openPcBarOrder','pc-busy']);
  }
+ await page.evaluate(()=>{computersData[2].activeSession.isPostpaid=true;renderComputers(computersData);renderPcTable(computersData);});
+ for(const selector of ['#pc-card-pc-busy','#pcTableBody tr[data-pc-id="pc-busy"]']){
+  assert.equal(await page.locator(selector).getByRole('button',{name:'+ Vaqt',exact:true}).count(),0);
+  await page.locator(selector).getByRole('button',{name:'Kompyuter amallari',exact:true}).click();
+  assert.equal(await page.locator('#ctxExtendGroup').isVisible(),false);
+  assert.equal(await page.locator('#ctxActiveSessionGroup').isVisible(),true);
+ }
+ await page.evaluate(()=>{computersData[2].activeSession.isPostpaid=false;renderComputers(computersData);renderPcTable(computersData);openContextMenu('pc-busy',10,10);});
+ assert.equal(await page.locator('#ctxExtendGroup').isVisible(),true);
+ assert.equal(await page.locator('#pc-card-pc-busy').getByRole('button',{name:'+ Vaqt',exact:true}).count(),1);
  await page.locator('#pcTableBody tr[data-pc-id="pc-on"]').click({button:'right'});assert.equal(await page.evaluate(()=>currentCtxPcId),'pc-on');
  assert.deepEqual(errors,[]);console.log('PASS real grid/table share map menu, offline primary starts a session, wake-only stays in menu, active bar action targets same PC');
 }finally{await browser.close();}

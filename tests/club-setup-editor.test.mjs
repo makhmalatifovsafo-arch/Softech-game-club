@@ -5,6 +5,7 @@ import {emptySetupDraft,normalizeSetupDraft,evaluateSetupDraft} from '../NetCafe
 function sample(){return {...emptySetupDraft(),expectedComputers:2,rooms:[{id:'r',name:'Zal',type:'STANDARD',x:0,y:0,width:400,height:300}]};}
 test('setup editor places distinct PCs, binds without duplicates and moves room contents together',()=>{
   const draft=sample(),a=addComputer(draft),b=addComputer(draft);
+  assert.equal(draft.expectedComputers,2);
   assert.equal(a.number,1);assert.equal(b.number,2);assert.ok(inside(a,draft.rooms[0]));assert.notEqual(a.x,b.x);
   bindClient(draft,a.id,{number:1,ip:'192.168.1.1',mac:'02:00:00:00:00:01',connected:true});
   assert.equal(draft.computers.length,2);
@@ -29,4 +30,5 @@ test('setup review identifies additions, edits and removals; offline PCs do not 
   const readiness={issues:[{step:'computers',code:'PC_OFFLINE'},{step:'computers',code:'PC_IP'}]};
   assert.deepEqual(stepProblems(readiness,'computers').map(i=>i.code),['PC_IP']);
   assert.deepEqual(draftChanges(baseline,baseline),[]);
+  assert.deepEqual(stepProblems({issues:[{step:'computers',code:'PC_COUNT'}]},'rooms'),[],'room design does not require an independent PC plan');
 });

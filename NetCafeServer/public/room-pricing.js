@@ -1,103 +1,95 @@
-// Settings and the floor map edit the same room tariff records.
-window.SoftechRoomPricing = (() => {
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let options, rooms = [], selected = null, revision = 0;
-  const dayNames = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
-  const days = values => { try { return (typeof values === 'string' ? JSON.parse(values) : values) || [1,2,3,4,5,6,7]; } catch { return []; } };
-  const period = tariff => `${tariff.start_time || '00:00'}–${tariff.end_time || '00:00'} · ${days(tariff.days_of_week).map(d => dayNames[d - 1]).filter(Boolean).join(', ')}`;
-
-  async function api(path, method = 'GET', body) {
-    const response = await fetch(path, { method, headers: { Authorization: 'Bearer ' + options.token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), cache: 'no-store' });
-    const result = await response.json();
-    if (!response.ok) throw Error(result.error || 'Tariflarni yuklab bo‘lmaydi.');
-    return result;
+// The same room records used by the setup wizard and the session quote engine.
+window.SoftechRoomPricing=(()=>{
+  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const days=['Du','Se','Ch','Pa','Ju','Sh','Ya'];
+  const parseDays=value=>{try{return typeof value==='string'?JSON.parse(value):value??[1,2,3,4,5,6,7];}catch{return [];}};
+  let options,rooms=[],selected=null,states=new Map(),sequence=0,saving=false;
+  const root=()=>document.getElementById('roomPricingSettings');
+  const status=(message,error=false)=>{const el=root()?.querySelector('[data-status]');if(el){el.textContent=message;el.classList.toggle('rp-error',error);}};
+  async function api(path,method='GET',body){
+    const response=await fetch(path,{method,headers:{Authorization:'Bearer '+options.token,'Content-Type':'application/json'},cache:'no-store',signal:AbortSignal.timeout(12000),...(body?{body:JSON.stringify(body)}:{})});
+    const result=await response.json();if(!response.ok)throw Error(result.error||'Tariflarni olishda xatolik.');return result;
   }
-
-  function render() {
-    const root = document.getElementById('roomPricingSettings');
-    const general = document.getElementById('generalTariffSettings');
-    if (!root || !general) return;
-    general.hidden = false;
-    const room = rooms.find(r => String(r.id) === selected);
-    root.innerHTML = `<div class="flex items-start justify-between gap-4"><div><h4 class="text-sm font-bold text-white">Xonaga alohida tarif</h4><p class="text-xs text-zinc-400 mt-1">Faqat tanlangan xona uchun umumiy jadvaldan farqli vaqt va narx belgilang.</p></div><span class="text-[10px] text-sky-300 border border-sky-500/30 rounded-full px-2 py-1 whitespace-nowrap">Ixtiyoriy</span></div><label class="block text-xs font-semibold text-zinc-300 mt-4">Xonani tanlang<select id="pricingRoom" class="block w-full mt-2 p-3 rounded-xl bg-zinc-900 border border-zinc-700">${rooms.map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><div id="roomPricingRows" class="space-y-2 mt-3"></div>`;
-    const select = root.querySelector('#pricingRoom');
-    const list = root.querySelector('#roomPricingRows');
-    if (!rooms.length) {
-      select.disabled = true;
-      list.innerHTML = '<p class="text-xs text-zinc-400">Hali xona yaratilmagan. Yuqoridagi umumiy dinamik tariflar ishlaydi.</p>';
-      return;
-    }
-    select.value = selected;
-    select.onchange = () => { selected = select.value; render(); };
-    if (!room) return;
-    list.innerHTML = `<p class="text-sm text-sky-300">${esc(room.name)} · Hozir: ${room.currentRate == null ? 'tarif belgilanmagan' : Number(room.currentRate).toLocaleString() + ' so‘m/soat'} · ${esc(room.currentRateName || '')}</p>`;
-    const tariffs = (room.tariffs || []).filter(t => t.type === 'HOURLY' && t.is_active !== 0);
-    for (const tariff of tariffs) {
-      const row = document.createElement('div');
-      row.className = 'p-3 rounded-xl bg-zinc-900 border border-zinc-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
-      row.innerHTML = `<div><strong class="text-white">${esc(tariff.name)}</strong><p class="text-xs text-zinc-400">${esc(period(tariff))}</p><p class="text-emerald-400 font-bold">${Number(tariff.price_per_hour).toLocaleString()} so‘m/soat</p></div><button type="button" class="px-3 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg whitespace-nowrap" data-edit-room-rate>To‘liq tahrirlash</button>`;
-      row.querySelector('button').onclick = () => edit(room, tariff);
-      list.append(row);
-    }
-    if (!tariffs.length) list.innerHTML += '<p class="text-xs text-zinc-400 p-2">Bu xona yuqoridagi umumiy dinamik tariflardan foydalanadi.</p>';
-  }
-
-  function edit(room, tariff) {
-    const dialog = document.createElement('dialog');
-    dialog.className = 'bg-zinc-900 text-white rounded-2xl p-6 border border-zinc-600';
-    dialog.style.width = 'min(560px,92vw)';
-    const activeDays = new Set(days(tariff.days_of_week));
-    const dayInputs = dayNames.map((label, index) => `<label class="flex items-center justify-center gap-1.5 p-2 rounded-lg bg-zinc-800 border border-zinc-700 cursor-pointer"><input type="checkbox" name="days" value="${index + 1}" ${activeDays.has(index + 1) ? 'checked' : ''}><span>${label}</span></label>`).join('');
-    dialog.innerHTML = `<form><h3 class="font-bold text-lg">${esc(room.name)} tarifini tahrirlash</h3><div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4"><label class="text-xs text-zinc-300 sm:col-span-2">Tarif nomi<input name="name" type="text" maxlength="100" required value="${esc(tariff.name)}" class="w-full bg-zinc-800 p-3 rounded-lg mt-1 text-white"></label><label class="text-xs text-zinc-300">Boshlanish vaqti<input name="start" type="time" required value="${esc(tariff.start_time || '00:00')}" class="w-full bg-zinc-800 p-3 rounded-lg mt-1 text-white"></label><label class="text-xs text-zinc-300">Tugash vaqti<input name="end" type="time" required value="${esc(tariff.end_time || '00:00')}" class="w-full bg-zinc-800 p-3 rounded-lg mt-1 text-white"></label><label class="text-xs text-zinc-300 sm:col-span-2">Bir soat narxi (so‘m)<input name="price" type="number" min="1" step="1" required value="${Number(tariff.price_per_hour)}" class="w-full bg-zinc-800 p-3 rounded-lg mt-1 text-white"></label></div><fieldset class="mt-4"><legend class="text-xs text-zinc-300 mb-2">Haftaning qaysi kunlari</legend><div class="grid grid-cols-4 sm:grid-cols-7 gap-2">${dayInputs}</div></fieldset><p class="text-xs text-zinc-400 mt-3">Boshlanish va tugash bir xil bo‘lsa, tarif tanlangan kunlarda 24 soat ishlaydi.</p><p data-status role="status" class="text-amber-300 my-3 min-h-5"></p><div class="flex justify-end gap-3"><button type="button" data-close class="px-4 py-2 rounded bg-zinc-700">Bekor qilish</button><button type="submit" class="px-4 py-2 rounded bg-sky-700">O‘zgarishlarni saqlash</button></div></form>`;
-    document.body.append(dialog);
-    dialog.onclose = () => dialog.remove();
-    dialog.querySelector('[data-close]').onclick = () => dialog.close();
-    const form = dialog.querySelector('form');
-    const status = dialog.querySelector('[data-status]');
-    form.onsubmit = async event => {
-      event.preventDefault();
-      const price = Number(form.elements.price.value);
-      const selectedDays = [...form.querySelectorAll('[name=days]:checked')].map(input => Number(input.value));
-      const button = form.querySelector('[type=submit]');
-      if (!Number.isFinite(price) || price <= 0) { status.textContent = 'Narx 0 dan katta bo‘lsin.'; return; }
-      if (!selectedDays.length) { status.textContent = 'Kamida bitta hafta kunini tanlang.'; return; }
-      button.disabled = true;
-      status.textContent = 'Saqlanmoqda...';
-      try {
-        await api('/api/admin/tariffs', 'PUT', { tariffs: [{ id: tariff.id, name: form.elements.name.value.trim(), price_per_hour: price, start_time: form.elements.start.value, end_time: form.elements.end.value, days_of_week: selectedDays }] });
-        status.textContent = 'Saqlandi. Yangi seanslarda shu xona tarifi ishlatiladi.';
-        await load(options);
-        await options.refresh?.();
-        dialog.close();
-      } catch (error) { status.textContent = error.message; }
-      finally { button.disabled = false; }
+  const editable=tariffs=>tariffs.filter(t=>t.type===undefined||t.type==='HOURLY').map(t=>({...t,days_of_week:parseDays(t.days_of_week)}))
+    .sort((a,b)=>String(a.start_time).localeCompare(String(b.start_time))||String(a.end_time).localeCompare(String(b.end_time))||String(a.name).localeCompare(String(b.name)));
+  function accept(result){states.set(String(result.zone.id),{...result,rows:editable(result.tariffs),dirty:false});}
+  function renderShell(){
+    root().innerHTML=`<div class="rp-heading"><div><h4>Xonaga alohida tarif</h4><p>Xonani tanlang. Vaqt, hafta kunlari va 1 soat narxini belgilang.</p></div><button type="button" data-reload>Qayta yuklash</button></div><label class="rp-field">Xonani tanlang<select id="pricingRoom">${rooms.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label><div id="roomPricingRows"></div>`;
+    const select=root().querySelector('#pricingRoom');select.value=selected;select.disabled=saving;
+    select.onchange=()=>{selected=select.value;void showRoom();};
+    root().querySelector('[data-reload]').onclick=async()=>{
+      if(saving)return;
+      if([...states.values()].some(s=>s.dirty)&&!confirm('Saqlanmagan tarif o‘zgarishlari bekor qilinadi. Serverdagi nusxani ochasizmi?'))return;
+      states.clear();await load(options,true);
     };
-    dialog.showModal();
-    form.elements.name.focus();
   }
-
-  async function load(nextOptions) {
-    const preferSelection = options !== nextOptions;
-    options = nextOptions;
-    const rev = ++revision;
-    const root = document.getElementById('roomPricingSettings');
-    const general = document.getElementById('generalTariffSettings');
-    if (!root) return;
-    if (general) general.hidden = false;
-    root.textContent = 'Xona tariflari yuklanmoqda...';
-    try {
-      const result = await api('/api/zones');
-      if (rev !== revision) return;
-      rooms = result.zones || [];
-      if (preferSelection && rooms.some(r => String(r.id) === String(options.preferredZoneId))) selected = String(options.preferredZoneId);
-      if (!rooms.some(r => String(r.id) === selected)) selected = rooms.some(r => String(r.id) === String(options.preferredZoneId)) ? String(options.preferredZoneId) : rooms.length ? String(rooms[0].id) : null;
-      render();
-    } catch (error) {
-      if (rev === revision) {
-        root.textContent = error.message;
-        if (general) general.hidden = false;
-      }
+  async function showRoom(){
+    const id=selected,seq=++sequence,list=root().querySelector('#roomPricingRows');
+    if(!id){list.innerHTML='<p class="rp-note">Hali xona yo‘q. “Klubni sozlash” yoki 2D xaritada xona yarating, keyin shu yerda tarifini belgilang.</p>';return;}
+    if(states.has(id)){renderRows();return;}
+    list.textContent='Xona tariflari yuklanmoqda…';
+    try{const result=await api('/api/zones/'+id+'/tariffs');if(seq!==sequence)return;accept(result);renderRows();}
+    catch(error){if(seq===sequence)list.innerHTML=`<p class="rp-error" role="alert">${esc(error.message)} “Qayta yuklash”ni bosing.</p>`;}
+  }
+  function coverage(rows){
+    const covered=new Uint8Array(10080);let overlap=false;
+    for(const r of rows){
+      if(![r.start_time,r.end_time].every(v=>/^([01]\d|2[0-3]):[0-5]\d$/.test(v)))return 'Vaqtlarni 24 soat shaklida kiriting: 08:00, 18:00.';
+      const minute=v=>Number(v.slice(0,2))*60+Number(v.slice(3));const a=minute(r.start_time),b=minute(r.end_time),n=b>a?b-a:1440-a+b;
+      for(const d of r.days_of_week)for(let m=0;m<n;m++){const i=((d-1)*1440+(a===b?0:a)+m)%10080;if(covered[i])overlap=true;covered[i]=1;}
     }
+    return overlap?'Vaqt oraliqlari ustma-ust tushmoqda.':covered.includes(0)?'Bo‘sh vaqtlar bor: tarif yo‘q paytda bu xonada yangi seans ochilmaydi.':'✓ Har kuni 24 soat tarif belgilangan.';
   }
-  return { load };
+  function renderRows(){
+    const state=states.get(selected),list=root().querySelector('#roomPricingRows');if(!state)return;
+    const room=rooms.find(r=>String(r.id)===selected);
+    list.innerHTML=`${state.inherited?`<p class="rp-note">Bu xona hali avvalgi umumiy jadvaldan foydalanadi${room?.currentRate!=null?' — hozir '+Number(room.currentRate).toLocaleString('ru-RU')+' so‘m/soat':''}. Quyida xona tariflarini kiriting va saqlang. Shundan keyin faqat shu oraliqlar ishlaydi.</p>`:''}<form id="roomTariffForm"><div class="rp-toolbar"><strong>${esc(state.zone.name)}</strong><button type="button" data-add>+ Vaqt oralig‘i</button></div><div class="rp-cards">${state.rows.map((t,i)=>`<article class="rp-card" data-rate="${i}"><div class="rp-card-title"><b>ORALIQ ${i+1}</b><button type="button" data-remove="${i}">Olib tashlash</button></div><label class="rp-field">Tarif nomi<input name="name" maxlength="120" required value="${esc(t.name)}"></label><div class="rp-times"><label class="rp-field">Boshlanish · 24 soat<input name="start_time" required inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="00:00" value="${esc(t.start_time)}"></label><label class="rp-field">Tugash · 24 soat<input name="end_time" required inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="00:00" value="${esc(t.end_time)}"></label></div><fieldset class="rp-days"><legend>Hafta kunlari</legend>${days.map((d,j)=>`<label><input type="checkbox" name="day" value="${j+1}" ${t.days_of_week.includes(j+1)?'checked':''}><span>${d}</span></label>`).join('')}</fieldset><label class="rp-field">1 soat narxi · so‘m<input name="price_per_hour" type="number" required min="1" step="1" inputmode="numeric" placeholder="Masalan, 7000" value="${esc(t.price_per_hour??'')}"></label><label class="rp-check"><input name="is_vip_postpaid_allowed" type="checkbox" ${t.is_vip_postpaid_allowed===false||t.is_vip_postpaid_allowed===0?'':'checked'}>VIP Postpaid — oldindan to‘lovsiz seansga ruxsat</label></article>`).join('')}</div>${state.rows.length?'':'<p class="rp-note">Vaqt oralig‘i yo‘q. “+ Vaqt oralig‘i” bilan qo‘shing.</p>'}<p class="rp-note">Boshlanish va tugash bir xil bo‘lsa — tanlangan kun to‘liq olinadi. Masalan, 08:00–18:00 va 18:00–08:00.</p><p data-coverage class="rp-note"></p><div class="rp-save"><p data-status role="status"></p><button type="submit" data-save>Tariflarni saqlash</button></div></form>`;
+    const form=list.querySelector('form');form.inert=saving;
+    form.querySelector('[data-coverage]').textContent=coverage(state.rows);
+    status(state.dirty?'Saqlanmagan o‘zgarishlar bor.':'Xona tariflari yuklandi.');
+    form.querySelector('[data-save]').disabled=!state.dirty;
+    form.querySelector('[data-add]').onclick=()=>{state.rows.push({name:'Kunlik tarif',start_time:'00:00',end_time:'00:00',days_of_week:[1,2,3,4,5,6,7],price_per_hour:null,is_vip_postpaid_allowed:true});state.dirty=true;renderRows();};
+    form.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{state.rows.splice(Number(button.dataset.remove),1);state.dirty=true;renderRows();});
+    form.oninput=e=>{
+      const card=e.target.closest('[data-rate]');if(!card)return;const t=state.rows[Number(card.dataset.rate)],key=e.target.name;
+      if(key==='day')t.days_of_week=[...card.querySelectorAll('[name=day]:checked')].map(el=>Number(el.value));
+      else if(key==='price_per_hour')t[key]=e.target.value===''?null:Number(e.target.value);
+      else if(key==='is_vip_postpaid_allowed')t[key]=e.target.checked;
+      else {if(['start_time','end_time'].includes(key)&&/^\d{4}$/.test(e.target.value))e.target.value=e.target.value.slice(0,2)+':'+e.target.value.slice(2);t[key]=e.target.value;}
+      state.dirty=true;status('Saqlanmagan o‘zgarishlar bor.');form.querySelector('[data-save]').disabled=false;form.querySelector('[data-coverage]').textContent=coverage(state.rows);
+    };
+    form.onsubmit=async e=>{
+      e.preventDefault();if(saving||!state.dirty)return;
+      if(state.rows.some(t=>!t.days_of_week.length)){status('Har bir oraliq uchun kamida bitta hafta kunini tanlang.',true);return;}
+      const warning=coverage(state.rows);if(warning.includes('ustma-ust')){status(warning,true);return;}
+      if(!state.rows.length&&!confirm('Bu xonaning barcha vaqt oraliqlari olib tashlanadi. Yangi tarif kiritilmaguncha seans ochilmaydi. Saqlaysizmi?'))return;
+      saving=true;form.inert=true;root().querySelector('#pricingRoom').disabled=true;status('Saqlanmoqda…');
+      try{
+        const result=await api('/api/zones/'+selected+'/tariffs','PUT',{revision:state.revision,tariffs:state.rows});
+        accept(result);renderRows();status('Saqlandi. Seanslar shu xona tariflari bo‘yicha hisoblanadi.');
+        try{await options.refresh?.();}catch{status('Tariflar saqlandi. Asosiy ekran yangilanmadi; uni qayta oching.');}
+      }catch(error){status(error.message,true);}
+      finally{saving=false;root().querySelector('form').inert=false;root().querySelector('#pricingRoom').disabled=false;}
+    };
+  }
+  async function load(next,force=false){
+    if(saving)return;
+    if(options?.token!==next.token)states.clear();
+    options=next;
+    if(!root())return;
+    if(!force&&[...states.values()].some(s=>s.dirty)){
+      if(rooms.some(r=>String(r.id)===String(next.preferredZoneId)))selected=String(next.preferredZoneId);
+      for(const [id,state] of states)if(!state.dirty)states.delete(id);
+      renderShell();await showRoom();return;
+    }
+    states.clear();
+    const seq=++sequence;root().textContent='Xona tariflari yuklanmoqda…';
+    try{
+      const result=await api('/api/zones');if(seq!==sequence)return;rooms=result.zones||[];
+      if(rooms.some(r=>String(r.id)===String(next.preferredZoneId)))selected=String(next.preferredZoneId);
+      if(!rooms.some(r=>String(r.id)===selected))selected=rooms.length?String(rooms[0].id):null;
+      renderShell();await showRoom();
+    }catch(error){if(seq===sequence){root().textContent=error.message;const retry=document.createElement('button');retry.textContent='Qayta urinish';retry.onclick=()=>void load(options,true);root().append(retry);}}
+  }
+  return {load};
 })();

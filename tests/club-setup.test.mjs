@@ -15,12 +15,15 @@ function validDraft() {
 const live=()=>[{number:1,ip:'::ffff:192.168.1.101',mac:'02-00-00-00-00-01',connected:true,lastHeartbeat:now}];
 const evaluate=(draft=validDraft(),extra={})=>evaluateSetupDraft(draft,{maxComputers:10,liveClients:live(),now,...extra});
 const codes=result=>result.issues.map(x=>x.code);
+test('browser and standalone server use the same setup connection rules',()=>{
+  assert.equal(fs.readFileSync('NetCafeServer/public/setup-connection.js','utf8'),fs.readFileSync('NetCafeServer/src/services/setupConnection.js','utf8'));
+});
 function fixture(file=':memory:') {
   const db=new DatabaseSync(file);
   db.exec(`PRAGMA foreign_keys=ON;
     CREATE TABLE clubs(id INTEGER PRIMARY KEY); INSERT INTO clubs VALUES(1),(2);
-    CREATE TABLE computers(id TEXT PRIMARY KEY,club_id INTEGER,pc_number INTEGER);
-    INSERT INTO computers VALUES('pc_1',1,1),('pc_2',2,1),('placeholder',1,0);
+    CREATE TABLE computers(id TEXT PRIMARY KEY,club_id INTEGER,pc_number INTEGER,mac_address TEXT);
+    INSERT INTO computers VALUES('pc_1',1,1,'02:00:00:00:00:01'),('pc_2',2,1,NULL),('placeholder',1,0,NULL);
     CREATE TABLE business_money(id INTEGER PRIMARY KEY,amount INTEGER); INSERT INTO business_money VALUES(1,5320);`);
   return db;
 }

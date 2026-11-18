@@ -109,6 +109,8 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const vipQuote=await mobile('/api/sessions/start-preview','POST',vipRequest,cashierToken);
  assert.equal(vipQuote.status,200,JSON.stringify(vipQuote));assert.equal(vipQuote.body.currentRate,19000);assert.equal(vipQuote.body.isPostpaid,true);
  const vip=await mobile('/api/sessions/start','POST',vipRequest,cashierToken);assert.equal(vip.status,201,JSON.stringify(vip));
+ const vipExtend=await mobile('/api/sessions/'+vip.body.sessionId+'/extend','POST',{additionalMinutes:30},cashierToken);
+ assert.equal(vipExtend.status,409,JSON.stringify(vipExtend));assert.equal(vipExtend.body.code,'POSTPAID_EXTENSION_NOT_ALLOWED');
  await ageSession(vip.body.sessionId,30);
  const product=await desktop('/api/bar/items','POST',{name:'Mobile VIP test drink',category:'DRINKS',buyPrice:1000,sellPrice:6000,stockQuantity:2});assert.equal(product.status,201);
  const bar=await mobile('/api/bar/orders','POST',{items:[{barItemId:product.body.item?.id||product.body.id,quantity:1}],computerId:pc.id,sessionId:vip.body.sessionId,paymentMethod:'ON_PC_SESSION',paymentStatus:'PENDING_AT_CHECKOUT'},cashierToken);assert.equal(bar.status,201,JSON.stringify(bar));
@@ -116,6 +118,11 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  assert.equal(vipBill.status,200);assert.ok(vipBill.body.gameBill>=9500&&vipBill.body.gameBill<9600);assert.equal(vipBill.body.barBill,6000);
  const vipClose=await mobile('/api/sessions/'+vip.body.sessionId+'/checkout','POST',{paymentMethod:'CASH'},cashierToken);
  assert.equal(vipClose.status,200);assert.equal(vipClose.body.amountCollected,vipClose.body.gameBill+6000);
+ assert.equal((await desktop('/api/settings','PUT',{vip_enabled:false})).status,200);
+ assert.equal((await mobile('/api/computers','GET',undefined,cashierToken)).body.find(p=>p.id===pc.id).isVipPostpaidAllowed,false);
+ assert.equal((await mobile('/api/sessions/start-preview','POST',vipRequest,cashierToken)).status,403);
+ assert.equal((await mobile('/api/sessions/start','POST',vipRequest,cashierToken)).status,403);
+ assert.equal((await desktop('/api/settings','PUT',{vip_enabled:true})).status,200);
  console.log('PASS mobile exact amount quote/start and VIP custom rate with bar: same server billing and checkout');
  const receiver=dgram.createSocket('udp4');receiver.bind(0,'127.0.0.1');await once(receiver,'listening');
  try {

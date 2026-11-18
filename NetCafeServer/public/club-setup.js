@@ -1,9 +1,10 @@
 import {steps,dayNames,newId,inside,placeInRoom,moveRoom,addComputer,bindClient,connected,stepProblems,draftChanges} from './club-setup-model.js';
+import {setupConnection,setupConnectionMessage} from './setup-connection.js';
 
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>Number(value||0).toLocaleString('ru-RU')+' so‘m';
-const labels={rooms:['01 / ZAL REJASI','Klubingiz qanday joylashgan?','Xonalarni chizing, nomlang va kompyuterlar sonini kiriting.'],
+const labels={rooms:['01 / XONALAR','Xonalarni qo‘shing.','“+ Xona”ni bosing, nomini yozing va xaritada joylashtiring. Kompyuterlar keyingi bosqichda qo‘shiladi.'],
   computers:['02 / CLIENTLAR','Har bir PC o‘z joyida.','Kompyuterni tanlang, xonasini belgilang va haqiqiy clientga biriktiring.'],
   tariffs:['03 / NARXLAR','Har xonaning o‘z tarifi.','Hafta kunlari, vaqt oralig‘i va soatlik narxni bir joyda sozlang.'],
   review:['04 / TEKSHIRISH','Oxirgi marta ko‘zdan kechiring.','Yetishmayotgan joylarni to‘ldiring. Qoralama serverda saqlanadi.']};
@@ -24,6 +25,7 @@ async function api(path,method='GET',body){
   return value;
 }
 function changed({render=false}={}){
+  draft.expectedComputers=draft.computers.length;
   generation++;if(!conflict&&!accessLost)error='';clearTimeout(saveTimer);saveTimer=setTimeout(()=>void save(),650);
   if(render)renderStage();else{renderMaps();renderStatus();}
 }
@@ -71,7 +73,7 @@ function renderStatus(){
   });
 }
 function renderIssues(){
-  const list=(readiness?.issues||[]).filter(i=>step==='review'||i.step===step||(step==='rooms'&&['PC_COUNT','LICENSE_LIMIT','LIMIT_UNKNOWN'].includes(i.code)));
+  const list=(readiness?.issues||[]).filter(i=>step==='review'||i.step===step);
   const warnings=(readiness?.warnings||[]).filter(()=>['tariffs','review'].includes(step));
   if(!contextFresh&&['computers','review'].includes(step))warnings.push({step:'computers',code:'PC_OFFLINE',message:'Clientlar aloqasini hozir tekshirib bo‘lmadi. Internet emas, klub serveri bilan ulanishni ham tekshiring va “Aloqani tekshirish”ni bosing.'});
   const target=step==='review'?$('reviewChecks'):$('stepIssues');
@@ -102,7 +104,6 @@ async function navigate(next,force=false){
 function renderStage(){
   [ $('stepKicker').textContent,$('stepTitle').textContent,$('stepHint').textContent ]=labels[step];
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==step);
-  $('expectedComputers').value=draft.expectedComputers||'';
   if(step==='rooms'){renderRoomList();renderRoomEditor();}
   if(step==='computers'){renderPcList();renderPcEditor();}
   if(step==='tariffs')renderTariffs();
@@ -119,27 +120,32 @@ function renderRoomEditor(){
   if(!r){root.innerHTML='<p class="empty">Xaritadan xonani tanlang.</p>';return;}
   root.innerHTML=`${input('name','Xona nomi',r.name,'text','maxlength="80"')}
     <label class="field">Xona turi<select name="type">${[['STANDARD','Oddiy zal'],['VIP','VIP xona'],['PS5','PlayStation'],['BOOTCAMP_5V5','Bootcamp 5 × 5']].map(([key,name])=>`<option value="${key}" ${r.type===key?'selected':''}>${name}</option>`).join('')}</select></label>
-    <div class="two-fields">${input('x','X joylashuvi',r.x,'number','step="10"')}${input('y','Y joylashuvi',r.y,'number','step="10"')}</div>
-    <div class="two-fields">${input('width','Eni',r.width,'number',`min="120" max="10000" step="10" ${r.polygonPoints?'disabled':''}`)}${input('height','Bo‘yi',r.height,'number',`min="120" max="10000" step="10" ${r.polygonPoints?'disabled':''}`)}</div>
-    ${r.polygonPoints?'<p class="muted">Mavjud ko‘pburchak shakli saqlanadi. Xonani butunlay siljitish mumkin.</p>':''}<button class="danger" data-delete-room="${esc(r.id)}">Xonani olib tashlash</button>`;
+    <details class="advanced"><summary>O‘lcham va joylashuv</summary><p class="muted">Xonani xaritada surishingiz ham mumkin.</p>
+    <div class="two-fields">${input('x','X joylashuvi',r.x,'number','step="any"')}${input('y','Y joylashuvi',r.y,'number','step="any"')}</div>
+    <div class="two-fields">${input('width','Eni',r.width,'number',`min="120" max="10000" step="any" ${r.polygonPoints?'disabled':''}`)}${input('height','Bo‘yi',r.height,'number',`min="120" max="10000" step="any" ${r.polygonPoints?'disabled':''}`)}</div>
+    ${r.polygonPoints?'<p class="muted">Mavjud xona shakli saqlanadi. Uni xaritada siljitish mumkin.</p>':''}</details><button class="danger" data-delete-room="${esc(r.id)}" ${baseline.rooms.some(room=>room.id===r.id)?'disabled title="Amaldagi xonani bu ustada olib tashlab bo‘lmaydi"':''}>Xonani olib tashlash</button>`;
 }
 function renderPcList(){
-  $('pcCount').textContent=`${draft.computers.length} / ${draft.expectedComputers} ta kompyuter`;
+  $('pcCount').textContent=`Jami: ${draft.computers.length} ta kompyuter`;
+  $('addPcRoom').innerHTML=roomOptions(selectedRoom);
+  const full=draft.computers.length>=Math.min(context.maxComputers||500,500);
+  $('addComputer').disabled=full||!draft.rooms.length;$('fillComputers').disabled=full||!draft.rooms.length;
   const clients=contextFresh?context.liveClients:[];
   $('liveStatus').textContent=contextFresh?`${draft.computers.filter(pc=>connected(pc,clients)).length} ta mos client ulangan · ${new Date(lastLiveAt).toLocaleTimeString('uz-UZ',{hour:'2-digit',minute:'2-digit',hour12:false})}`:'Aloqa tekshirilmagan. Yangilash tugmasini bosing.';
-  $('pcList').innerHTML=draft.computers.map(pc=>`<button data-pc="${esc(pc.id)}" class="${selectedPc===pc.id?'selected':''}">${esc(pc.name||'PC-'+pc.number)}<small>${esc(pc.ip||'IP kiritilmagan')}</small><small class="${connected(pc,clients)?'online':'offline'}">${connected(pc,clients)?'● Ulangan':'○ Ulanish kutilmoqda'}</small></button>`).join('')||'<p class="empty">Rejadagi kompyuterlarni qo‘shing.</p>';
+  $('pcList').innerHTML=draft.computers.map(pc=>`<button data-pc="${esc(pc.id)}" class="${selectedPc===pc.id?'selected':''}">${esc(pc.name||'PC-'+pc.number)}<small>${esc(pc.ip||'IP kiritilmagan')}</small><small class="${connected(pc,clients)?'online':'offline'}">${connected(pc,clients)?'● Ulangan':'○ Ulanish kutilmoqda'}</small></button>`).join('')||'<p class="empty">Yuqorida xonani va qo‘shiladigan PC sonini tanlang.</p>';
 }
 function roomOptions(value){return '<option value="">Xonani tanlang</option>'+draft.rooms.map(r=>`<option value="${esc(r.id)}" ${r.id===value?'selected':''}>${esc(r.name)}</option>`).join('');}
 function renderPcEditor(){
   const pc=draft.computers.find(c=>c.id===selectedPc),root=$('pcEditor');
   if(!pc){root.innerHTML='<p class="empty">Ro‘yxat yoki xaritadan PC’ni tanlang.</p>';return;}
-  root.innerHTML=`<h2>${esc(pc.name||'Kompyuter')}</h2><label class="field">Ulangan clientdan tanlash<select id="bindClient"><option value="">Qo‘lda kiriting yoki clientni tanlang</option>${(contextFresh?context.liveClients:[]).filter(c=>c.connected).map(c=>`<option value="${c.number}" ${draft.computers.some(p=>p.id!==pc.id&&(p.number===c.number||p.ip===c.ip))?'disabled':''}>PC-${c.number} · ${esc(c.ip)}</option>`).join('')}</select><small>Client raqami va IP manzili birga biriktiriladi. Bu yangi PC yaratmaydi.</small></label>
+  const connection=setupConnection(pc,contextFresh?context.liveClients:[]);
+  root.innerHTML=`<h2>${esc(pc.name||'Kompyuter')}</h2><p class="connection-note ${connection.ok?'online':'offline'}" role="status">${esc(setupConnectionMessage(pc,connection))}</p><label class="field">Ulangan clientdan tanlash<select id="bindClient"><option value="">Qo‘lda kiriting yoki clientni tanlang</option>${(contextFresh?context.liveClients:[]).filter(c=>c.connected).map(c=>`<option value="${c.number}" ${draft.computers.some(p=>p.id!==pc.id&&(p.number===c.number||p.ip===c.ip))?'disabled':''}>PC-${c.number} · ${esc(c.ip)}</option>`).join('')}</select><small>Tanlasangiz, raqam, IP va MAC avtomatik to‘ldiriladi.</small></label>
     <div class="two-fields">${input('number','PC raqami',pc.number,'number','min="1" max="9999" inputmode="numeric"')}${input('name','Nomi',pc.name,'text','maxlength="80"')}</div>
     <label class="field">Xonasi<select name="roomId">${roomOptions(pc.roomId)}</select></label>
     ${input('ip','IPv4 manzil',pc.ip,'text','inputmode="decimal" maxlength="64" placeholder="192.168.1.101" autocomplete="off"')}
-    ${input('mac','MAC manzil (ixtiyoriy)',pc.mac,'text','maxlength="32" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off"')}
+    <details class="advanced"><summary>Qo‘shimcha: MAC va joylashuv</summary>${input('mac','MAC manzil (ixtiyoriy)',pc.mac,'text','maxlength="32" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off"')}
     <p class="muted">MAC kompyuterni masofadan yoqish uchun kerak. Uni ulangan clientdan olish mumkin.</p>
-    <div class="two-fields">${input('x','X joylashuvi',pc.x,'number','step="10"')}${input('y','Y joylashuvi',pc.y,'number','step="10"')}</div><button class="danger" data-delete-pc="${esc(pc.id)}">PC’ni qoralamadan olib tashlash</button>`;
+    <div class="two-fields">${input('x','X joylashuvi',pc.x,'number','step="any"')}${input('y','Y joylashuvi',pc.y,'number','step="any"')}</div></details><button class="danger" data-delete-pc="${esc(pc.id)}" ${baseline.computers.some(c=>c.number===pc.number)?'disabled title="Amaldagi PC bu ustada o‘chirilmaydi"':''}>PC’ni qoralamadan olib tashlash</button>`;
 }
 function renderTariffs(){
   if(!draft.rooms.some(r=>r.id===tariffRoom))tariffRoom=draft.rooms[0]?.id||'';
@@ -155,18 +161,20 @@ function renderTariffs(){
   $('otherTariffs').hidden=!context.otherTariffs.length;
   $('otherTariffs').querySelector('div').innerHTML=context.otherTariffs.map(t=>`<p>${esc(t.name)} · ${t.price==null?'Narx belgilanmagan':money(t.price)} ${!t.type||t.type==='HOURLY'?'/ soat':t.durationMinutes?'· '+Number(t.durationMinutes)+' daqiqa':''} ${t.start?`· ${esc(t.start)}–${esc(t.end)}`:''} ${t.vip?'· VIP':''}</p>`).join('');
 }
-function describe(item,label){
-  if(!item)return '—';
-  if(label==='Tarif')return `${item.name}: ${item.start_time}–${item.end_time}, ${item.days_of_week.map(d=>dayNames[d-1]).join(', ')}, ${money(item.price_per_hour)}, VIP ${item.vipAllowed===false?'yo‘q':'bor'}`;
-  if(label==='PC')return `${item.name} (#${item.number}) · ${item.ip||'IP yo‘q'} · ${item.mac||'MAC yo‘q'} · ${[...draft.rooms,...baseline.rooms].find(r=>r.id===item.roomId)?.name||'xonasiz'} · (${item.x}, ${item.y})`;
-  return `${item.name} · ${item.type} · ${item.width} × ${item.height} · (${item.x}, ${item.y})`;
-}
 function renderReview(){
-  $('baselineNotice').textContent=baseFingerprint!==context.fingerprint?'Amaldagi sozlamalar yangilangan yoki dastlabki nusxa tasdiqlanmagan. Holatni tekshirib tasdiqlang.':context.activeSessions?'Faol seanslar tugashini kuting.':'Amaldagi sozlamalar bilan nusxa mos.';
+  const outdated=baseFingerprint!==context.fingerprint;
+  $('rebaseDraft').hidden=!outdated;
+  $('baselineNotice').textContent=outdated?'Sozlash davomida klubdagi ma’lumotlar o‘zgargan. Quyidagi tugma bilan qayta tekshiring.':context.activeSessions?'Saqlash uchun faol seanslar tugashini kuting.':'✓ Amaldagi klub sozlamalari tekshirildi.';
   $('reviewSummary').innerHTML=[[draft.rooms.length,'Xona'],[draft.computers.length,'Kompyuter'],[draft.tariffs.length,'Tarif oralig‘i'],[contextFresh?draft.computers.filter(c=>connected(c,context.liveClients)).length:'—','Ulangan client']].map(([n,label])=>`<div class="metric"><b>${n}</b><span>${label}</span></div>`).join('');
   const changes=draftChanges(draft,baseline);
-  $('draftChanges').innerHTML=changes.map(c=>`<div class="change-row"><b>${esc(c.kind)} · ${esc(c.label)} · ${esc(c.name)}</b><small>Oldin: ${esc(describe(c.before,c.label))}</small><small>Qoralama: ${esc(describe(c.after,c.label))}</small></div>`).join('')||'<p class="muted">Amaldagi ma’lumotlarga o‘zgarish kiritilmagan.</p>';
-  $('contextNotices').innerHTML=[...context.notices,...(context.activeSessions?[`${context.activeSessions} ta faol seans bor. Qoralama ularning hisobi yoki tarifini o‘zgartirmaydi.`]:[])].map(t=>`<p class="muted">${esc(t)}</p>`).join('');
+  const newPcs=changes.filter(c=>c.label==='PC'&&!c.before).length;
+  const editedPcs=changes.filter(c=>c.label==='PC'&&c.before&&c.after).length;
+  $('draftChanges').innerHTML=`<p class="muted">Jami ${draft.computers.length} ta kompyuter${newPcs?` · Yangi: ${newPcs} ta`:''}${editedPcs?` · Tahrirlangan: ${editedPcs} ta`:''}</p>`+
+    draft.rooms.map(room=>`<article class="review-room"><h3>${esc(room.name)} <small>${baseline.rooms.some(r=>r.id===room.id)?'Mavjud xona':'Yangi xona'}</small></h3><p>${draft.computers.filter(c=>c.roomId===room.id).length} ta kompyuter</p>${draft.tariffs.filter(t=>t.roomId===room.id).map(t=>`<div class="review-rate"><span>${t.days_of_week.length===7?'Har kuni':esc(t.days_of_week.map(d=>dayNames[d-1]).join(', '))} · ${t.start_time===t.end_time?'24 soat':`${esc(t.start_time)}–${esc(t.end_time)}`}</span><strong>${money(t.price_per_hour)} / soat</strong></div>`).join('')||'<p class="offline">Tarif hali kiritilmagan</p>'}</article>`).join('');
+  const removed=changes.filter(c=>!c.after&&['PC','Xona'].includes(c.label));
+  $('contextNotices').innerHTML=removed.map(c=>`<p class="offline">${esc(c.name)} ro‘yxatda yo‘q. Amaldagi ${c.label==='PC'?'kompyuter':'xona'}ni sozlash ustasida o‘chirib bo‘lmaydi.</p>`).join('')+
+    (context.otherTariffs.length?'<p class="muted">Mavjud umumiy va paket tariflari ham saqlanadi.</p>':'')+
+    (context.activeSessions?`<p class="offline">${context.activeSessions} ta faol seans bor. Saqlash uchun ular tugashini kuting.</p>`:'');
 }
 function bounds(){
   if(mapView==='selected'){
@@ -259,7 +267,8 @@ $('reloadPage').onclick=()=>location.reload();
 $('cancelConfirm').onclick=()=>$('confirmDialog').close('cancel');$('acceptConfirm').onclick=()=>$('confirmDialog').close('yes');
 $('addRoom').onclick=()=>createRoom();$('drawTool').onclick=()=>{drawMode=true;mapView='all';setTool();};$('selectTool').onclick=()=>{drawMode=false;setTool();};
 document.querySelectorAll('[data-map-view]').forEach(b=>b.onclick=()=>{mapView=b.dataset.mapView;renderMaps();});
-$('expectedComputers').addEventListener('input',e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>=0&&n<=500){draft.expectedComputers=n;changed();}renderStatus();});
+$('addPcRoom').onchange=e=>{selectedRoom=e.target.value;};
+$('computerQuantity').oninput=()=>renderStatus();
 $('roomList').onclick=e=>{const b=e.target.closest('[data-room]');if(b){selectedRoom=b.dataset.room;renderRoomList();renderRoomEditor();renderMaps();}};
 $('roomEditor').addEventListener('input',e=>{
   const r=draft.rooms.find(r=>r.id===selectedRoom),key=e.target.name;if(!r||!key)return;
@@ -275,18 +284,22 @@ $('roomEditor').onclick=async e=>{
   const id=b.dataset.deleteRoom;draft.rooms=draft.rooms.filter(r=>r.id!==id);draft.tariffs=draft.tariffs.filter(t=>t.roomId!==id);
   draft.computers.filter(c=>c.roomId===id).forEach(c=>c.roomId='');selectedRoom=draft.rooms[0]?.id;changed({render:true});
 };
-$('addComputer').onclick=()=>{try{selectedPc=addComputer(draft,selectedRoom).id;changed({render:true});}catch(e){flash(e.message);}};
-$('fillComputers').onclick=()=>{
-  if(!draft.expectedComputers){flash('Avval Xonalar bosqichida kompyuterlar sonini kiriting.');return;}
-  if(draft.expectedComputers<draft.computers.length){flash('Ro‘yxatda rejadan ko‘proq PC bor. Ortiqchasini bittalab tanlab olib tashlang.');return;}
-  while(draft.computers.length<draft.expectedComputers)selectedPc=addComputer(draft,selectedRoom).id;changed({render:true});
-};
+function addComputers(count){
+  const limit=Math.min(context.maxComputers||500,500);
+  if(!Number.isInteger(count)||count<1){flash('Qo‘shiladigan kompyuterlar sonini kiriting.');return;}
+  if(count>limit-draft.computers.length){flash(`Litsenziya ${limit} ta PC uchun. Hozir ${draft.computers.length} ta bor; yana ${Math.max(0,limit-draft.computers.length)} ta qo‘shish mumkin.`);return;}
+  if(!draft.rooms.some(r=>r.id===selectedRoom)){flash('Kompyuterlar uchun xonani tanlang.');return;}
+  for(let i=0;i<count;i++)selectedPc=addComputer(draft,selectedRoom).id;
+  changed({render:true});
+}
+$('addComputer').onclick=()=>addComputers(1);
+$('fillComputers').onclick=()=>addComputers(Number($('computerQuantity').value));
 $('pcList').onclick=e=>{const b=e.target.closest('[data-pc]');if(b){selectedPc=b.dataset.pc;renderPcList();renderPcEditor();renderMaps();}};
 $('pcEditor').addEventListener('input',e=>{
   const pc=draft.computers.find(c=>c.id===selectedPc),key=e.target.name;if(!pc||!key)return;
   if(key==='roomId')placeInRoom(draft,pc,e.target.value);
   else if(['x','y','number'].includes(key)){if(!e.target.value||!Number.isFinite(Number(e.target.value)))return;pc[key]=Number(e.target.value);}
-  else pc[key]=e.target.value;
+  else pc[key]=e.target.value.trim();
   renderPcList();changed();
 });
 $('pcEditor').addEventListener('change',e=>{
@@ -354,7 +367,9 @@ async function completeSetup(){
 $('completeSetup').onclick=()=>void completeSetup();
 $('loadRemote').onclick=async()=>{
   if(!await confirmAction('Serverdagi nusxa ochiladi. Bu oynadagi saqlanmagan o‘zgarishlar almashtiriladi. Kerak bo‘lsa avval qoralamani yuklab oling.'))return;
-  try{const state=await api('/api/setup/draft');draft=state.draft;baseFingerprint=state.baseFingerprint;revision=state.revision;readiness=state.readiness;generation=savedGeneration=0;conflict=false;error='';step=draft.step;renderStage();}catch(e){flash(e.message);}
+  try{const state=await api('/api/setup/draft');draft=state.draft;baseFingerprint=state.baseFingerprint;revision=state.revision;readiness=state.readiness;generation=savedGeneration=0;
+    if(draft.expectedComputers!==draft.computers.length){draft.expectedComputers=draft.computers.length;generation=1;readiness=null;}
+    conflict=false;error='';step=draft.step;renderStage();}catch(e){flash(e.message);}
 };
 $('exitSetup').onclick=async e=>{if(!dirty()&&!saveTask)return;e.preventDefault();if(await save())location.href='/';
   else if(await confirmAction('O‘zgarishlar serverga saqlanmadi. Chiqsangiz shu oynadagi saqlanmagan ma’lumot yo‘qoladi. Kerak bo‘lsa avval qoralamani yuklab oling. Baribir chiqasizmi?')){allowExit=true;location.href='/';}};
@@ -370,11 +385,17 @@ document.addEventListener('focusin',e=>{
 try{
   const [state,source]=await Promise.all([api('/api/setup/draft'),api('/api/setup/context')]);
   context=source;baseline=structuredClone(source.initialDraft);contextFresh=true;lastLiveAt=Date.now();revision=state.revision;
-  baseFingerprint=state.baseFingerprint||(revision===0?source.fingerprint:null);
+  const useCurrent=state.appliedDraft===true||revision===0;
+  baseFingerprint=useCurrent?source.fingerprint:state.baseFingerprint;
   try{pendingCompletion=JSON.parse(sessionStorage.getItem(pendingKey)||'null');}catch{sessionStorage.removeItem(pendingKey);}
   const hasExisting=source.initialDraft.rooms.length||source.initialDraft.computers.length;
-  draft=state.revision===0&&hasExisting?structuredClone(source.initialDraft):state.draft;
-  if(state.revision===0&&hasExisting){generation=1;readiness=null;}else readiness=state.readiness;
+  draft=useCurrent&&hasExisting?structuredClone(source.initialDraft):state.draft;
+  if(useCurrent&&hasExisting){generation=1;readiness=null;}else readiness=state.readiness;
+  // Repair the old independent planned count in the editable draft only.
+  // Persist on an explicit save/edit, preserving every PC and its identity.
+  if(draft.expectedComputers!==draft.computers.length){draft.expectedComputers=draft.computers.length;generation=1;readiness=null;}
+  $('sourceNotice').hidden=!hasExisting&&state.revision===0;
+  $('sourceNotice').textContent=hasExisting?`Bu kompyuterda avval saqlangan ${source.initialDraft.rooms.length} ta xona va ${source.initialDraft.computers.length} ta PC bor. Quyida o‘sha sozlamalar${!useCurrent?' asosidagi saqlangan qoralama':''} ochildi. Ularni tekshiring yoki tahrirlang.`:'Avval saqlangan qoralamangiz ochildi. Sozlashni davom ettirishingiz mumkin.';
   step=draft.step;selectedRoom=tariffRoom=draft.rooms[0]?.id;selectedPc=draft.computers[0]?.id;
   $('clubName').textContent=source.clubName;$('clubLimit').textContent=source.maxComputers?`Litsenziya: ${source.maxComputers} ta PC`:'Litsenziya limiti aniqlanmagan';
   $('loading').hidden=true;$('workspace').hidden=false;$('setupFooter').hidden=false;renderStage();
