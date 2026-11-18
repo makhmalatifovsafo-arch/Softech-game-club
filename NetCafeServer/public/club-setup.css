@@ -8,3 +8,54 @@
 .advanced{padding:12px;margin:16px 0}.advanced[open] summary{margin-bottom:16px}.connection-note{font-size:13px;line-height:1.7;overflow-wrap:anywhere;padding:12px;background:#ffffff05;border-radius:8px}
 .review-room{padding:16px 0;border-top:1px solid var(--line)}.review-room h3{font-size:17px;margin:0;overflow-wrap:anywhere}.review-room h3 small{display:inline-block;font-size:11px;color:var(--muted);font-weight:400;margin-left:8px}.review-room p{color:var(--muted);font-size:13px;margin:6px 0 14px}.review-rate{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:13px;line-height:1.7;padding:10px 0;border-top:1px solid #ffffff08}.review-rate strong{color:var(--lime);white-space:nowrap}#baselineNotice{margin:10px 0}#rebaseDraft{margin-top:12px}
 @media(max-width:740px){.pc-add button{width:100%}.pc-add .field{min-width:120px}}
+
+/* The room editor uses the same select / rectangle / pen vocabulary as the hall map. */
+.setup-header{padding-block:14px}
+.steps{margin-bottom:18px}
+.stage-heading{margin-bottom:12px}
+.stage-heading h1{font-size:30px}
+.notice,.source-notice{margin-bottom:12px;padding-block:9px}
+#roomsStage .workspace-grid{grid-template-columns:minmax(0,1fr) 280px;gap:14px}
+#roomsStage .map-host{height:clamp(320px,52vh,560px)}
+.room-tools{padding:10px;gap:8px}
+.room-tools button{padding:9px 12px;font-size:13px;background:#202024}
+.room-tools button.selected{background:#c8ff3118;border-color:var(--lime)}
+.room-tools button span{font-size:19px;vertical-align:middle;margin-right:4px;line-height:1}
+.drawing-guide{padding:12px 15px;display:flex;gap:9px 14px;align-items:baseline;flex-wrap:wrap;background:#1c2119;border-bottom:1px solid var(--line);font-size:13px;line-height:1.5}
+.drawing-guide strong{color:var(--lime);white-space:nowrap}
+.drawing-guide span{color:#c4ccbe;flex:1;min-width:180px}
+.pen-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.pen-actions span{font-size:12px;color:var(--muted);margin-right:auto}
+.pen-actions button{padding:8px 10px;font-size:12px}
+.map-message{padding:10px 14px;margin:0;background:#342917;color:#ffda98;font-size:13px;line-height:1.5}
+.map-view-controls{padding:8px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line)}
+.map-view-controls button{padding:8px 10px;font-size:12px;background:transparent}
+.map-view-controls #zoomIn,.map-view-controls #zoomOut{min-width:36px;font-size:18px;line-height:1}
+.map-tool-rect,.map-tool-rect .map-item,.map-tool-pen,.map-tool-pen .map-item{cursor:crosshair}
+.map-tool-pan,.map-tool-pan .map-item{cursor:grab}
+.map-tool-pan:active{cursor:grabbing}
+#roomsStage .map-computers{pointer-events:none;opacity:.65}
+.canvas-empty{fill:#9a9aa5;pointer-events:none}
+.room-handle rect,.room-handle .handle-dot{fill:#111810;stroke:var(--lime);stroke-width:2;vector-effect:non-scaling-stroke}
+.room-handle:hover rect,.room-handle:hover .handle-dot,.room-handle:focus rect,.room-handle:focus .handle-dot{fill:var(--lime);stroke:#fff}
+.vertex-add{cursor:copy}
+.vertex-add circle{fill:#1b2618;stroke:#a1bf65;stroke-width:1;vector-effect:non-scaling-stroke}
+.vertex-add path{stroke:var(--lime);stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:none}
+.vertex-add:hover circle{stroke:#fff;fill:#3c5122}
+.pen-preview{pointer-events:none}.pen-preview circle{fill:var(--lime);stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.pen-preview [data-close-polygon]{pointer-events:all;cursor:pointer;fill:#111810;stroke:var(--lime);stroke-width:3}
+.pen-preview text{fill:#d4e6b4;font-family:Consolas,monospace}
+.room-edit-tip,.room-next-note{font-size:12px;line-height:1.65;color:var(--muted);margin:14px 0}
+.room-next-note{border-top:1px solid var(--line);padding-top:14px;margin-bottom:0}
+#roomsStage .inspector{padding:16px}
+#roomsStage .advanced{padding:10px;margin:12px 0}
+@media(max-width:1000px){#roomsStage .workspace-grid{grid-template-columns:minmax(0,1fr) 250px}}
+@media(max-width:740px){
+  #roomsStage .workspace-grid{grid-template-columns:minmax(0,1fr)}
+  #roomsStage .map-host{height:340px}
+  .stage-heading h1{font-size:26px}
+  .room-tools .tool-group{display:grid;grid-template-columns:repeat(4,1fr);width:100%;gap:5px}
+  .room-tools .tool-group button{padding:9px 5px;font-size:11px}
+  .room-tools .tool-group button span{display:block;margin:0 0 6px}
+  .drawing-guide{gap:5px}.drawing-guide span{flex-basis:100%}
+}

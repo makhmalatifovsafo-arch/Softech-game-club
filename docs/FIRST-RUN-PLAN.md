@@ -143,3 +143,14 @@ Tekshiruv: `node tests/onboarding-browser.mjs` haqiqiy kassa HTML maketi bilan E
 - Oxirgi oraliq o‘chirilganda eski umumiy narx yashirincha qaytmaydi. `zones.tariff_source=ROOM` bu holatni ajratadi. Yangilanish mavjud umumiy tariflardan foydalanayotgan eski xonalarning hisobini o‘zgartirmaydi.
 - Tugatilgan usta qayta ochilganda amaldagi xona tariflarini o‘qiydi. Tugatilmagan tahrir qoralamasi esa avvalgidek davom ettiriladi.
 - Sinovlar: `room-tariffs.test.mjs`, `prepaid-flow.mjs`, `room-pricing-browser.mjs`, `tariff-browser.mjs`, `club-setup-browser.mjs` — ajratilgan bazalar va loopback serverlarda; real klublarga so‘rov yuborilmaydi.
+
+2026-11-18: sozlash ustasida xona chizish va tahrirlash:
+
+- Asboblar aniq ajratildi: Tanlash, To‘rtburchak, Pero, Surish. Har biri uchun xarita ustida qisqa ko‘rsatma turadi; tayyor xona qo‘shish ham saqlangan.
+- To‘rtburchakning 4 burchagi va 4 yon tutqichi bilan o‘lcham o‘zgaradi. Kichraytirishda PC’lar xona ichidagi nisbiy joyini saqlaydi; raqam/IP/MAC va tariflar o‘zgarmaydi.
+- Pero burchaklarni birma-bir belgilaydi; birinchi nuqta, Enter yoki «Xonani tugatish» shaklni yopadi. L shakli ham mumkin. Oxirgi nuqtani qaytarish va Esc bilan bekor qilish bor. Tugallanmagan shakl serverga yozilmaydi va «Keyingi»ga o‘tmaydi.
+- Ko‘pburchak burchaklari tortib tahrirlanadi; devordagi + yangi burchak qo‘shadi. Fokuslangan burchak strelkalar bilan suriladi, Delete bilan olinadi. Kesishgan devor yoki yaroqsiz shakl rad etilib, avvalgi shakl qoladi.
+- Xaritani surish, +/−, Ctrl + g‘ildirak, tanlangan xonaga yaqinlashish va butun zalni ko‘rish qo‘shildi. Burchakni tortish davomida masshtab sakramaydi; xona tashqariga chiqsa, qo‘yib yuborgandan so‘ng xarita uni sig‘diradi.
+- Geometriya mavjud `polygonPoints`/`polygon_points` formati bilan saqlanadi. Amaldagi kassa xaritasi va seans/narx hisoblash kodi almashtirilmagan; yakunlashdagi tekshiruv va tranzaksiya o‘z joyida.
+- Tekshiruv: `node --test tests/club-setup*.test.mjs` — 22 test; `node tests/club-setup-map-browser.mjs` — haqiqiy pointer/klaviatura, saqlash/reload, bekor qilish, PC/tariflar saqlanishi va 1024×600/390×844; `node tests/club-setup-browser.mjs` — ustaning barcha bosqichlari. Brauzer sinovlari Edge’da, loopback fixture orqali bajariladi.
+- Bu tahrirlar avval yig‘ilgan 1.3.8 setup/ZIP fayllariga hali kiritilmagan; keyingi paket yangidan yig‘ilishi kerak.

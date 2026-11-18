@@ -1,6 +1,14 @@
 // These releases intentionally open without the full-screen presentation.
 export const presentationlessReleases=['1.3.5','1.3.6'];
 export const releaseNotes={
+ '1.3.9':{
+  title:'Xonalarni o‘zingiz xohlagandek chizing',
+  intro:'Serverdagi klubni sozlash oynasida xona chizish va tahrirlash qulayroq.',
+  slides:[
+   {roles:['club_owner','manager'],icon:'✎',title:'Pero bilan erkin xona shakli',text:'To‘rtburchak yoki Pero asbobini tanlang. Pero bilan burchaklarni birma-bir belgilang — L shaklidagi xonani ham chizish mumkin. Birinchi nuqtaga yoki «Xonani tugatish»ga bosing.',action:'Server → Sozlamalar → Klubni sozlash → Xonalar'},
+   {roles:['club_owner','manager'],icon:'↔',title:'Burchagidan tortib moslang',text:'Xonani tanlab, tutqichlarini torting. Pero bilan chizilgan xonaga yangi burchak qo‘shish ham mumkin. + va − xaritani yaqinlashtiradi; Esc boshlangan chizish yoki tortishni bekor qiladi.',action:'Server → Klubni sozlash → Xonalar'}
+  ]
+ },
  '1.3.8':{
   title:'Tariflar va klubni sozlash tushunarliroq',
   intro:'Xona narxlari bitta joyda, sozlash oynalari esa soddaroq.',

@@ -114,7 +114,7 @@ try {
   assert.match(logs, /\[DNS fixture\] IPv4 recovery/);
   for (const file of ['diagnose-connection.mjs', 'diagnose-connection.cmd', 'src/services/cloudConnection.js', 'src/services/cloudIpv4.js', 'src/services/cloudCommands.js', 'src/services/cloudAnnouncements.js', 'public/cloud-announcements.js', 'public/licenseGuard.js',
     'src/server.js', 'src/services/roomTariffs.js', 'src/services/pricingEngine.js', 'src/services/clubSetup.js', 'src/services/setupConnection.js', 'src/services/clubSetupFinalize.js',
-    'public/index.html', 'public/room-pricing.js', 'public/room-pricing.css', 'public/club-setup.js', 'public/setup-connection.js', 'public/release-notes.js']) {
+    'public/index.html', 'public/room-pricing.js', 'public/room-pricing.css', 'public/club-setup.html', 'public/club-setup.css', 'public/club-setup.js', 'public/club-setup-model.js', 'public/club-setup-geometry.js', 'public/setup-connection.js', 'public/release-notes.js']) {
     assert.equal(fs.readFileSync(path.join(serverDir, file), 'utf8'), fs.readFileSync(path.join('NetCafeServer', file), 'utf8'));
   }
   console.log('PASS packaged license flow reports cloud outage, recovers, and serves current uncached UI');

@@ -26,17 +26,36 @@
         <button data-step="review"><span>04</span><b>Tekshirish</b><small>Hammasi joyidami?</small></button>
       </nav>
       <div class="stage-heading"><div><p class="eyebrow" id="stepKicker">01 / ZAL REJASI</p><h1 id="stepTitle" tabindex="-1">Klubingiz qanday joylashgan?</h1><p id="stepHint"></p></div><span class="draft-badge">QORALAMA</span></div>
-      <p class="notice">Xonalar → kompyuterlar → tariflar. Tayyor bo‘lgach, oxirgi bosqichda “Saqlash va ishni boshlash”ni bosing.</p>
+      <p class="notice">Hozir qoralamani tayyorlaysiz. Sozlamalar oxirida “Saqlash va ishni boshlash” bosilganda qo‘llanadi.</p>
       <p class="source-notice" id="sourceNotice" hidden></p>
       <div id="saveError" class="error-banner" role="alert" hidden><span></span><div><button id="retrySave">Qayta saqlash</button><button id="downloadDraft">Qoralamani yuklab olish</button><button id="loadRemote" hidden>Serverdagi nusxani ochish</button></div></div>
       <section id="roomsStage" data-panel="rooms">
         <div class="workspace-grid">
           <div class="map-card">
-            <div class="toolbar"><div class="tool-group"><button id="selectTool" class="selected" aria-pressed="true">↖ Tanlash</button><button id="drawTool" aria-pressed="false">▱ Xona chizish</button><button data-map-view="selected">Xonaga yaqinlashish</button><button data-map-view="all">Butun zal</button></div><button id="addRoom">+ Xona</button></div>
-            <div class="map-host" id="roomMapHost"></div>
-            <p class="map-caption" id="mapHint">Xonani suring yoki o‘lchamlarini o‘ng tomonda yozing. Klaviatura strelkalari bilan ham siljitish mumkin.</p>
+            <div class="toolbar room-tools" aria-label="Xona chizish asboblari">
+              <div class="tool-group">
+                <button id="selectTool" class="selected" aria-pressed="true" title="Tanlash va tahrirlash (V)"><span aria-hidden="true">↖</span> Tanlash</button>
+                <button id="drawTool" aria-pressed="false" title="Bosib tortib to‘rtburchak chizing (R)"><span aria-hidden="true">▭</span> To‘rtburchak</button>
+                <button id="penTool" aria-pressed="false" title="Burchaklarni birma-bir belgilang (P)"><span aria-hidden="true">✎</span> Pero</button>
+                <button id="panTool" aria-pressed="false" title="Xaritani surish (H)"><span aria-hidden="true">✥</span> Surish</button>
+              </div>
+              <button id="addRoom" title="Tayyor to‘rtburchak qo‘shib, keyin burchaklaridan torting">+ Tayyor xona</button>
+            </div>
+            <div class="drawing-guide"><strong id="mapToolName">Tanlash</strong><span id="mapHint"></span></div>
+            <div class="pen-actions" id="penActions" hidden>
+              <span id="penCount" aria-live="polite"></span>
+              <button id="finishPolygon" class="primary">✓ Xonani tugatish</button>
+              <button id="undoPoint">↶ Oxirgi nuqtani olish</button>
+              <button id="cancelPolygon">Bekor qilish</button>
+            </div>
+            <p id="mapMessage" class="map-message" role="status" hidden></p>
+            <div class="map-host" id="roomMapHost" tabindex="0" aria-label="Xona chizish maydoni" aria-describedby="mapHint"></div>
+            <div class="map-view-controls">
+              <div class="tool-group"><button data-map-view="all">Butun zal</button><button data-map-view="selected">Tanlangan xona</button></div>
+              <div class="tool-group"><button id="zoomOut" aria-label="Xaritani uzoqlashtirish">−</button><button id="zoomIn" aria-label="Xaritani yaqinlashtirish">+</button></div>
+            </div>
           </div>
-          <aside class="inspector"><div class="section-label">XONALAR <span id="roomCount">0</span></div><div id="roomList" class="entity-list"></div><div id="roomEditor"></div></aside>
+          <aside class="inspector"><div class="section-label">XONALAR <span id="roomCount">0</span></div><div id="roomList" class="entity-list"></div><div id="roomEditor"></div><p class="room-next-note">Keyingi bosqichda xonalarga kompyuterlar qo‘shasiz.</p></aside>
         </div>
       </section>
       <section id="computersStage" data-panel="computers" hidden>
