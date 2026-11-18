@@ -23,6 +23,8 @@ Next batch: session transfers, customer balance, reports and connection indicato
 
 Initial route contract:
 
+The paths below are relative to the website root: `/site` on the shared Vercel deployment, or `/` on the older ChatGPT Sites host. Existing Sites links remain supported; new desktop releases use Vercel `/site/help/...`.
+
 | Topic ID | Path | Intended location |
 | --- | --- | --- |
 | session.start | /help/seans-ochish/ | Session start dialog |

@@ -3,12 +3,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { syncWebsite } from './sync-website.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const target = path.join(root, 'SoftechCloudAdmin');
 const check = process.argv.includes('--check');
 const managed = ['src', 'api', 'public', 'migrations', 'supabase_schema.sql', 'vercel.json'];
 const differences = [];
+
+syncWebsite({ check });
 
 function sync(relative) {
   const source = path.join(root, relative);

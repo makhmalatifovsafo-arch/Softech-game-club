@@ -1,0 +1,15 @@
+@font-face {
+  font-family: 'Softech Manrope';
+  src: url('/fonts/Manrope-ExtraBold.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+.softech-wordmark {
+  font-family: 'Softech Manrope', Arial, sans-serif;
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -1px;
+  color: #f1f2f0;
+}

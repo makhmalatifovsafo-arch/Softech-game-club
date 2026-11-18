@@ -2,6 +2,11 @@
   "version": 2,
   "framework": null,
   "outputDirectory": "public",
+  "redirects": [
+    { "source": "/site", "destination": "/site/", "permanent": true },
+    { "source": "/site/help", "destination": "/site/help/", "permanent": true },
+    { "source": "/site/help/:topic", "destination": "/site/help/:topic/", "permanent": true }
+  ],
   "rewrites": [
     {
       "source": "/api/:path*",
@@ -22,6 +27,18 @@
     {
       "source": "/login",
       "destination": "/views/login.html"
+    },
+    {
+      "source": "/site/",
+      "destination": "/site/index.html"
+    },
+    {
+      "source": "/site/help/",
+      "destination": "/site/help/index.html"
+    },
+    {
+      "source": "/site/help/:topic/",
+      "destination": "/site/help/:topic/index.html"
     }
   ]
 }

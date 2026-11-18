@@ -33,6 +33,12 @@ namespace ResizeFixture {
 }
 '@
 [xml]$xml = Get-Content -Raw -Encoding UTF8 (Join-Path $PSScriptRoot '../NetCafeServer/Launcher/MainWindow.xaml')
+# Load shared visual resources from source without constructing either real app.
+$brandContext = New-Object System.Windows.Markup.ParserContext
+$brandContext.BaseUri = [Uri](Resolve-Path (Join-Path $PSScriptRoot '../Shared/Branding/Brand.xaml')).Path
+$brandResources = [System.Windows.Markup.XamlReader]::Parse((Get-Content -Raw -Encoding UTF8 $brandContext.BaseUri.LocalPath), $brandContext)
+if (-not [System.Windows.Application]::Current) { $null = New-Object System.Windows.Application }
+[System.Windows.Application]::Current.Resources = $brandResources
 $windowNode = $xml.DocumentElement
 $windowNode.RemoveAttribute('Class','http://schemas.microsoft.com/winfx/2006/xaml')
 $windowNode.RemoveAttribute('Ignorable','http://schemas.openxmlformats.org/markup-compatibility/2006')

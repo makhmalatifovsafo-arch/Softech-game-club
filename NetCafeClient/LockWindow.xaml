@@ -9,6 +9,7 @@
         Topmost="True"
         ShowInTaskbar="False"
         Background="#050507"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
         Focusable="True">
 
     <Window.Resources>
@@ -179,20 +180,16 @@
 
                     <!-- CHAP: Klub Brendi va Server Holati -->
                     <StackPanel x:Name="LogoBrandPanel" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Cursor="Hand" MouseLeftButtonDown="LogoBrandPanel_MouseLeftButtonDown">
-                        <!-- Neon Cyber Icon -->
-                        <Border Width="44" Height="44" CornerRadius="12" Background="#090A0C" BorderBrush="#C8FF31" BorderThickness="1.5" Margin="0,0,14,0">
-                            <Image Source="/app.ico" Width="40" Height="40"/>
-                        </Border>
+                        <Image Source="{StaticResource SoftechMark}" Width="40" Height="40" Margin="0,0,9,0" />
                         <StackPanel VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="SOFTECH" FontSize="16" FontWeight="Black" Foreground="White"/>
-                                <TextBlock Text=" GAMING" FontSize="16" FontWeight="Black" Foreground="#06B6D4"/>
+                                <TextBlock Style="{StaticResource SoftechWordmark}" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                 <Border x:Name="PillServerStatus" Background="#122B1E" BorderBrush="#10B981" BorderThickness="1" CornerRadius="6" Padding="6,1" Margin="0,0,8,0">
                                     <TextBlock x:Name="TxtServerStatus" Text="● ONLINE" FontSize="10" FontWeight="Bold" Foreground="#34D399"/>
                                 </Border>
-                                <TextBlock Text="ESPORTS MANAGEMENT" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="GAME CLUB" FontSize="10" FontWeight="SemiBold" Foreground="#A1A1AA"/>
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>

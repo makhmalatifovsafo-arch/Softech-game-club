@@ -2336,7 +2336,7 @@ async function openPcBarOrder(pcId) {
   dialog.className = 'rounded-2xl p-6 bg-zinc-900 text-white border border-zinc-700';
   dialog.style.cssText = 'width:min(560px,95vw);max-height:85vh;overflow:auto';
   dialog.innerHTML = `<h2 class="text-lg font-bold"></h2>
-    <a class="softech-help-link" data-help-topic="bar.sale" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/bar-savdosi/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Bar savdosi — qisqa qo‘llanma" aria-label="Bar savdosi — qisqa qo‘llanma">?</a>
+    <a class="softech-help-link" data-help-topic="bar.sale" href="https://softech-game-club.vercel.app/site/help/bar-savdosi/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Bar savdosi — qisqa qo‘llanma" aria-label="Bar savdosi — qisqa qo‘llanma">?</a>
     <p class="text-sm text-zinc-400 my-2">Mahsulotlar seans hisobiga yoziladi. To‘lov seans yakunida olinadi.</p>
     <input type="search" placeholder="Mahsulot qidirish…" class="w-full p-2 rounded bg-zinc-800 my-2" aria-label="Mahsulot qidirish">
     <form><div data-products>Yuklanmoqda…</div><p data-error role="alert" class="text-rose-400 my-2"></p>

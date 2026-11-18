@@ -363,6 +363,7 @@
     }
   </style>
 <script src="/power-confirm.js" defer></script>
+  <link rel="stylesheet" href="/brand.css">
 </head>
 <body class="min-h-screen selection:bg-white selection:text-black">
 
@@ -374,8 +375,9 @@
       
       <!-- Logo & Title -->
       <div class="text-center space-y-2">
-        <img src="/brand-icon.svg" width="48" height="48" class="mx-auto rounded-xl" alt="Softech">
-        <h2 class="text-xl font-bold tracking-tight text-white font-sans">Softech Tizimiga Kirish</h2>
+        <img src="/brand-mark.svg" width="56" height="56" class="mx-auto" alt="">
+        <div class="softech-wordmark">SOFTECH</div>
+        <h2 class="text-sm font-semibold text-white font-sans">Tizimga kirish</h2>
         <p class="text-xs text-[#71717a]">Game Club boshqaruv paneli autentifikatsiyasi</p>
       </div>
 
@@ -428,11 +430,10 @@
         <!-- Top: Logo & Network status -->
         <div class="p-4 border-b border-white/10 flex items-center justify-between relative bg-white/[0.02]">
           <div class="flex items-center gap-3">
-            <img src="/brand-icon.svg" width="36" height="36" class="rounded-xl" alt="Softech">
+            <img src="/brand-mark.svg" width="34" height="34" alt="">
             <div>
               <div class="flex items-center gap-1.5">
-                <span class="text-sm font-extrabold tracking-wider text-white font-mono drop-shadow-sm">SOFTECH</span>
-                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.25)]">OS</span>
+                <span class="softech-wordmark">SOFTECH</span>
               </div>
               <div class="flex items-center gap-1.5 text-[10px] text-zinc-400 mt-0.5">
                 <span id="wsStatusDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]"></span>
@@ -1535,7 +1536,7 @@
       <!-- CHAP TOMON: Tovar Katalogi yoki Ombor Jadvali + Pastida Oxirgi Sotuvlar Lentasi (2 cols) -->
       <div class="lg:col-span-2 space-y-6">
         <!-- 1. Katalog Kartochkalari ko'rinishi -->
-        <div class="flex items-center text-xs text-zinc-400">PC hisobiga mahsulot qo‘shish <a class="softech-help-link" data-help-topic="bar.sale" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/bar-savdosi/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Bar savdosi — qisqa qo‘llanma" aria-label="Bar savdosi — qisqa qo‘llanma">?</a></div>
+        <div class="flex items-center text-xs text-zinc-400">PC hisobiga mahsulot qo‘shish <a class="softech-help-link" data-help-topic="bar.sale" href="https://softech-game-club.vercel.app/site/help/bar-savdosi/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Bar savdosi — qisqa qo‘llanma" aria-label="Bar savdosi — qisqa qo‘llanma">?</a></div>
         <div id="barCatalogCardsView" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           <!-- Dinamik ravishda mahsulotlar yuklanadi -->
         </div>
@@ -2119,7 +2120,7 @@
         </div>
 
         <!-- TAB 2: TARIFFS & DYNAMIC SCHEDULES -->
-        <div id="tabContent-tariffs" class="flex flex-col gap-6 hidden"><div class="order-first flex items-center text-xs text-zinc-400">Tariflar qanday ishlaydi? <a class="softech-help-link" data-help-topic="tariff.schedule" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/dinamik-tariflar/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Dinamik tariflar — qisqa qo‘llanma" aria-label="Dinamik tariflar — qisqa qo‘llanma">?</a></div>
+        <div id="tabContent-tariffs" class="flex flex-col gap-6 hidden"><div class="order-first flex items-center text-xs text-zinc-400">Tariflar qanday ishlaydi? <a class="softech-help-link" data-help-topic="tariff.schedule" href="https://softech-game-club.vercel.app/site/help/dinamik-tariflar/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Dinamik tariflar — qisqa qo‘llanma" aria-label="Dinamik tariflar — qisqa qo‘llanma">?</a></div>
           <!-- 0. VIP POSTPAID BOSHQARUV BLOKI -->
           <div class="p-5 rounded-2xl border border-amber-500/30 bg-gradient-to-br from-[#121217] via-[#16141c] to-[#09090b] shadow-xl relative overflow-hidden">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#27272a]/80">
@@ -2465,7 +2466,7 @@
           <div>
             <h3 class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
               <span id="startModalPcTitle">PC-01</span>
-              <span class="text-xs font-normal text-[var(--text-muted)]">— Seans Ochish</span><a class="softech-help-link" data-help-topic="session.start" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/seans-ochish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Seans ochish — qisqa qo‘llanma" aria-label="Seans ochish — qisqa qo‘llanma">?</a>
+              <span class="text-xs font-normal text-[var(--text-muted)]">— Seans Ochish</span><a class="softech-help-link" data-help-topic="session.start" href="https://softech-game-club.vercel.app/site/help/seans-ochish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Seans ochish — qisqa qo‘llanma" aria-label="Seans ochish — qisqa qo‘llanma">?</a>
             </h3>
             <p class="text-[11px] text-[var(--text-muted)] font-mono">Tarif: <span id="startModalTariffRate" class="text-white font-medium">Dinamik soatlik</span></p>
           </div>
@@ -2571,7 +2572,7 @@
         <div id="startSection-postpaid" class="space-y-3 hidden">
           <div class="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2.5">
             <div class="flex items-center gap-2 text-amber-400 font-semibold text-xs">
-              <span>⭐ VIP Postpaid Rejimi</span><a class="softech-help-link" data-help-topic="session.vip" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/vip-postpaid/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="VIP Postpaid — qisqa qo‘llanma" aria-label="VIP Postpaid — qisqa qo‘llanma">?</a>
+              <span>⭐ VIP Postpaid Rejimi</span><a class="softech-help-link" data-help-topic="session.vip" href="https://softech-game-club.vercel.app/site/help/vip-postpaid/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="VIP Postpaid — qisqa qo‘llanma" aria-label="VIP Postpaid — qisqa qo‘llanma">?</a>
               <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">Cheksiz Vaqt</span>
             </div>
             <p class="text-xs text-[#d4d4d8] leading-relaxed">
@@ -2777,7 +2778,7 @@
             <p class="text-[11px] text-zinc-400">Muddatidan oldin yopish va hisob-kitob</p>
           </div>
         </div>
-        <a class="softech-help-link" data-help-topic="session.checkout" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/seansni-yopish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="To‘lov va qaytim — qisqa qo‘llanma" aria-label="To‘lov va qaytim — qisqa qo‘llanma">?</a>
+        <a class="softech-help-link" data-help-topic="session.checkout" href="https://softech-game-club.vercel.app/site/help/seansni-yopish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="To‘lov va qaytim — qisqa qo‘llanma" aria-label="To‘lov va qaytim — qisqa qo‘llanma">?</a>
         <button onclick="closeModal('refundModal')" class="text-zinc-500 hover:text-white text-lg">&times;</button>
       </div>
 
@@ -2854,7 +2855,7 @@
             <p id="checkoutModalSubtitle" class="text-[11px] text-amber-300/80">O'yin vaqti va bar buyurtmalari kassa to'lovi</p>
           </div>
         </div>
-        <a class="softech-help-link" data-help-topic="session.checkout" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/seansni-yopish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="To‘lov va qaytim — qisqa qo‘llanma" aria-label="To‘lov va qaytim — qisqa qo‘llanma">?</a>
+        <a class="softech-help-link" data-help-topic="session.checkout" href="https://softech-game-club.vercel.app/site/help/seansni-yopish/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="To‘lov va qaytim — qisqa qo‘llanma" aria-label="To‘lov va qaytim — qisqa qo‘llanma">?</a>
         <button onclick="closeModal('vipCheckoutModal')" class="text-zinc-500 hover:text-white text-lg">&times;</button>
       </div>
 
@@ -3231,7 +3232,7 @@
         <div class="flex items-center gap-2.5">
           <span class="text-xl">🏰</span>
           <div>
-            <h3 id="quickRoomModalTitle" class="text-sm font-bold text-white tracking-tight">Xona va Dinamik Tariflar Modali</h3><a class="softech-help-link" data-help-topic="tariff.schedule" href="https://softech-club-cyber.windygnome8193.chatgpt.site/help/dinamik-tariflar/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Xona tarifi — qisqa qo‘llanma" aria-label="Xona tarifi — qisqa qo‘llanma">?</a>
+            <h3 id="quickRoomModalTitle" class="text-sm font-bold text-white tracking-tight">Xona va Dinamik Tariflar Modali</h3><a class="softech-help-link" data-help-topic="tariff.schedule" href="https://softech-game-club.vercel.app/site/help/dinamik-tariflar/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="Xona tarifi — qisqa qo‘llanma" aria-label="Xona tarifi — qisqa qo‘llanma">?</a>
             <p id="quickRoomModalSubtitle" class="text-[11px] text-zinc-400">Xona parametrlari va unga biriktirilgan dinamik narxlar oraliqlari</p>
           </div>
         </div>

@@ -30,7 +30,7 @@ try {
    return [...doc.querySelectorAll('a[data-help-topic]')].map(a=>({html:a.outerHTML,url:a.href,nested:!!a.parentElement.closest('button,a')}));
  },html);
  assert.equal(links.length,7);assert.ok(links.every(l=>!l.nested));
- for(const {url} of links){const u=new URL(url);assert.equal(u.search,'');assert.equal(u.hash,'');assert.ok(existsSync(root+u.pathname+'index.html'));}
+ for(const {url} of links){const u=new URL(url);assert.equal(u.search,'');assert.equal(u.hash,'');assert.ok(existsSync(root+u.pathname.replace(/^\/site/, '')+'index.html'));}
  await page.setContent('<form id="cashier"><input id="amount" value="18000">'+links.map(l=>l.html).join('')+'<button type="submit">Save</button></form>');
  await page.addStyleTag({path:'NetCafeServer/public/context-help.css'});
  await page.addScriptTag({path:'NetCafeServer/public/context-help.js'});
@@ -38,7 +38,7 @@ try {
  await page.locator('#amount').fill('25000');
  const popupPromise=context.waitForEvent('page');await page.locator('[data-help-topic="session.start"]').click();
  const popup=await popupPromise;await popup.waitForLoadState();
- assert.equal(popup.url(),'https://softech-club-cyber.windygnome8193.chatgpt.site/help/seans-ochish/');await popup.close();
+ assert.equal(popup.url(),'https://softech-game-club.vercel.app/site/help/seans-ochish/');await popup.close();
  assert.equal(await page.locator('#amount').inputValue(),'25000');assert.equal(await page.evaluate(()=>window.submits),0);
  await context.setOffline(true);
  await page.locator('[data-help-topic="session.vip"]').click();

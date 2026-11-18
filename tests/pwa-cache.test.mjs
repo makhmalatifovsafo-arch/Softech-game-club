@@ -12,4 +12,7 @@ for(const file of ['public/sw.js','SoftechCloudAdmin/public/sw.js'])test(file+' 
  assert.equal(puts,1);offline=false;networkText='fresh API';assert.equal(await(await request('/api/clubs')).text(),'fresh API');assert.equal(puts,1);
  assert.equal(await request('/custom-write','POST'),undefined);
  offline=true;saved.set('/index.html',new Response('offline shell'));assert.equal(await(await request('/page','GET','navigate')).text(),'offline shell');assert.equal((await request('/missing.js')).status,503);
+ for (const route of ['/site', '/site/', '/site/help/seans-ochish/', '/site/assets/mark.svg']) {
+   assert.equal(await request(route,'GET','navigate'),undefined,'Marketing pages must not fall back to the super admin shell');
+ }
 });

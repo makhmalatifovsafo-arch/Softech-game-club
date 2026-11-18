@@ -14,6 +14,14 @@ for (const prefix of ['', 'SoftechCloudAdmin/']) {
     assert.deepEqual(entries.filter(entry => entry.isFile()).map(entry => entry.name), ['index.js']);
     const config = JSON.parse(await readFile(new URL('../' + prefix + 'vercel.json', import.meta.url), 'utf8'));
     assert.ok(config.rewrites.some(rule => rule.source === '/api/:path*' && rule.destination === '/api/index?route=:path*'));
+    for (const [source, destination] of [['/', '/index.html'], ['/mobile/', '/mobile/index.html'], ['/login', '/views/login.html'], ['/site/', '/site/index.html'], ['/site/help/', '/site/help/index.html']]) {
+      assert.ok(config.rewrites.some(rule => rule.source === source && rule.destination === destination), source);
+      const content = await readFile(new URL('../' + prefix + 'public' + destination, import.meta.url), 'utf8');
+      assert.match(content, /<!doctype html>/i);
+    }
+    for (const [source, destination] of [['/site','/site/'], ['/site/help','/site/help/']]) {
+      assert.ok(config.redirects.some(rule => rule.source === source && rule.destination === destination));
+    }
   });
   const { default: handler } = await import('../' + prefix + 'api/index.js');
   const { SupabaseCloudService } = await import('../' + prefix + 'src/services/supabaseClient.js');

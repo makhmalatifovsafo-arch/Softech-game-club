@@ -193,12 +193,13 @@ public partial class MainWindow : Window
 
     private void OpenHelpInBrowser(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
-        // Only the static help origin is opened through the Windows shell.
+        // Keep legacy help links working; new releases use the shared Vercel site.
         if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ||
             uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort ||
-            uri.Host != "softech-club-cyber.windygnome8193.chatgpt.site" ||
-            !uri.AbsolutePath.StartsWith("/help/", StringComparison.Ordinal) ||
             uri.UserInfo.Length != 0) return;
+        var isHelp = (uri.Host == "softech-game-club.vercel.app" && uri.AbsolutePath.StartsWith("/site/help/", StringComparison.Ordinal)) ||
+                     (uri.Host == "softech-club-cyber.windygnome8193.chatgpt.site" && uri.AbsolutePath.StartsWith("/help/", StringComparison.Ordinal));
+        if (!isHelp) return;
         e.Handled = true;
         if (!e.IsUserInitiated) return;
         try

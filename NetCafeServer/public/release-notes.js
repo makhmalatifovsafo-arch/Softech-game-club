@@ -1,6 +1,14 @@
 // These releases intentionally open without the full-screen presentation.
 export const presentationlessReleases=['1.3.5','1.3.6'];
 export const releaseNotes={
+ '1.3.10':{
+  title:'Aniq logo va qulay qo‘llanma',
+  intro:'Server va client ko‘rinishi saytimizga moslandi.',
+  slides:[
+   {roles:['club_owner','manager','administrator'],icon:'✦',title:'Softech belgisi tiniqroq',text:'Server ochilganda va clientning qulflangan ekranida yangilangan logo ko‘rinadi. Yozuv va belgi katta ekranlarda ham aniq chiqadi. Clientdagi o‘zgarish uning dasturi yangilangandan keyin ko‘rinadi.',action:'Server va client → 1.3.10 versiyasi'},
+   {roles:['club_owner','manager','administrator'],icon:'?',title:'Kerakli joyda qisqa yordam',text:'Seans, bar yoki tarif oynasidagi «?» belgisini bosing. Aynan shu funksiyani tushuntiradigan qisqa qo‘llanma yangi saytimizda ochiladi.',action:'Server → Kerakli oyna → ?'}
+  ]
+ },
  '1.3.9':{
   title:'Xonalarni o‘zingiz xohlagandek chizing',
   intro:'Serverdagi klubni sozlash oynasida xona chizish va tahrirlash qulayroq.',

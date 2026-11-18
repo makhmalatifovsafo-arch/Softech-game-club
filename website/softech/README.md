@@ -1,6 +1,6 @@
 # Softech public website
 
-Independent static marketing site. Production server, super admin and mobile applications are not modified by this site. There is no interactive product demo. Product presentation uses screenshots of the current server UI captured from an isolated local server and local cloud with seeded test data. No live club data is shown.
+Static marketing site, cohosted with the cloud application on Vercel at `/site/`. The existing super-admin `/`, mobile `/mobile/` and API `/api/` routes keep their meanings. There is no interactive product demo. Product presentation uses screenshots of the current server UI captured from an isolated local server and local cloud with seeded test data. No live club data is shown.
 
 From the repository root:
 
@@ -16,7 +16,15 @@ The order form prepares a message; the visitor copies it and sends it in Telegra
 
 See `ROADMAP.md` for the phased delivery and stable topic URLs for future in-app help. Server contextual help links now connect to five topic pages. The user authorized public website access. Help opens separately and sends no club data. The server source must ship in a new release before installed clubs receive the buttons.
 
-Sites project identity is in `.openai/hosting.json`. Publish from a separate source checkout, not by initializing a nested Git repository here. The GitHub/Vercel production application remains separate.
+## Vercel deployment
+
+Edit `dist`, then run `npm run sync:cloud`. This synchronizes the static files into `public/site` and `SoftechCloudAdmin/public/site`, so either existing Vercel project root can deploy them without an additional build step or serverless function. Commit these generated copies together. `npm run check:cloud` fails if either website or cloud copies are stale. Do not edit the generated copies directly.
+
+After the next GitHub push and successful Vercel deployment, the site is available at `https://softech-game-club.vercel.app/site/`; contextual help is under `/site/help/`. The new desktop client and launcher branding requires a new Windows release. Test the Vercel subpath bundle locally with `node tests/site-browser.mjs` (uses the existing Playwright installation and an isolated HTTP fixture).
+
+The older public ChatGPT Sites address remains available for installed releases containing its help links. Its project identity is in `.openai/hosting.json`; these metadata and source scripts are never copied to `public`. This repository change does not publish to or delete that older hosting deployment.
+
+The native client and launcher use `Shared/Branding/Brand.xaml`, with the website's vector mark and bundled Manrope ExtraBold font; the cashier web UI uses the same mark and font. `npm run sync:cloud` also keeps those font/mark asset copies aligned. Windows shortcut `.ico` assets are separate from the scalable in-window artwork.
 
 ## Artwork
 

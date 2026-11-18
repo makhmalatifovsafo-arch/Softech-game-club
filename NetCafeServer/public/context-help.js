@@ -1,6 +1,6 @@
 // Help is independent of sessions, payments and the club database.
 (() => {
-  const origin = 'https://softech-club-cyber.windygnome8193.chatgpt.site';
+  const origin = 'https://softech-game-club.vercel.app/site';
   const topics = {
     'session.start': ['seans-ochish', 'Seans ochish', 'Vaqtda — soat yoki daqiqa. Summada — mijoz bergan pulga mos vaqt. Tugash vaqti — seans tugaydigan soat. Ochishdan oldin PC va hisoblangan narxni tekshiring.'],
     'session.vip': ['vip-postpaid', 'VIP Postpaid', 'Avval vaqt cheklovisiz seans ochiladi, pul yakunda olinadi. Misol: soati 10 000 so‘mda 30 daqiqa o‘yin — 5 000 so‘m. To‘lanmagan bar mahsulotlari ham yakuniy hisobga qo‘shiladi.'],

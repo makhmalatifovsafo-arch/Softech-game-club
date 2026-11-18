@@ -28,6 +28,8 @@
   <!-- config.json va SoftechUpdater.exe fayllarini har doim exe yoniga ko'chirish -->
   <ItemGroup>
     <Resource Include="app.ico" />
+    <Page Include="../Shared/Branding/Brand.xaml" Link="Branding/Brand.xaml" />
+    <Resource Include="../Shared/Branding/Fonts/*" Link="Branding/Fonts/%(Filename)%(Extension)" />
     <Compile Include="../Shared/Networking/ServerAddress.cs" Link="Networking/ServerAddress.cs" />
     <None Update="config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

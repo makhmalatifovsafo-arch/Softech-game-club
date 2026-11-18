@@ -30,6 +30,8 @@
 
   <ItemGroup>
     <Resource Include="app.ico" />
+    <Page Include="../../Shared/Branding/Brand.xaml" Link="Branding/Brand.xaml" />
+    <Resource Include="../../Shared/Branding/Fonts/*" Link="Branding/Fonts/%(Filename)%(Extension)" />
   </ItemGroup>
 
 <ItemGroup><Compile Include="../../Shared/Updates/*.cs" Link="Updates/%(Filename)%(Extension)" /></ItemGroup>

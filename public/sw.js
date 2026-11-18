@@ -20,6 +20,9 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Marketing/help pages have their own assets. Never replace them with the
+  // authenticated dashboard shell when offline, or cache them as cockpit files.
+  if (url.pathname === '/site' || url.pathname.startsWith('/site/')) return;
   // Authentication and club controls must never fall back to cached API successes.
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(request).catch(() => new Response(JSON.stringify({

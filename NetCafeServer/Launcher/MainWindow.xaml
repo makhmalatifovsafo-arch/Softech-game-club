@@ -13,6 +13,7 @@
         WindowStyle="None"
         ResizeMode="CanResize"
         Background="#09090B"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
         Icon="app.ico">
 
     <!-- Modern Windows Aero Snap & Resizing Integration -->
@@ -100,18 +101,10 @@
             <Grid>
                 <!-- Left: App Branding & Status -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                    <!-- Brand Icon Badge -->
-                    <Border Width="24" Height="24" CornerRadius="7" Background="#0EA5E9" Margin="0,0,10,0">
-                        <Border.Effect>
-                            <DropShadowEffect Color="#0EA5E9" BlurRadius="8" ShadowDepth="0" Opacity="0.4" />
-                        </Border.Effect>
-                        <TextBlock Text="S" Foreground="White" FontWeight="Black" FontSize="13" 
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe UI" />
-                    </Border>
+                    <Image Source="{StaticResource SoftechMark}" Width="26" Height="26" Margin="0,0,8,0" />
 
                     <!-- App Title -->
-                    <TextBlock Text="Softech Game Club" Foreground="#FFFFFF" FontWeight="Bold" FontSize="13" 
-                               VerticalAlignment="Center" FontFamily="Segoe UI" Margin="0,0,8,0" />
+                    <TextBlock Style="{StaticResource SoftechWordmark}" FontSize="16" Margin="0,0,8,0" />
                     <TextBlock Text="— Boshqaruv Markazi" Foreground="#71717A" FontWeight="SemiBold" FontSize="12" 
                                VerticalAlignment="Center" FontFamily="Segoe UI" Margin="0,0,12,0" />
 
@@ -169,14 +162,12 @@
             <!-- 3. Modern Splash & Loading Overlay -->
             <Grid x:Name="LoadingOverlay" Background="#09090B" Visibility="Visible">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <!-- Glowing App Logo -->
-                    <Border Width="64" Height="64" CornerRadius="18" Background="#090A0C" HorizontalAlignment="Center" Margin="0,0,0,16">
-                        <Image Source="app.ico" Width="64" Height="64"/>
-                    </Border>
+                    <Image Source="{StaticResource SoftechMark}" Width="88" Height="88"
+                           HorizontalAlignment="Center" Margin="0,0,0,18" />
 
                     <!-- Title -->
-                    <TextBlock Text="SOFTECH GAME CLUB" Foreground="White" FontWeight="Black" FontSize="16" 
-                               HorizontalAlignment="Center" Margin="0,0,0,6" />
+                    <TextBlock Style="{StaticResource SoftechWordmark}" FontSize="30"
+                               HorizontalAlignment="Center" Margin="0,0,0,8" />
                     <TextBlock Text="Kassa Boshqaruv Markazi yuklanmoqda..." Foreground="#A1A1AA" FontSize="12" 
                                HorizontalAlignment="Center" Margin="0,0,0,18" />
 
