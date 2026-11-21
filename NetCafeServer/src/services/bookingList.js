@@ -11,7 +11,8 @@ export function listBookingRows(db,clubId,params,now=new Date()) {
   if(!Number.isSafeInteger(offset)||offset<0)throw bookingError('Sahifa noto‘g‘ri.');
   const where=[],args=[];
   if(clubId!==null){where.push('b.club_id=?');args.push(clubId);}
-  if(params.has('bookingId')){const id=Number(params.get('bookingId'));if(!Number.isSafeInteger(id)||id<=0)throw bookingError('Bron raqami noto‘g‘ri.');where.push('b.id=?');args.push(id);}
+  if(params.has('groupId')){const id=params.get('groupId');if(!/^[a-f0-9-]{36}$/.test(id))throw bookingError('Bron guruhi noto‘g‘ri.');where.push('b.group_id=?');args.push(id);}
+  else if(params.has('bookingId')){const id=Number(params.get('bookingId'));if(!Number.isSafeInteger(id)||id<=0)throw bookingError('Bron raqami noto‘g‘ri.');where.push('b.id=?');args.push(id);}
   else if(params.get('refunds')==='1')where.push(`EXISTS(SELECT 1 FROM booking_funds f WHERE f.club_id=b.club_id AND f.booking_id=b.id AND f.channel='CASH'
     GROUP BY f.booking_id HAVING sum(CASE WHEN f.kind='CAPTURE' THEN f.amount ELSE -f.amount END)>0)
     AND (b.session_id IS NOT NULL OR b.status IN ('CANCELLED','NO_SHOW'))`);

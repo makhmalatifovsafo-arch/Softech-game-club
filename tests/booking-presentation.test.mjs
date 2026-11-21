@@ -43,4 +43,9 @@ test('both staff roles can change grace; mobile manager cannot create or start b
  for(const path of ['/api/bookings','/api/bookings/1/check-in','/api/bookings/1/refund'])assert.equal(mobileRoleAllows('manager',path,'POST'),false);
  for(const path of ['/api/bookings/1/check-in-preview','/api/bookings/1/check-in','/api/bookings/1/refund'])assert.equal(allowedMobileRequest({path,method:'POST'}),true);
  assert.equal(allowedMobileRequest({path:'/api/bookings?date=2030-01-01&offset=100&refunds=0&computer=a',method:'GET'}),true);
+ const group='00000000-0000-4000-8000-000000000001';
+ assert.equal(allowedMobileRequest({path:'/api/bookings?groupId='+group,method:'GET'}),true);
+ for(const path of ['/api/bookings/allocation-preview',...['check-in-preview','check-in','checkout-preview','checkout'].map(a=>'/api/booking-groups/'+group+'/'+a)]){
+  assert.equal(allowedMobileRequest({path,method:'POST'}),true);assert.equal(mobileRoleAllows('manager',path,'POST'),false);assert.equal(mobileRoleAllows('administrator',path,'POST'),true);
+ }
 });

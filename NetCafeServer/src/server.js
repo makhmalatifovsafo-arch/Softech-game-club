@@ -12,7 +12,7 @@ import { readServerConfig, recoverServerConfig } from './services/serverConfig.j
 import { resolveCloudUrl } from './services/cloudUrl.js';
 import { updateCustomerCredentials } from './services/customerCredentials.js';
 import { transferSession, previewSessionTransfer } from './services/sessionTransfer.js';
-import { frozenPriceSegments } from './services/prepaidTransferPlan.js';
+import { extendFrozenPricePlan } from './services/prepaidTransferPlan.js';
 import { prepaidQuote, quoteUntilTime, sessionStartTime } from './services/prepaidQuote.js';
 import { clientSessionState, sessionGameAmount } from './services/clientSessionState.js';
 import { isPostpaidSession } from './services/sessionMode.js';
@@ -27,7 +27,8 @@ import { MobileSnapshotSync } from './services/mobileSnapshotSync.js';
 import { OptionalService } from './services/optionalService.js';
 import { mobileCloudUser } from './services/mobileCloudSession.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
-import { readBookingSettings, saveBookingSettings, createFreeReservation, cancelFreeReservation, expireFreeReservations, confirmBookingCashRefund } from './services/bookingFoundation.js';
+import { readBookingSettings, saveBookingSettings, createFreeReservation, cancelFreeReservation, expireFreeReservations, confirmBookingCashRefund,reservationAllocation } from './services/bookingFoundation.js';
+import {previewGroupStart,startBookingGroup,previewGroupCheckout,checkoutBookingGroup} from './services/bookingGroups.js';
 import {bookingFunds,hasBookingFunding,recordSessionPayment} from './services/bookingFunds.js';
 import { assertBookingAvailability } from './services/bookingAvailability.js';
 import { prepareCashierSession, cashierSessionQuote, startCashierSession } from './services/cashierSessionStart.js';
@@ -1925,6 +1926,34 @@ function handleRequest(req, res) {
 
   // POST /api/sessions/start (Qayta ishlangan: Hours, Price, VIP Postpaid, Client Base, Tenant Scoped)
   // Read-only quote using the same clock, room and pricing engine as session start.
+  const bookingGroupAction=url.pathname.match(/^\/api\/booking-groups\/([a-f0-9-]{36})\/(check-in-preview|check-in|checkout-preview|checkout)$/);
+  if(bookingGroupAction&&req.method==='POST'){
+    if(!authenticate(req,res,{roles:['superadmin','club_owner','administrator'],permission:'session:manage'}))return;
+    const actor={...req.user,clubId:req.user.clubId||1},[,groupId,action]=bookingGroupAction;
+    if(action==='check-in'&&(CloudLicenseService.isBlocked()||!LicenseManager.isOperational())){sendJson(res,403,{error:'Litsenziya faol emas.'});return;}
+    readBody(req,async input=>{
+      let committed;
+      try{
+        if(action==='check-in-preview'){sendJson(res,200,previewGroupStart(db,actor,groupId,input).body);return;}
+        if(action==='checkout-preview'){sendJson(res,200,previewGroupCheckout(db,actor,groupId));return;}
+        committed=action==='check-in'?startBookingGroup(db,actor,groupId,input):checkoutBookingGroup(db,actor,groupId,input);
+        if(!committed.replayed){
+          for(const notify of committed.afterCommit||[])try{notify();}catch(error){console.warn('[Booking group notification]',error.message);}
+          for(let i=0;i<(committed.plans||[]).length;i++){
+            const p=committed.plans[i],sessionId=committed.body.items[i].sessionId;
+            const wake=await autoWakeComputer(p.pc,{isConnected:id=>ClientManager.isConnected(id),sendWake:sendWakeOnLan});
+            committed.body.items[i].wake=wake;
+            ClientManager.send(p.pc.id,'START_SESSION',{sessionId,customerName:p.customerName,tariffName:p.isPostpaid?'VIP Postpaid':p.tariff?.name,
+              startedAt:p.startedAt.getTime(),endsAt:p.endsAt.getTime(),endTime:p.endsAt.toISOString(),durationMinutes:p.durationMinutes,
+              pricePerHour:p.currentRate,...clientSessionState(sessionId)});
+          }
+          broadcastAdminUpdate();
+        }
+        sendJson(res,committed.status,committed.body);
+      }catch(error){if(committed){sendJson(res,committed.status,{...committed.body,notificationPending:true});return;}
+        sendJson(res,error.statusCode||400,{error:error.message,code:error.code,requestId:input.requestId,operationNotApplied:error.operationNotApplied===true});}
+    });return;
+  }
   const bookingStartMatch=url.pathname.match(/^\/api\/bookings\/(\d+)\/check-in(-preview)?$/);
   if ((url.pathname === '/api/sessions/start-preview' || bookingStartMatch?.[2]) && req.method === 'POST') {
     if (!authenticate(req,res,{permission:'session:manage'})) return;
@@ -2189,12 +2218,9 @@ function handleRequest(req, res) {
           WHERE id = ?
         `).run(newEnd.toISOString(), addAmt, addAmt, sessionRow.id);
 
-        if (sessionRow.prepaid_rate_plan) {
-          const plan=JSON.parse(sessionRow.prepaid_rate_plan);
-          if (plan.version===2) {
-            plan.segments.push(...frozenPriceSegments(compId,sessionRow.club_id,new Date(currentEnd).toISOString(),newEnd.toISOString()).segments);
-            db.prepare('UPDATE sessions SET prepaid_rate_plan=? WHERE id=?').run(JSON.stringify(plan),sessionRow.id);
-          }
+        {
+          const plan=extendFrozenPricePlan(sessionRow,newEnd.toISOString());
+          db.prepare('UPDATE sessions SET prepaid_rate_plan=? WHERE id=?').run(JSON.stringify(plan),sessionRow.id);
         }
 
         // Kassa tranzaksiyasiga yozish
@@ -2496,7 +2522,7 @@ function handleRequest(req, res) {
           let calc;
           if (isPostpaid) calc = {totalMinutes:1440,totalAmount:0,endTime:new Date(startedAt.getTime()+86400000).toISOString()};
           else calc = prepaidQuote(data,startedAt,clubId,zoneId);
-          return {pcId:pc.id,rate,perPcAmount:calc.totalAmount,perPcDurationMins:calc.totalMinutes,endsAt:new Date(calc.endTime),prepaidRates:paymentType==='BALANCE'?freezePrepaidRates(pc.id,startedAt,calc.endTime):null};
+          return {pcId:pc.id,rate,perPcAmount:calc.totalAmount,perPcDurationMins:calc.totalMinutes,endsAt:new Date(calc.endTime),prepaidRates:isPostpaid?null:freezePrepaidRates(pc.id,startedAt,calc.endTime)};
         });
         if (new Set(plans.map(p=>p.pcId)).size !== plans.length) throw new Error('Kompyuter takroran tanlangan.');
         if ((normalizedMode === 'CLIENT' || paymentType === 'BALANCE') && !db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(customerId,clubId)) throw new Error('Mijoz hisobi topilmadi.');
@@ -3248,6 +3274,11 @@ function handleRequest(req, res) {
   // ==========================================================================
 
   // 4. GET /api/bookings & POST /api/bookings
+  if(url.pathname==='/api/bookings/allocation-preview'&&req.method==='POST'){
+    if(!authenticate(req,res,{roles:['superadmin','club_owner','administrator'],permission:'session:manage'}))return;
+    readBody(req,input=>{try{sendJson(res,200,{success:true,...reservationAllocation(db,{...req.user,clubId:req.user.clubId||1},input)});}
+      catch(error){sendJson(res,error.statusCode||400,{error:error.message});}});return;
+  }
   // Narrow setting: administrators may change grace without receiving access
   // to manager tariff/staff settings. New reservation primitives are not exposed
   // until phase B connects availability to every session-entry path.
@@ -3276,7 +3307,7 @@ function handleRequest(req, res) {
 
       const formatted = bookings.map(b => ({
         funds:bookingFunds(db,b),paymentKind:b.payment_kind,
-        id: b.id,
+        id: b.id,groupId:b.group_id,
         clubId: b.club_id,
         computerId: b.computer_id,
         computerRef: b.computer_ref, revision:b.revision, sessionId:b.session_id, noShowAt:b.no_show_at, needsReview:Boolean(b.needs_review),

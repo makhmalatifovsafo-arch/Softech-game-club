@@ -897,3 +897,63 @@ PostgreSQL API audit ham o‘tdi. Cloud mirror va staged diff tekshirildi.
 
 VM/pilot cheklovi o‘zgarmadi. Ushbu commit yangi EXE/ZIP yig‘ilgan, GitHubga
 push qilingan yoki ishlayotgan klublarga yetkazilganini anglatmaydi.
+
+## 20. Guruhli bron va teng depozit — 2026-11-21
+
+Foydalanuvchi tasdiqlagan qo‘shimcha: bir nechta belgilangan PC uchun bitta
+jami depozit; har PCga teng ulush. VIP yakunida yoki prepaid ochishda shu
+PCning ulushi ayriladi. Desktop va mobil ekranlar bir xil server hisobini oladi.
+
+Amalga oshirildi:
+- `bookings.group_id` migratsiyasi va indeksi; eski bronlar saqlanadi.
+- `computerIds` bilan yaratish atomar; readonly allocation-preview. PC raqami
+  tartibida butun so‘m qoldig‘i taqsimlanadi: 20000/3 → 6667,6667,6666.
+- Har bir bron CAPTURE/APPLY/REFUND tarixi bilan alohida saqlanadi.
+- Guruh check-in odatiy cashier quote/write orqali bitta tranzaksiyada.
+  Vaqt/summa inputi har bir PC uchun; turli xona tariflari alohida hisoblanadi.
+- Guruh checkout mavjud BarLedgerService orqali; barcha seans/pul/receipt
+  yozuvlari atomar. Bitta PC avval yopilgan bo‘lsa yana undirilmaydi.
+  Client bildirishnomalari faqat commitdan keyin yuboriladi.
+- 20000 depozit + 5 PCda jami 50000 VIP o‘yini → 30000 olinadi.
+  Hisobotga jami 50000 yoziladi; depozit ikkinchi tushum qilib qo‘shilmaydi.
+- Balans depozitining ortig‘i asl balansga qaytadi; bar uchun naqd to‘lov
+  bilan aralashtirilmaydi. Naqd guruh qaytimi va naqd qarzi o‘zaro ayriladi.
+  Karta to‘lovi va boshqa PCning naqd qaytimi esa alohida ko‘rsatiladi;
+  to‘lov usuli o‘zgarsa, UI server bergan tegishli hisobni ko‘rsatadi.
+- Desktop drag-selection «Bron qilish»; desktop/mobil ko‘p PC tanlash,
+  har PC depoziti, oldindan olingan summa va katta qolgan to‘lov.
+  Guruhni ochish/yopish hamda har PCni alohida boshqarish saqlanadi.
+- Mobil relay allowlist/RBAC/preview yo‘llari, yangi offline asset va cloud mirror.
+
+Tekshiruv dalillari:
+- To‘liq Node suite **307/307**: `.test-output/group-full.log`.
+- Keyingi guruh wallet/bar/qaytim, aralash naqd/karta va rol sinovlari **6/6**:
+  `.test-output/group-final-focused.log`.
+- Desktop va 390px mobil Edge: `.test-output/group-browser-final.log`;
+  `booking-group-*.png`. Tanlangan PClar, taqsimot, guruh quote/check-in,
+  umumiy yakuniy hisob va oldingi beshta seans rejimi tekshirildi.
+- Group checkoutdagi oxirgi PC yozuvini ataylab yiqitish barcha oldingi
+  yozuvlarni ham rollback qiladi. Qayta requestId bitta to‘lovni qaytaradi.
+- Birinchi qo‘shimcha relay testida funksiyalar o‘tdi, lekin boshqa test bilan
+  bir xil 973-PC ishlatilgani sabab keyingi prepaid fixture yiqildi; test PC
+  raqami ajratildi. Bu mahsulotdagi tarif/to‘lov o‘zgarishi bilan yashirilmadi.
+- Ajratilgan haqiqiy cloud → mobil relay → klub serveri guruhi va qolgan
+  startup oqimi qayta **o‘tdi**: `.test-output/group-mobile-http-final.log`.
+  Taqsimlash, groupId ro‘yxati, menejer rad etilishi, quote, ochish/yopish va
+  takroriy requestId natijasi tekshirildi. Keyingi naqd/karta taqdimoti
+  tuzatishidan so‘ng focused va browser testlari bajarildi; to‘liq 307 suite
+  shu oxirgi kichik tuzatishdan keyin takror bajarilmadi.
+
+Bu ish source holatida. Yangi versiya/commit/push/build bajarilmadi;
+ishlayotgan klub bazasi yoki o‘rnatilgan dasturiga tegilmadi. Oldingi VM/pilot
+qabul cheklovi saqlanadi. Server yangilanishi va mobil deploy birga kerak.
+
+## 21. O‘rnatish oldidan qayta audit — 2026-11-21
+
+Guruhli bron va oldingi amallar bilan birga yakuniy Node suite **308/308** o‘tdi.
+Uzaytirilgan depozitli seans qaytimi, oddiy naqd/karta seansidagi tarif oralig‘i,
+bar to‘lov manbasi va hisobot PC nomi tuzatildi. Browser/native client va
+ajratilgan PostgreSQL API tekshiruvlari ham o‘tdi. Aniq reproduksiya, loglar,
+eski yozuvlar chegarasi va VM/pilot tartibi:
+`docs/PREINSTALL-AUDIT-2026-11-21.md`.
+Bu hali yangi build/deploy emas; mavjud klublar o‘zgartirilmadi.

@@ -57,6 +57,11 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     UPDATE_MANIFEST_URL: 'http://127.0.0.1:' + cloudPort + '/test-no-update' };
   const children = [];
   let socket;
+  // Like the real client, keep the fixture connected throughout the longer
+  // money/booking flows. A silent fixture is correctly dropped after 15 seconds.
+  const clientHeartbeat=setInterval(()=>{
+    if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'HEARTBEAT_PING',payload:{}}));
+  },2000);
   function start(dir, port) {
     const entry = dir === cloud ? 'src/local-server.js' : 'src/server.js';
     const child = spawn(process.execPath, [entry], { cwd: dir, env: { ...env, PORT: String(port) }, windowsHide: true, stdio: ['ignore','pipe','pipe'] });
@@ -325,6 +330,7 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     assert.equal(offlineReport.status,200);assert.deepEqual((await offlineReport.json()).data.breakdown,reportBeforeStop.breakdown);
     console.log('PASS cloud dashboard: exact server ledger snapshot and fresh manager login after club shutdown');
   } finally {
+    clearInterval(clientHeartbeat);
     socket?.terminate();
     for (const child of children.reverse()) {
       if (child.exitCode === null && child.signalCode === null) { const exit = once(child, 'exit'); child.kill(); await exit; }

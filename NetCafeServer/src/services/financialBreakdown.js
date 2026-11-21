@@ -24,23 +24,51 @@ export function getFinancialBreakdown(db, from, to, clubId = null) {
   for (const t of balance) rows.push({id:'balance:'+t.id, sessionId:t.session_id, category:'GAME', paymentMethod:'BALANCE',
     createdAt:t.created_at, customerName:userInfo.get(t.user_id)?.username || '', computerName:'',
     description:'Mijoz balansidan o‘yin', quantity:1, unitPrice:t.amount, amount:t.amount});
+  const orderPayments=new Map();
+  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='bar_order_payments'").get()){
+    for(const p of db.prepare(`SELECT p.* FROM bar_order_payments p JOIN bar_orders o ON o.id=p.order_id AND o.club_id=p.club_id
+      WHERE o.payment_status='PAID' AND o.approval_status='CONFIRMED'
+        AND date(COALESCE(o.paid_at,o.created_at),'localtime') BETWEEN ? AND ?${scoped('o')}
+      ORDER BY p.order_id,p.payment_method`).all(...params)){
+      if(!orderPayments.has(p.order_id))orderPayments.set(p.order_id,[]);
+      orderPayments.get(p.order_id).push({method:p.payment_method,remaining:Number(p.amount)});
+    }
+  }
   const items = db.prepare(`
     SELECT i.*, o.payment_method, COALESCE(o.paid_at,o.created_at) AS paid_date,
       o.order_number, u.username, c.name AS computer_name
     FROM bar_order_items i JOIN bar_orders o ON o.id=i.order_id
-    LEFT JOIN users u ON u.id=o.user_id LEFT JOIN computers c ON c.club_id=o.club_id AND c.pc_number=o.computer_id
+    LEFT JOIN users u ON u.id=o.user_id LEFT JOIN computers c ON c.club_id=o.club_id AND c.id=COALESCE(
+      (SELECT id FROM computers WHERE club_id=o.club_id AND id=o.computer_id),
+      (SELECT id FROM computers WHERE club_id=o.club_id AND pc_number=o.computer_id))
     WHERE o.payment_status='PAID' AND o.approval_status='CONFIRMED'
       AND date(COALESCE(o.paid_at,o.created_at),'localtime') BETWEEN ? AND ?${scoped('o')}
     ORDER BY paid_date DESC, i.id DESC
   `).all(...params);
-  for (const i of items) rows.push({id:'bar:'+i.id, category:'BAR', paymentMethod:method(i.payment_method),
+  for (const i of items) {
+    const row={id:'bar:'+i.id, category:'BAR', paymentMethod:method(i.payment_method),
     createdAt:i.paid_date, customerName:i.username || '', computerName:i.computer_name || '',
     description:i.item_name, orderNumber:i.order_number, quantity:Number(i.quantity),
-    unitPrice:Number(i.unit_price), amount:Number(i.total_price)});
+    unitPrice:Number(i.unit_price), amount:Number(i.total_price)};
+    const payments=orderPayments.get(i.order_id);
+    if(!payments||row.amount<=0){rows.push(row);continue;}
+    let remaining=row.amount;const parts=[];
+    for(const payment of payments){
+      const amount=Math.min(remaining,payment.remaining);if(amount<=0)continue;
+      remaining-=amount;payment.remaining-=amount;
+      parts.push({...row,paymentMethod:payment.method,amount});
+    }
+    if(remaining>0)parts.push({...row,amount:remaining});
+    for(const [index,part] of parts.entries())rows.push(parts.length===1?part:{...part,
+      id:row.id+':'+index,description:row.description+' · to‘lov qismi',
+      quantity:row.quantity*part.amount/row.amount});
+  }
   const pendingItems=db.prepare(`
     SELECT i.*,o.order_number,o.created_at,o.id AS pending_order_id,c.name AS computer_name,u.username
     FROM bar_order_items i JOIN bar_orders o ON o.id=i.order_id
-    LEFT JOIN users u ON u.id=o.user_id LEFT JOIN computers c ON c.club_id=o.club_id AND c.pc_number=o.computer_id
+    LEFT JOIN users u ON u.id=o.user_id LEFT JOIN computers c ON c.club_id=o.club_id AND c.id=COALESCE(
+      (SELECT id FROM computers WHERE club_id=o.club_id AND id=o.computer_id),
+      (SELECT id FROM computers WHERE club_id=o.club_id AND pc_number=o.computer_id))
     WHERE o.approval_status='CONFIRMED' AND o.payment_status='PENDING_AT_CHECKOUT'
       AND date(o.created_at,'localtime') BETWEEN ? AND ?${scoped('o')}
   `).all(...params);

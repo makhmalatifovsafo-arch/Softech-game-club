@@ -1,4 +1,5 @@
 import { runMoneyOperation } from './moneyOperations.js';
+import crypto from 'node:crypto';
 import {captureBookingFunds,bookingFunds,releaseBookingFunds} from './bookingFunds.js';
 import { assertBookingAvailability, bookingError, bookingInterval } from './bookingAvailability.js';
 
@@ -56,8 +57,32 @@ function bookingRow(db, clubId, id) {
   return row;
 }
 
+export function reservationAllocation(db,actor,input) {
+  authorize(actor,true);
+  const ids=input.computerIds??[input.computerId];
+  if(!Array.isArray(ids)||!ids.length||ids.length>100||ids.some(id=>typeof id!=='string'||!id)||new Set(ids).size!==ids.length)
+    throw bookingError('1–100 ta turli kompyuterni tanlang.');
+  if(input.computerIds&&input.computerId!=null)throw bookingError('Kompyuter tanlovini qayta tekshiring.');
+  const payment=input.payment??{kind:'NONE',amount:0};
+  if(!['NONE','CASH','BALANCE'].includes(payment.kind)||!Number.isSafeInteger(payment.amount)||payment.amount<0||payment.amount>100000000||
+    (payment.kind==='NONE'?payment.amount!==0:payment.amount===0))throw bookingError('Depozit summasini to‘g‘ri kiriting.');
+  if(payment.kind==='BALANCE'&&!db.prepare("SELECT 1 FROM users WHERE club_id=? AND id=? AND role='client'").get(actor.clubId,Number.isSafeInteger(payment.userId)?payment.userId:-1))throw bookingError('Balans egasini tanlang.');
+  const pcs=ids.map(id=>{const pc=db.prepare('SELECT id,name,pc_number FROM computers WHERE club_id=? AND id=? AND pc_number>0').get(actor.clubId,id);if(!pc)throw bookingError('Kompyuter topilmadi.',404);return pc;}).sort((a,b)=>a.pc_number-b.pc_number||a.id.localeCompare(b.id));
+  const each=Math.floor(payment.amount/pcs.length),remainder=payment.amount%pcs.length;
+  return {totalDeposit:payment.amount,count:pcs.length,payment,allocations:pcs.map((pc,i)=>({computerId:pc.id,computerName:pc.name,deposit:each+(i<remainder?1:0)}))};
+}
+
 export function createFreeReservation(db, actor, input, now = Date.now()) {
   return request(db, actor, 'BOOKING_CREATE_FREE', input, () => {
+    const allocation=reservationAllocation(db,actor,input),groupId=allocation.count>1?crypto.randomUUID():null;
+    const entries=allocation.allocations.map(item=>writeReservation(db,actor,{...input,computerId:item.computerId,
+      payment:item.deposit?{...allocation.payment,amount:item.deposit}:{kind:'NONE',amount:0}},now,groupId));
+    return {status:201,body:{success:true,groupId,totalDeposit:allocation.totalDeposit,allocations:allocation.allocations,
+      booking:entries[0].booking,funds:entries[0].funds,bookings:entries.map(e=>({...e.booking,funds:e.funds}))}};
+  });
+}
+
+function writeReservation(db,actor,input,now,groupId) {
     // Check only new writes: a committed request must remain replayable while paused.
     if (!readBookingSettings(db, actor).creationEnabled)
       throw bookingError('Yangi bron qabul qilish vaqtincha to‘xtatilgan. Mavjud bronlar ishlashda davom etadi.', 409, 'BOOKING_CREATION_PAUSED');
@@ -79,13 +104,14 @@ export function createFreeReservation(db, actor, input, now = Date.now()) {
       VALUES(?,?,?,?,?,?,?,?,'CONFIRMED',?,?,?,?,2)`).run(actor.clubId, pc.pc_number, pc.id, name,
         String(input.customerPhone ?? '').slice(0,60), interval.start, interval.end, String(input.note ?? '').slice(0,2000),
         String(actor.id), new Date(now).toISOString(), graceMinutes, noShow);
-    let booking = bookingRow(db, actor.clubId, Number(result.lastInsertRowid));
+    const id=Number(result.lastInsertRowid);
+    if(groupId)db.prepare('UPDATE bookings SET group_id=? WHERE id=? AND club_id=?').run(groupId,id,actor.clubId);
+    let booking = bookingRow(db, actor.clubId, id);
     captureBookingFunds(db,booking,input.payment,actor,now);
     booking=bookingRow(db,actor.clubId,booking.id);
     audit(db, actor, 'BOOKING_CREATED', { bookingId: booking.id, computerId: pc.id,
-      startTime: booking.start_time, endTime: booking.end_time, graceMinutes, amount: 0 }, now);
-    return { status: 201, body: { success: true, booking, funds:bookingFunds(db,booking) } };
-  });
+      startTime: booking.start_time, endTime: booking.end_time, graceMinutes, amount: 0,groupId,depositAmount:input.payment.amount }, now);
+    return {booking, funds:bookingFunds(db,booking)};
 }
 
 export function cancelFreeReservation(db, actor, input, now = Date.now()) {

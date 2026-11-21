@@ -3885,6 +3885,7 @@
         <button onclick="openBatchSessionModal()" class="softech-btn-primary text-xs !py-1.5 px-3.5 font-semibold shadow-lg shadow-sky-500/20 whitespace-nowrap cursor-pointer">
           ⚡ Seans Ochish
         </button>
+        <button onclick="BookingUI.createSelected(Array.from(selectedPcIds))" class="softech-btn-primary text-xs !py-1.5 px-3.5 whitespace-nowrap">Bron qilish</button>
       `;
 
       if (hasOffline) {
@@ -7565,6 +7566,8 @@
 
         // Umumiy formula matni (Reconciliation Formula)
         const formulaEl = document.getElementById('vipCheckoutFormulaText');
+        document.getElementById('checkoutBookingDeposit')?.remove();
+        if(data.depositApplied>0&&formulaEl){const deposit=document.createElement('p');deposit.id='checkoutBookingDeposit';deposit.className='booking-money';deposit.textContent=`Oldindan olingan bron depoziti: − ${data.depositApplied.toLocaleString()} so‘m. Quyidagi qolgan to‘lovdan ayrildi.`;formulaEl.before(deposit);}
         if (formulaEl) {
           formulaEl.textContent = data.formulaText || `O'yin vaqti: ${data.playedHours || 1} soat (${(data.gameBill || 0).toLocaleString()} UZS) = JAMI: ${(data.finalBill || 0).toLocaleString()} UZS`;
         }

@@ -76,6 +76,21 @@ export async function checkBookingSessionFlow({api,databasePath}) {
     assert.equal(paidStart.status,201,JSON.stringify(paidStart.body));
     assert.equal((await api('/api/bookings/'+paid.id+'/check-in','POST',paidInput)).body.sessionId,paidStart.body.sessionId);
     assert.equal(db.prepare('SELECT sum(amount) n FROM transactions WHERE session_id=?').get(paidStart.body.sessionId).n,10000);
+    // A deposit-backed prepaid session must bill its extension too, not refund it all.
+    const extended=await api('/api/sessions/'+paidStart.body.sessionId+'/extend','POST',{
+      additionalMinutes:60,paymentType:'CASH',requestId:'booking-http-paid-extension'});
+    assert.equal(extended.status,200,JSON.stringify(extended.body));
+    const extendedRow=db.prepare('SELECT * FROM sessions WHERE id=?').get(paidStart.body.sessionId);
+    const shift=Date.now()-90*60000-Date.parse(extendedRow.started_at);
+    const plan=JSON.parse(extendedRow.prepaid_rate_plan);
+    if(plan.version===2)plan.segments=plan.segments.map(([a,b,value])=>[a+shift,b+shift,value]);
+    db.prepare('UPDATE sessions SET started_at=?,ends_at=?,prepaid_rate_plan=? WHERE id=?').run(
+      new Date(Date.parse(extendedRow.started_at)+shift).toISOString(),
+      new Date(Date.parse(extendedRow.ends_at)+shift).toISOString(),JSON.stringify(plan),extendedRow.id);
+    const extendedBill=await api('/api/sessions/'+extendedRow.id+'/checkout-preview');
+    assert.equal(extendedBill.status,200,JSON.stringify(extendedBill.body));
+    assert.ok(Math.abs(extendedBill.body.gameBill-15000)<=10,'90 of 120 prepaid minutes must cost 15000: '+JSON.stringify(extendedBill.body));
+    assert.ok(Math.abs(extendedBill.body.refundAmount-5000)<=10);
     assert.equal((await api('/api/sessions/'+paidStart.body.sessionId+'/checkout','POST',{paymentMethod:'CASH'})).status,200);
     const cancelledDeposit=await create(pcs[0],{kind:'CASH',amount:4500});
     const cancelledPaid=await api('/api/bookings/'+cancelledDeposit.id+'/cancel','POST',{
@@ -92,6 +107,18 @@ export async function checkBookingSessionFlow({api,databasePath}) {
     db.prepare('UPDATE bookings SET start_time=?,no_show_at=? WHERE id=?').run(new Date(Date.now()-1200000).toISOString(),new Date(Date.now()-60000).toISOString(),missed.id);
     for(let i=0;i<70&&db.prepare('SELECT status FROM bookings WHERE id=?').get(missed.id).status!=='NO_SHOW';i++)await new Promise(r=>setTimeout(r,100));
     assert.equal(db.prepare('SELECT status FROM bookings WHERE id=?').get(missed.id).status,'NO_SHOW');
+    const groupInput={requestId:'booking-http-group-create',computerIds:pcs,customerName:'Group',startTime:new Date(Date.now()+3600000).toISOString(),endTime:new Date(Date.now()+7200000).toISOString(),payment:{kind:'CASH',amount:6000}};
+    const allocation=await api('/api/bookings/allocation-preview','POST',groupInput);assert.equal(allocation.status,200,JSON.stringify(allocation.body));assert.deepEqual(allocation.body.allocations.map(p=>p.deposit),[3000,3000]);
+    const createdGroup=await api('/api/bookings','POST',groupInput);assert.equal(createdGroup.status,201,JSON.stringify(createdGroup.body));const group=createdGroup.body;
+    db.prepare('UPDATE bookings SET start_time=?,end_time=?,no_show_at=? WHERE group_id=?').run(new Date(Date.now()-60000).toISOString(),new Date(Date.now()+3600000).toISOString(),new Date(Date.now()+600000).toISOString(),group.groupId);
+    const listed=await api('/api/bookings?groupId='+group.groupId);assert.equal(listed.body.bookings.length,2);assert.equal(listed.body.bookings[0].groupId,group.groupId);
+    const groupBody={requestId:'booking-http-group-checkin',mode:'hours',durationMinutes:60,paymentType:'CASH',expectedRevisions:Object.fromEntries(group.bookings.map(b=>[b.id,b.revision]))};
+    const groupQuote=await api('/api/booking-groups/'+group.groupId+'/check-in-preview','POST',groupBody);assert.equal(groupQuote.status,200,JSON.stringify(groupQuote.body));assert.equal(groupQuote.body.additionalPayment,14000);groupBody.quoteRevision=groupQuote.body.quoteRevision;
+    const groupStart=await api('/api/booking-groups/'+group.groupId+'/check-in','POST',groupBody);assert.equal(groupStart.status,201,JSON.stringify(groupStart.body));assert.equal(groupStart.body.items.length,2);assert.equal(groupStart.body.notificationPending,undefined);
+    const groupBill=await api('/api/booking-groups/'+group.groupId+'/checkout-preview','POST',{});assert.equal(groupBill.status,200,JSON.stringify(groupBill.body));assert.equal(groupBill.body.depositApplied,6000);
+    const groupCloseBody={requestId:'booking-http-group-close',sessionIds:groupBill.body.sessionIds,paymentMethod:'CASH'};
+    const groupClose=await api('/api/booking-groups/'+group.groupId+'/checkout','POST',groupCloseBody);assert.equal(groupClose.status,200,JSON.stringify(groupClose.body));assert.equal(groupClose.body.paidBefore,20000);
+    const replay=await api('/api/booking-groups/'+group.groupId+'/checkout','POST',groupCloseBody);assert.equal(replay.body.refundAmount,groupClose.body.refundAmount);
     console.log('PASS booking HTTP: collisions, batch rollback, check-in replay, extension guard, bar checkout and no-show history');
   }finally{db.close();}
 }

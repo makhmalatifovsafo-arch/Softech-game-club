@@ -8,6 +8,7 @@ export function checkoutView(bill,{esc,money}) {
  const row=(label,value)=>`<p>${label}: <b>${esc(money(value))}</b></p>`;
  return row('Ishlatilgan o‘yin vaqti',bill.gameBill)+row('To‘lanmagan bar mahsulotlari',bill.barBill)
   +(bill.barBill>0?`<p>${esc(bill.barSummaryText||'')}</p>`:'')
+  +(bill.depositApplied>0?row('Hisobga olingan bron depoziti',bill.depositApplied)+'<p class="hint">Bu pul quyidagi qolgan to‘lovdan allaqachon ayrilgan.</p>':'')
   +(!bill.isPostpaid&&!bill.isMember?row('Oldindan to‘langan',Number(bill.gameBill)+Number(bill.prepaidCredit))+row('Ishlatilmagan vaqt puli',bill.prepaidCredit):'')
   +(bill.isMember?row('Mijoz balansiga qaytadi',bill.member?.refundAmount||0):'')
   +(!bill.isMember&&bill.balanceRefund>0?row('Mijoz balansiga qaytadi',bill.balanceRefund):'')

@@ -94,6 +94,9 @@ export function initializeBookings(db) {
       BEGIN SELECT RAISE(ABORT,'PCda bron mavjud. Avval bronni bekor qiling.'); END;`);
     if (!db.prepare('PRAGMA table_info(booking_settings)').all().some(c => c.name === 'creation_enabled'))
       db.exec('ALTER TABLE booking_settings ADD COLUMN creation_enabled INTEGER NOT NULL DEFAULT 1 CHECK(creation_enabled IN (0,1))');
+    if (!db.prepare('PRAGMA table_info(bookings)').all().some(c => c.name === 'group_id'))
+      db.exec('ALTER TABLE bookings ADD COLUMN group_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_bookings_group ON bookings(club_id,group_id,id)');
     initializeBookingFunds(db);
     db.exec('RELEASE booking_schema');
   } catch (error) {

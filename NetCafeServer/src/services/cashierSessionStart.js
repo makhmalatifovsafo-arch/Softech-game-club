@@ -59,7 +59,7 @@ export function prepareCashierSession(db,actor,raw,{bookingId=null,now=Date.now(
   const tariff=(data.tariffId&&db.prepare('SELECT * FROM tariffs WHERE id=? AND club_id=?').get(data.tariffId,clubId)) ||
     db.prepare('SELECT * FROM tariffs WHERE club_id=? ORDER BY price_per_hour LIMIT 1').get(clubId);
   const funding=bookingFundingQuote(db,booking,amount,isPostpaid);
-  const rates=!isPostpaid&&(paymentType==='BALANCE'||funding)?freezePrepaidRates(pc.id,startedAt,endsAt):null;
+  const rates=!isPostpaid?freezePrepaidRates(pc.id,startedAt,endsAt):null;
   const currentRate=isPostpaid&&settings.vip_pricing_mode==='CUSTOM'?Number(settings.vip_custom_price):rate.pricePerHour;
   if(isPostpaid&&(!Number.isFinite(currentRate)||currentRate<=0))throw bookingError('VIP tarifi belgilanmagan.');
   const quoteRevision=crypto.createHash('sha256').update(JSON.stringify({bookingId:booking?.id,revision:booking?.revision,
@@ -111,6 +111,14 @@ export function startCashierSession(db,actor,data,{bookingId=null,now=Date.now()
     requestId:data.requestId,payload:{bookingId,data}},()=>{
     plan=prepareCashierSession(db,actor,data,{bookingId,now});
     if(bookingId!=null&&data.quoteRevision!==plan.quoteRevision)throw bookingError('Seans hisobini qayta ko‘rib tasdiqlang.',409,'QUOTE_CHANGED');
+    return {status:201,body:writeCashierSession(db,plan,actor,now)};
+  });
+  return {...result,plan};
+}
+
+// Caller owns the transaction; single and grouped booking check-in share writes.
+export function writeCashierSession(db,plan,actor,now) {
+    const bookingId=plan.booking?.id??null;
     const sessionId='ses_'+crypto.randomUUID();
     insertSession(db,plan,actor,sessionId);
     if(plan.booking){
@@ -120,9 +128,7 @@ export function startCashierSession(db,actor,data,{bookingId=null,now=Date.now()
         VALUES(?,?,?,'SESSION','BOOKING_CHECKED_IN',?,?)`).run(actor.clubId,actor.id,actor.username || String(actor.id),
         JSON.stringify({bookingId,sessionId,computerId:plan.pc.id,mode:plan.mode,amount:plan.amount}),new Date(now).toISOString());
     }
-    return {status:201,body:{success:true,sessionId,bookingId,mode:plan.mode,durationMinutes:plan.durationMinutes,amount:plan.amount,isPostpaid:plan.isPostpaid,
+    return {success:true,sessionId,bookingId,computerId:plan.pc.id,mode:plan.mode,durationMinutes:plan.durationMinutes,amount:plan.amount,isPostpaid:plan.isPostpaid,
       depositApplied:plan.funding?.depositApplied||0,additionalPayment:plan.funding?.additionalPayment??plan.amount,
-      cashRefundPending:plan.funding?.cashRefundPending||0,balanceRelease:plan.funding?.balanceRelease||0}};
-  });
-  return {...result,plan};
+      cashRefundPending:plan.funding?.cashRefundPending||0,balanceRelease:plan.funding?.balanceRelease||0};
 }

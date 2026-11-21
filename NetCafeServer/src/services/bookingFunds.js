@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {markBarOrdersPaid} from './barPaymentAllocation.js';
 import {bookingError} from './bookingAvailability.js';
 
 // Funding only: prices, consumed time and refund entitlement come from the
@@ -129,7 +130,9 @@ export function bookingFundingPreview(db,session,gameBill,barBill) {
   const cashTotal=cash.reduce((n,c)=>n+Math.max(0,c.amount),0);
   const gameAmountToCollect=Math.max(0,remaining-cashTotal),prepaidCredit=Math.max(0,cashTotal-remaining);
   const balanceRefund=walletRefunds.reduce((n,w)=>n+w.refund,0);
-  return {walletRefunds,cash,gameAmountToCollect,prepaidCredit,balanceRefund,
+  const depositApplied=db.prepare('SELECT amount FROM session_funding_allocations WHERE session_id=? AND club_id=?').get(session.id,session.club_id)?.amount||0;
+  return {walletRefunds,cash,gameAmountToCollect,prepaidCredit,balanceRefund,depositApplied,
+    paidBefore:cashTotal+wallet.reduce((sum,w)=>sum+Math.max(0,w.amount),0),
     amountToCollect:Math.max(0,gameAmountToCollect+barBill-prepaidCredit),refundAmount:Math.max(0,prepaidCredit-barBill)};
 }
 
@@ -139,17 +142,18 @@ export function settleBookingFunding(db,session,preview,paymentMethod,actorId) {
   refundFundingWallet(db,session,f);
   const write=(amount,method,type,notes)=>{if(amount)db.prepare(`INSERT INTO transactions(id,club_id,session_id,amount,payment_type,payment_method,transaction_type,created_by,notes)
     VALUES(?,?,?,?,?,?,?,?,?)`).run('tx_'+crypto.randomUUID(),session.club_id,session.id,amount,method,method,type,String(actorId??'system'),notes);};
-  let credit=f.prepaidCredit,bar=preview.barBill;
+  let credit=f.prepaidCredit,bar=preview.barBill;const barPayments=[];
   for(const source of f.cash){
     const refund=Math.min(Math.max(0,source.amount),credit);credit-=refund;
     write(-refund,source.channel,'REFUND','REFUND (Zdacha)');
     const applied=Math.min(bar,refund);bar-=applied;
     write(applied,source.channel,'BAR_SALE','BAR_SALE_CHECKOUT_PREPAID_CREDIT');
+    barPayments.push({method:source.channel,amount:applied});
   }
   write(f.gameAmountToCollect,paymentMethod,'POSTPAID_SETTLEMENT','GAME_TIME_SETTLEMENT');
   write(bar,paymentMethod,'BAR_SALE','BAR_SALE_CHECKOUT_COLLECTED');
-  for(const id of preview.pendingOrderIds)db.prepare("UPDATE bar_orders SET payment_status='PAID',payment_method=?,paid_at=CURRENT_TIMESTAMP WHERE id=? AND club_id=? AND payment_status='PENDING_AT_CHECKOUT'")
-    .run(paymentMethod,id,session.club_id);
+  barPayments.push({method:paymentMethod,amount:bar});
+  markBarOrdersPaid(db,session.club_id,preview.pendingOrderIds,barPayments);
   db.prepare('INSERT OR IGNORE INTO session_funding_settlements(session_id) VALUES(?)').run(session.id);
   return true;
 }

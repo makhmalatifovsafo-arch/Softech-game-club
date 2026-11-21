@@ -1,3 +1,16 @@
+2026-11-21: 1.3.12 group bookings and accurate prepaid refunds
+- Split a group booking deposit across selected PCs and show shared check-in
+  and checkout amounts in the cashier and mobile interfaces.
+- Preserve purchased tariff periods for cash/card prepaid refunds and include
+  extended booking time in the refund plan.
+- Record cash/card portions of checkout bar payments and show their actual
+  sources and computer names in payment details.
+- Keep group payments atomic and retry-safe; preserve individual PC pricing.
+- Validate billing with 308 passing Node tests, desktop/mobile browser checks,
+  native client protocol tests and an isolated PostgreSQL API audit.
+- New setup installation and pilot acceptance remain required before rollout;
+  see docs/PREINSTALL-AUDIT-2026-11-21.md.
+
 2026-11-21: 1.3.11 local bookings and deposit-safe session check-in
 - Reserve a computer for a future interval without starting its billing timer.
 - Support unpaid, cash-deposit and member-balance bookings, configurable grace,

@@ -11,3 +11,15 @@ export function frozenPriceSegments(pcId, clubId, start, end) {
   }
   return {version:2,segments};
 }
+
+// Preserve already purchased prices, including fractional minutes and transferred
+// sessions. Only newly purchased time uses the current tariff.
+export function extendFrozenPricePlan(session, end) {
+  const previous=JSON.parse(session.prepaid_rate_plan || 'null');
+  const start=Date.parse(session.started_at),until=Date.parse(session.ends_at);
+  const segments=previous?.version===2 ? previous.segments : Array.isArray(previous)
+    ? previous.map((rate,i)=>[start+i*60000,Math.min(until,start+(i+1)*60000),
+        Number(rate)*Math.max(0,Math.min(1,(until-start)/60000-i))]).filter(([a,b])=>b>a)
+    : [[start,until,Number(session.paid_amount)]];
+  return {version:2,segments:[...segments,...frozenPriceSegments(session.computer_id,session.club_id,session.ends_at,end).segments]};
+}

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {markBarOrdersPaid} from './barPaymentAllocation.js';
 import { postpaidGameBill } from './clientSessionState.js';
 import { isMemberSession, isPrepaidMember, prepaidRefund, settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
@@ -143,6 +144,8 @@ export class BarLedgerService {
       prepaidCredit,
       refundAmount,
       balanceRefund:funding?.balanceRefund||0,
+      depositApplied:funding?.depositApplied||0,
+      paidBefore:funding?.paidBefore??Number(session.paid_amount||0),
       barItems,
       barSummaryText,
       formulaText,
@@ -153,11 +156,11 @@ export class BarLedgerService {
   /**
    * Seansni to'liq yopish va to'lovlarni transactions jadvaliga ajratib yozish
    */
-  static executeSessionCheckout({ target, paymentMethod = 'CASH', cashierUserId, clubId = 1, broadcastUpdate = null }) {
+  static executeSessionCheckout({ target, paymentMethod = 'CASH', cashierUserId, clubId = 1, broadcastUpdate = null, transaction = null }) {
     let preview = this.getSessionCheckoutPreview(target, clubId);
     const validPayMethod = ['CARD', 'CLICK', 'PAYME'].includes(paymentMethod) ? 'CARD' : 'CASH';
 
-    db.exec('BEGIN TRANSACTION;');
+    if(!transaction)db.exec('BEGIN TRANSACTION;');
     try {
       const settlement = preview.sessionStatus === 'ACTIVE' ? settleMemberUsage(preview.sessionId,new Date(),true,true) : null;
       preview = this.getSessionCheckoutPreview(target, clubId);
@@ -167,7 +170,7 @@ export class BarLedgerService {
       const original = preview.prepaidCredit > 0
         ? db.prepare("SELECT payment_method,payment_type FROM transactions WHERE session_id=? AND club_id=? AND amount>0 AND transaction_type!='BAR_SALE' ORDER BY created_at LIMIT 1").get(preview.sessionId,targetClubId)
         : null;
-      const prepaidMethod = original?.payment_method || original?.payment_type || validPayMethod;
+      const prepaidMethod = original?.payment_type || original?.payment_method || validPayMethod;
       // Reverse unused prepaid game receipts, then record the full bar sale.
       // Their net is the actual cash collected/refunded; reports retain game usage only.
       if (preview.prepaidCredit > 0) {
@@ -212,10 +215,8 @@ export class BarLedgerService {
         recordBarPart(externalBarAmount, validPayMethod, 'COLLECTED');
 
         // Barcha tegishli bar buyurtmalarini PAID holatiga o'tkazish
-        const markPaid = db.prepare(`UPDATE bar_orders SET payment_status='PAID', payment_method=?, paid_at=CURRENT_TIMESTAMP
-          WHERE id=? AND club_id=? AND payment_status='PENDING_AT_CHECKOUT' AND approval_status='CONFIRMED'`);
-        const orderMethod = externalBarAmount > 0 ? validPayMethod : prepaidMethod;
-        for (const id of preview.pendingOrderIds) markPaid.run(orderMethod, id, targetClubId);
+        markBarOrdersPaid(db,targetClubId,preview.pendingOrderIds,[
+          {method:prepaidMethod,amount:prepaidBarAmount},{method:validPayMethod,amount:externalBarAmount}]);
       }
 
       }
@@ -237,9 +238,10 @@ export class BarLedgerService {
       `).run(preview.computerId, targetClubId, preview.sessionId);
 
       const memberSummary = getMemberSessionSummary(preview.sessionId);
-      db.exec('COMMIT;');
+      if(!transaction)db.exec('COMMIT;');
 
       // 5. Kiosk agentiga seans tugaganligi va ekranni qulflash haqida signal yuborish
+      const deliver=()=>{
       if (locked.changes > 0) {
       ClientManager.send(preview.computerId, 'STOP_SESSION', {
         sessionId: preview.sessionId,
@@ -272,6 +274,8 @@ export class BarLedgerService {
         gameBill: preview.gameBill,
         barBill: preview.barBill,
         finalBill: preview.finalBill,
+        paidBefore: preview.paidBefore,
+        depositApplied: preview.depositApplied,
         barSummary: preview.barSummaryText,
         formula: preview.formulaText,
         paymentMethod: validPayMethod
@@ -281,6 +285,8 @@ export class BarLedgerService {
         try { broadcastUpdate(); }
         catch (error) { console.warn('[Checkout notification]', error.message); }
       }
+      };
+      if(transaction)transaction.afterCommit.push(deliver);else deliver();
 
       return {
         success: true,
@@ -290,6 +296,8 @@ export class BarLedgerService {
         barBill: preview.barBill,
         finalBill: preview.finalBill,
         amountCollected: preview.amountToCollect,
+        paidBefore: preview.paidBefore,
+        depositApplied: preview.depositApplied,
         refundAmount: settlement?.refundAmount || preview.refundAmount || 0,
         balanceRefund:preview.balanceRefund||0,
         memberSummary,
@@ -298,7 +306,7 @@ export class BarLedgerService {
         paymentMethod: validPayMethod
       };
     } catch (err) {
-      try { db.exec('ROLLBACK;'); } catch {}
+      if(!transaction)try { db.exec('ROLLBACK;'); } catch {}
       throw err;
     }
   }

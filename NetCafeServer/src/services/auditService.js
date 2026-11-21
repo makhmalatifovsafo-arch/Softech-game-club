@@ -67,6 +67,9 @@ export function formatAuditEntry(row) {
     title={BOOKING_FUNDS_CAPTURE:'Bron depoziti olindi',BOOKING_FUNDS_APPLY:'Depozit seansga o‘tkazildi',BOOKING_FUNDS_REFUND:'Bron depoziti qaytarildi'}[action];
     badgeColor='purple';
     summary=`Bron #${parsedDetails.bookingId} • ${formatMoney(parsedDetails.amount)} • ${parsedDetails.channel==='BALANCE'?'Mijoz balansi':'Naqd'}`;
+  } else if(action==='BOOKING_GROUP_CHECKOUT') {
+    title='Guruh broni hisobi yopildi';badgeColor='blue';
+    summary=`${parsedDetails.sessionIds?.length||0} ta seans • Olinadi: ${formatMoney(parsedDetails.amountToCollect||0)} • Qaytim: ${formatMoney(parsedDetails.refundAmount||0)}`;
   } else if (['BOOKING_CREATED','BOOKING_CANCELLED','BOOKING_NO_SHOW','BOOKING_SETTINGS_CHANGED','BOOKING_CHECKED_IN','BOOKING_COMPLETED'].includes(action)) {
     title = { BOOKING_CREATED: 'Bron yaratildi', BOOKING_CANCELLED: 'Bron bekor qilindi',
       BOOKING_NO_SHOW: 'Mijoz kelmagani uchun bron bekor qilindi', BOOKING_SETTINGS_CHANGED: 'Bron kutish muddati o‘zgartirildi',

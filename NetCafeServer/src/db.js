@@ -815,6 +815,11 @@ export function deleteZoneSafely(zoneId, clubId = 1) {
 
 
 function migrateFinancialSchema() {
+    db.exec(`CREATE TABLE IF NOT EXISTS bar_order_payments (
+      order_id INTEGER NOT NULL REFERENCES bar_orders(id), club_id INTEGER NOT NULL,
+      payment_method TEXT NOT NULL CHECK(payment_method IN ('CASH','CARD')),
+      amount REAL NOT NULL CHECK(amount>0), PRIMARY KEY(order_id,payment_method)
+    ); CREATE INDEX IF NOT EXISTS idx_bar_order_payments_club ON bar_order_payments(club_id,order_id)`);
     const clientTxColumns = db.prepare('PRAGMA table_info(client_transactions)').all().map(c => c.name);
     if (!clientTxColumns.includes('category')) db.exec("ALTER TABLE client_transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'GAME'");
     const barColumns = db.prepare('PRAGMA table_info(bar_orders)').all().map(c => c.name);

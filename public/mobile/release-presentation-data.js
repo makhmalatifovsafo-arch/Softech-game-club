@@ -1,6 +1,15 @@
 // These releases intentionally open without the full-screen presentation.
 export const presentationlessReleases=['1.3.5','1.3.6'];
 export const releaseNotes={
+ '1.3.12':{
+  title:'Guruhli bron va aniq hisob',
+  intro:'Bir nechta kompyuter uchun bron va depozitni bir joyda boshqaring.',
+  slides:[
+   {roles:['club_owner','manager','administrator'],icon:'▦',title:'Bitta depozit — bir nechta kompyuter',text:'Bron uchun kompyuterlarni tanlab, umumiy depozitni kiriting. Summa ular orasida teng taqsimlanadi. Har bir kompyuterning o‘z tarifi saqlanadi, oldindan olingan pul hisobdan ayriladi.',action:'Server → Band qilingan · Mobil administrator → Bronlar'},
+   {roles:['club_owner','manager','administrator'],icon:'₴',title:'Qaytim va qolgan to‘lov aniqroq',text:'Seans uzaytirilganda yoki tarif oralig‘i almashganda qaytim sotib olingan vaqt narxidan hisoblanadi. Guruhning umumiy hisobida oldindan to‘langan summa va yana olinadigan yoki qaytariladigan pul ko‘rinadi.',action:'Bron guruhi → Umumiy hisob · Yopish'},
+   {roles:['club_owner','manager'],icon:'≡',title:'Bar to‘lovlari manbasi ajratiladi',text:'Bar mahsuloti naqd avans va karta orqali birgalikda to‘lansa, yangi savdoning har bir to‘lov ulushi hisobotda o‘z turida ko‘rinadi.',action:'Hisobot → To‘lovlar tafsiloti'}
+  ]
+ },
  '1.3.11':{
   title:'Bron va seans bir joyda',
   intro:'Mijoz kelguncha kompyuterni band qiling; hisob o‘yin boshlanganda yuradi.',

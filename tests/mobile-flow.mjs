@@ -58,6 +58,21 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  const arrived=await mobile('/api/bookings/'+held.body.booking.id+'/check-in','POST',checkBody,cashierToken);assert.equal(arrived.status,201,JSON.stringify(arrived));assert.equal((await mobile('/api/bookings/'+held.body.booking.id+'/check-in','POST',checkBody,cashierToken)).body.sessionId,arrived.body.sessionId);
  assert.equal((await mobile('/api/sessions/'+arrived.body.sessionId+'/checkout','POST',{paymentMethod:'CASH'},cashierToken)).status,200);
  console.log('PASS real mobile booking relay: bounded list, server quote, cash deposit, manager denial, atomic check-in and replay');
+ const groupPc=await desktop('/api/admin/computers','POST',{name:'Mobile group test',pcNumber:947});assert.equal(groupPc.status,201,JSON.stringify(groupPc));
+ const groupInput={requestId:'mobile-group-create',computerIds:[pc.id,groupPc.body.computer.id],customerName:'Mobile group',startTime:new Date(Date.now()+172800000).toISOString(),endTime:new Date(Date.now()+176400000).toISOString(),payment:{kind:'CASH',amount:1001}};
+ const allocation=await mobile('/api/bookings/allocation-preview','POST',groupInput,cashierToken);assert.equal(allocation.status,200,JSON.stringify(allocation));assert.deepEqual(allocation.body.allocations.map(p=>p.deposit),[501,500]);
+ const group=await mobile('/api/bookings','POST',groupInput,cashierToken);assert.equal(group.status,201,JSON.stringify(group));for(const b of group.body.bookings)await activateBooking(b.id);
+ const groupPath='/api/booking-groups/'+group.body.groupId;
+ assert.equal((await mobile('/api/bookings?groupId='+group.body.groupId,'GET',undefined,cashierToken)).body.bookings.length,2);
+ const groupStartBody={requestId:'mobile-group-start',mode:'price',amount:10000,paymentType:'CASH',expectedRevisions:Object.fromEntries(group.body.bookings.map(b=>[b.id,b.revision]))};
+ const groupQuote=await mobile(groupPath+'/check-in-preview','POST',groupStartBody,cashierToken);assert.equal(groupQuote.status,200,JSON.stringify(groupQuote));assert.equal(groupQuote.body.additionalPayment,18999);groupStartBody.quoteRevision=groupQuote.body.quoteRevision;
+ assert.equal((await mobile(groupPath+'/check-in','POST',groupStartBody,token)).status,403);
+ const groupStarted=await mobile(groupPath+'/check-in','POST',groupStartBody,cashierToken);assert.equal(groupStarted.status,201,JSON.stringify(groupStarted));assert.equal(groupStarted.body.items.length,2);assert.equal(groupStarted.body.notificationPending,undefined);
+ const groupBill=await mobile(groupPath+'/checkout-preview','POST',{},cashierToken);assert.equal(groupBill.status,200,JSON.stringify(groupBill));assert.equal(groupBill.body.depositApplied,1001);
+ const groupCloseBody={requestId:'mobile-group-close',sessionIds:groupBill.body.sessionIds,paymentMethod:'CASH'};
+ const groupClosed=await mobile(groupPath+'/checkout','POST',groupCloseBody,cashierToken);assert.equal(groupClosed.status,200,JSON.stringify(groupClosed));assert.equal(groupClosed.body.paidBefore,20000);
+ assert.equal((await mobile(groupPath+'/checkout','POST',groupCloseBody,cashierToken)).body.refundAmount,groupClosed.body.refundAmount);
+ console.log('PASS real mobile group relay: equal deposit with remainder, PC list, server quote, role denial, check-in and checkout replay');
 
  const after=await mobile('/api/bar/items','GET',undefined,cashierToken);assert.equal((after.body.items||after.body).find(i=>i.id===item.id).stockQuantity,item.stockQuantity-2,'Retries must not sell twice');
  const report=await mobile('/api/reports/financial','GET',undefined,token);assert.equal(report.status,200,JSON.stringify(report));const direct=await(await fetch(localUrl+'/api/reports/financial',{headers:{Authorization:'Bearer '+ownerToken}})).json();assert.deepEqual(report.body.breakdown,direct.breakdown,'Mobile and server financial ledger must match exactly');assert.deepEqual(report.body.summary,direct.summary);assert.deepEqual(report.body.shifts,direct.shifts);

@@ -1,6 +1,6 @@
 # Softech Game Club — AI uchun loyiha qo‘llanmasi
 
-Yangilangan sana: **2026-11-21**. Joriy manba versiyasi: **1.3.11**.
+Yangilangan sana: **2026-11-21**. Joriy manba versiyasi: **1.3.12**.
 Asos bo‘lgan Git commit: `31d103d82453a68f0a0e0e2f72fac0fdd19f408a`.
 Ushbu commitdan keyingi mahalliy login himoyasi o‘zgarishlari ham quyida bayon qilingan.
 
@@ -1098,3 +1098,53 @@ sana/pagination filtriga bog‘lanmaydi; xavfsiz handler PC argumentini saqlaydi
 Versiya metadata va RELEASE-NOTES 1.3.11. VM o‘rnatish/pilot hali bajarilmagan:
 Hyper-V hisobi ruxsati yetmadi. Git commit yoki CI tekshiruvi bu qabul sinovini
 almashtirmaydi; real klublarga muvaffaqiyatli tarqatilgan deb da’vo qilmang.
+
+### Guruhli bron/depozit — 2026-11-21, mahalliy qo‘shimcha
+
+`bookings.group_id` va `(club_id,group_id,id)` indeksi db.js ishlatadigan
+`bookingSchema.js` migratsiyasida qo‘shiladi. Eski bronlar o‘zgarmaydi.
+POST `/api/bookings` endi eski `computerId` yoki yangi `computerIds` (1–100)
+qabul qiladi. `payment.amount` guruhning **jami** depoziti. Server PC raqami,
+keyin ID tartibida teng taqsimlaydi; butun so‘m qoldig‘i birinchi PC’larga +1.
+Misol: 20000/3 = 6667,6667,6666. Har bron o‘z CAPTURE manbasiga ega;
+barcha yozuvlar va bitta requestId receipt bir tranzaksiyada saqlanadi.
+
+`bookingGroups.js`: POST `/api/booking-groups/:uuid/check-in-preview`,
+`check-in`, `checkout-preview`, `checkout`. Check-in `expectedRevisions`
+(bookingId → revision) va `quoteRevision`; checkout aniq `sessionIds` talab
+qiladi. Ikkala yozuv ham requestId bilan himoyalangan. Check-in umumiy
+`prepareCashierSession`/`writeCashierSession`, checkout mavjud
+`BarLedgerService` hisobidan foydalanadi. Guruh yozuvlari atomar; WS faqat
+commitdan keyin. Har PC o‘z tarifi/vaqti bilan hisoblanadi, o‘z depoziti ayriladi.
+Guruh checkout faqat hali hisob-kitobi yopilmagan seanslarni jamlaydi;
+naqd olinadigan/qaytariladigan summalar o‘zaro ayriladi, balans qaytimi alohida.
+Karta va naqd kanallar aralashsa, `separatePayments` bilan olinadigan va
+qaytariladigan pul alohida ko‘rsatiladi. Preview `paymentOptions`ni serverda
+hisoblaydi; UI to‘lov turiga mos tayyor summani tanlaydi.
+Har bir PC’ni avvalgidek alohida ochish/yopish mumkin.
+
+Desktop drag-selection panelida «Bron qilish» bor. Desktop va mobil bron
+formasida PC checkboxlari, serverdan depozit taqsimoti va katta qolgan to‘lov
+ko‘rsatiladi. Bronlar ro‘yxatida «Guruhni ochish» va «Umumiy hisob · Yopish».
+Guruh check-inda kiritilgan vaqt/summa **har bir PC uchun**, depozit esa
+yaratishda butun guruh uchun. Frontend narx yoki depozit bo‘lish formulasi yozmaydi.
+Mobil administrator relayga ulangan; menejerga operatsion ruxsat qo‘shilmagan.
+Readonly previewlar relayning yozuv/snapshot kutish oqimiga kirmaydi.
+
+Bu qo‘shimcha yangi EXE/ZIP yoki deploy emas. Reliz manbasi 1.3.12 ga ko‘tarildi;
+test dalillari va tarqatish cheklovi `docs/BOOKING-IMPLEMENTATION-PLAN.md`da.
+
+### 2026-11-21 o‘rnatish oldidan qo‘shimcha hisob auditi
+
+`docs/PREINSTALL-AUDIT-2026-11-21.md`da qayta chiqarilgan xatolar va dalillar bor.
+Yangi CASH/CARD prepaid seanslar ham sotib olingan minut narxlarini saqlaydi;
+batch start va oddiy start bir xil qaytim qoidalariga amal qiladi.
+`extendFrozenPricePlan` eski array hamda transfer segmentlarini yo‘qotmasdan
+uzaytiradi. Eski saqlanmagan tariflar hozirgi tariflardan taxmin qilinmaydi.
+`bar_order_payments` (`db.js` migratsiyasi) yangi checkoutlarda har buyurtmaning
+haqiqiy CASH/CARD ulushlarini saqlaydi. `barPaymentAllocation.js` faqat tashqi
+checkout tranzaksiyasi ichida ishlaydi; hisobot shu ulushlardan foydalanadi,
+eski buyurtmalarda esa saqlangan payment_methodga tayanadi. Bu qo‘shimcha
+jadval yangi daromad manbasi emas: kassa tushumi avvalgidek transactionsdan olinadi.
+Yakuniy Node testlari 308/308; native client, desktop/mobil browser va ajratilgan
+PostgreSQL API tekshiruvlari o‘tdi. Yangi setup/OTA/VM qabul sinovi hali kerak.

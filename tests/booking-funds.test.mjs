@@ -184,5 +184,39 @@ test('booking deposits use ordinary pricing/checkout: holds, sources, refund con
     const sources=bookingFundingPreview(db,db.prepare('SELECT * FROM sessions WHERE id=?').get(card.id),1000,0).cash;
     assert.equal(sources.find(x=>x.channel==='CARD').amount,9000);
     assert.equal(sources.find(x=>x.channel==='CASH').amount,3000);
+    // A cash deposit covering the entire bar bill stays cash even if the cashier
+    // selected CARD for a (zero) additional payment.
+    now=realNow();const cashBar=checkin(reserve('CASH',12000),{mode:'postpaid',paymentType:'POSTPAID'});
+    const order=db.prepare(`INSERT INTO bar_orders(club_id,order_number,session_id,total_amount,payment_status,approval_status)
+      VALUES(1,'fund-cash-bar',?,5000,'PENDING_AT_CHECKOUT','CONFIRMED')`).run(cashBar.id);
+    now+=30*60000;
+    const cashBarClose=ledger.executeSessionCheckout({target:cashBar.id,clubId:1,cashierUserId:actor.id,paymentMethod:'CARD'});
+    assert.equal(cashBarClose.amountCollected,0);assert.equal(cashBarClose.refundAmount,2000);
+    assert.equal(db.prepare('SELECT payment_method FROM bar_orders WHERE id=?').get(order.lastInsertRowid).payment_method,'CASH');
+    // Cash credit + newly collected card payment share one sale, not two sales.
+    for(const funded of [false,true]){
+      now=realNow();
+      const opened=funded?checkin(reserve('CASH',3000)):
+        {id:start(db,actor,{computerId:pc(),mode:'hours',durationMinutes:60,paymentType:'CASH'},{now}).body.sessionId};
+      const session=db.prepare('SELECT * FROM sessions WHERE id=?').get(opened.id);
+      const sale=db.prepare(`INSERT INTO bar_orders(club_id,order_number,session_id,computer_id,total_amount,payment_status,approval_status)
+        VALUES(1,?,?,?,8000,'PENDING_AT_CHECKOUT','CONFIRMED')`).run('fund-mixed-'+(++seq),opened.id,session.computer_id);
+      const item=db.prepare('SELECT id FROM bar_items LIMIT 1').get();
+      db.prepare('INSERT INTO bar_order_items(order_id,bar_item_id,item_name,quantity,unit_price,total_price) VALUES(?,?,?,1,8000,8000)')
+        .run(sale.lastInsertRowid,item.id,'Mixed payment drink');
+      now+=30*60000;
+      const result=ledger.executeSessionCheckout({target:opened.id,clubId:1,cashierUserId:actor.id,paymentMethod:'CARD'});
+      assert.equal(result.gameBill,5000);assert.equal(result.amountCollected,3000);assert.equal(result.refundAmount,0);
+      const parts=db.prepare('SELECT payment_method,amount FROM bar_order_payments WHERE order_id=? ORDER BY payment_method').all(sale.lastInsertRowid);
+      assert.deepEqual(parts.map(p=>[p.payment_method,p.amount]),[['CARD',3000],['CASH',5000]]);
+      const details=getFinancialBreakdown(db,'2000-01-01','2099-12-31',1).rows.filter(r=>r.orderNumber==='fund-mixed-'+seq);
+      assert.equal(details.reduce((sum,r)=>sum+r.amount,0),8000);
+      assert.equal(details.reduce((sum,r)=>sum+r.quantity,0),1);
+      assert.equal(details.find(r=>r.paymentMethod==='CARD').amount,3000);
+      assert.equal(details.find(r=>r.paymentMethod==='CASH').amount,5000);
+      assert.ok(details.every(r=>r.computerName===session.computer_id),'GUID-linked bar order retains its PC name');
+      assert.throws(()=>ledger.executeSessionCheckout({target:opened.id,clubId:1,cashierUserId:actor.id,paymentMethod:'CARD'}));
+      assert.equal(db.prepare('SELECT count(*) n FROM bar_order_payments WHERE order_id=?').get(sale.lastInsertRowid).n,2);
+    }
   }finally{Date.now=realNow;db.close();}
 });
