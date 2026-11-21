@@ -54,7 +54,7 @@ export class MobileSnapshotSync {
    // and retry failed uploads before advancing the ordinary history backfill.
    this.db.exec('BEGIN');
    try {
-    for(const ledger of ['transactions','client_transactions']){
+    for(const ledger of ['transactions','client_transactions','booking_funds']){
      const cursor=this.db.prepare('SELECT last_rowid FROM mobile_report_cursor WHERE ledger=?').get(ledger)?.last_rowid||0;
      const latest=this.db.prepare(`SELECT COALESCE(MAX(rowid),0) AS n FROM ${ledger}`).get().n;
      const days=this.db.prepare(`SELECT DISTINCT date(p.created_at,'localtime') AS day FROM ${ledger} p
@@ -75,6 +75,7 @@ export class MobileSnapshotSync {
     SELECT date(created_at,'localtime') day FROM transactions WHERE club_id=1
     UNION ALL SELECT date(created_at,'localtime') FROM bar_orders WHERE club_id=1
     UNION ALL SELECT date(created_at,'localtime') FROM client_transactions WHERE club_id=1
+    UNION ALL SELECT date(created_at,'localtime') FROM booking_funds WHERE club_id=1
    )`).get().day||today;
    let day=this.db.prepare('SELECT day FROM mobile_snapshot_cursor WHERE id=1').get()?.day;
    if(!day||day<oldest||day>=today||(this.lastDay&&this.lastDay!==today))day=previous(today);

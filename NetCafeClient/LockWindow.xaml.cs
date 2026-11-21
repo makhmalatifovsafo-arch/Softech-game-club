@@ -109,6 +109,23 @@ public partial class LockWindow : Window, INotifyPropertyChanged
         // QR sign-in is not exposed in lock-only mode.
     }
 
+    private Border? _bookingPanel;
+    private bool _bookingReserved;
+    public void SetBookingReserved(bool reserved)
+    {
+        _bookingReserved = reserved;
+        if (_bookingPanel == null && CardBorder.Parent is Grid parent)
+        {
+            var text = new StackPanel { Margin = new Thickness(30) };
+            text.Children.Add(new TextBlock { Text = "Kompyuter bron qilingan", FontSize = 28, FontWeight = FontWeights.Bold, Foreground = Brushes.White, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            text.Children.Add(new TextBlock { Text = "Seansni boshlash uchun administratorga murojaat qiling.", FontSize = 16, Foreground = Brushes.LightGray, Margin = new Thickness(0,16,0,0), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            _bookingPanel = new Border { Width = 440, Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(18,20,27)), BorderBrush = Brushes.Goldenrod, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(20), Child = text };
+            parent.Children.Add(_bookingPanel);
+        }
+        CardBorder.Visibility = reserved ? Visibility.Collapsed : Visibility.Visible;
+        if (_bookingPanel != null) _bookingPanel.Visibility = reserved ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     // -------------------------------------------------------------------------
     // Anti-Escape & Desktop Lockdown
     // -------------------------------------------------------------------------
@@ -585,11 +602,13 @@ public partial class LockWindow : Window, INotifyPropertyChanged
     // -------------------------------------------------------------------------
     private void BtnLogin_Click(object sender, RoutedEventArgs e)
     {
+        if (_bookingReserved) return;
         SubmitLogin();
     }
 
     private void SubmitLogin()
     {
+        if (_bookingReserved) return;
         if (!BtnLogin.IsEnabled) return;
         string login = NormalizeLogin(TxtPhone.Text);
         string password = _isPasswordRevealed ? TxtPasswordPlain.Text : TxtPassword.Password;

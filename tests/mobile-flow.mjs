@@ -1,6 +1,6 @@
 import dgram from 'node:dgram';import {once} from 'node:events';
 import assert from 'node:assert/strict';import {makeRequest,open} from '../public/mobile/crypto.js';
-export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,reconnect,ageSession}){
+export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,reconnect,ageSession,activateBooking}){
  async function cloud(route,body){const r=await fetch(cloudUrl+'/api/mobile/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,body:await r.json()};}
  let c;for(let i=0;i<100;i++){c=await cloud('connection?club='+clubId);if(c.status===200)break;await new Promise(r=>setTimeout(r,100));}assert.equal(c.status,200,JSON.stringify(c));
  async function mobile(path,method='GET',body,token){const p=await makeRequest(c.body.publicKey,clubId,{path,method,body,...(typeof token==='object'?{cloudGrant:token}:{token})});assert.equal((await cloud('request',p.job)).status,200);assert.equal((await cloud('request',p.job)).status,200,'same request retry must be accepted');assert.equal((await cloud('result',{id:p.job.id,receipt:'wrong'})).status,404);for(let i=0;i<250;i++){const r=await cloud('result',p.job);if(r.body.state==='DONE')return open(p.key,r.body.result,p.aad+':reply');await new Promise(r=>setTimeout(r,40));}throw Error('Mobile timeout '+path);}
@@ -46,8 +46,18 @@ export async function checkMobileFlow({cloudUrl,localUrl,clubId,ownerToken,recon
  let mirrored=cloudReport;for(let i=0;i<60&&JSON.stringify(mirrored.data.breakdown)!==JSON.stringify(localReport.breakdown);i++){await new Promise(r=>setTimeout(r,100));mirrored=await(await fetch(cloudUrl+'/api/mobile/dashboard/data?resource=reports',{headers:{Authorization:'Bearer '+cloudLogin.body.token}})).json();}
  assert.deepEqual(mirrored.data.breakdown,localReport.breakdown,'Mobile and desktop sales must reach one cloud report, without duplicate retries');
  assert.equal((await mobile('/api/shifts/current','GET',undefined,cashierToken)).body.shift?.systemCash,undefined,'Cashier cannot see aggregate receipts');
- const newBooking=await mobile('/api/bookings','POST',{computerId:pc.id,customerName:'Mobile booking',startTime:new Date(Date.now()+172800000).toISOString(),endTime:new Date(Date.now()+176400000).toISOString()},cashierToken);assert.equal(newBooking.status,201,JSON.stringify(newBooking));
- assert.equal((await mobile('/api/bookings/'+newBooking.body.booking.id+'/status','PUT',{status:'CANCELLED'},cashierToken)).status,200);
+ const newBooking=await mobile('/api/bookings','POST',{requestId:'mobile-booking-create-test',computerId:pc.id,customerName:'Mobile booking',startTime:new Date(Date.now()+172800000).toISOString(),endTime:new Date(Date.now()+176400000).toISOString()},cashierToken);assert.equal(newBooking.status,201,JSON.stringify(newBooking));
+ assert.equal((await mobile('/api/bookings/'+newBooking.body.booking.id+'/status','PUT',{requestId:'mobile-booking-cancel-test',expectedRevision:newBooking.body.booking.revision,reason:'Test complete',status:'CANCELLED'},cashierToken)).status,200);
+ const held=await mobile('/api/bookings','POST',{requestId:'mobile-booking-cash-test',computerId:pc.id,customerName:'Deposit mobile',startTime:new Date(Date.now()+172800000).toISOString(),endTime:new Date(Date.now()+176400000).toISOString(),payment:{kind:'CASH',amount:3000}},cashierToken);
+ assert.equal(held.status,201,JSON.stringify(held));await activateBooking(held.body.booking.id);
+ const list=await mobile('/api/bookings?bookingId='+held.body.booking.id,'GET',undefined,cashierToken);assert.equal(list.status,200,JSON.stringify(list));assert.equal(list.body.bookings.length,1);assert.ok(list.body.timeZone);
+ const checkInput={computerId:pc.id,mode:'price',amount:10000,paymentType:'CASH',expectedRevision:held.body.booking.revision};
+ const checkQuote=await mobile('/api/bookings/'+held.body.booking.id+'/check-in-preview','POST',checkInput,cashierToken);assert.equal(checkQuote.status,200,JSON.stringify(checkQuote));assert.equal(checkQuote.body.depositApplied,3000);assert.equal(checkQuote.body.additionalPayment,7000);
+ assert.equal((await mobile('/api/bookings/'+held.body.booking.id+'/check-in-preview','POST',checkInput,token)).status,403);
+ const checkBody={...checkInput,quoteRevision:checkQuote.body.quoteRevision,requestId:'mobile-booking-arrival'};
+ const arrived=await mobile('/api/bookings/'+held.body.booking.id+'/check-in','POST',checkBody,cashierToken);assert.equal(arrived.status,201,JSON.stringify(arrived));assert.equal((await mobile('/api/bookings/'+held.body.booking.id+'/check-in','POST',checkBody,cashierToken)).body.sessionId,arrived.body.sessionId);
+ assert.equal((await mobile('/api/sessions/'+arrived.body.sessionId+'/checkout','POST',{paymentMethod:'CASH'},cashierToken)).status,200);
+ console.log('PASS real mobile booking relay: bounded list, server quote, cash deposit, manager denial, atomic check-in and replay');
 
  const after=await mobile('/api/bar/items','GET',undefined,cashierToken);assert.equal((after.body.items||after.body).find(i=>i.id===item.id).stockQuantity,item.stockQuantity-2,'Retries must not sell twice');
  const report=await mobile('/api/reports/financial','GET',undefined,token);assert.equal(report.status,200,JSON.stringify(report));const direct=await(await fetch(localUrl+'/api/reports/financial',{headers:{Authorization:'Bearer '+ownerToken}})).json();assert.deepEqual(report.body.breakdown,direct.breakdown,'Mobile and server financial ledger must match exactly');assert.deepEqual(report.body.summary,direct.summary);assert.deepEqual(report.body.shifts,direct.shifts);

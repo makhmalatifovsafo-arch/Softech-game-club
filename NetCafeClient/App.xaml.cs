@@ -208,6 +208,7 @@ public partial class App : WpfApplication
             Dispatcher.Invoke(() =>
             {
                 _isSessionActive = true;
+                _lockWindow?.SetBookingReserved(false);
                 // 1. Reset & Hide Lock Screen
                 _lockWindow?.ResetFields();
                 UnlockScreen();
@@ -230,6 +231,9 @@ public partial class App : WpfApplication
             _timeWidget?.UpdateTime(remainingSeconds);
         };
         _wsService.OnSessionInfo += info => _timeWidget?.UpdateSessionInfo(info);
+        _wsService.OnBookingState += reserved => Dispatcher.Invoke(() => {
+            if (!_isSessionActive) _lockWindow?.SetBookingReserved(reserved);
+        });
 
         _wsService.OnStopSession += reason =>
         {

@@ -14,15 +14,20 @@ server.on('connection',socket=>{const index=++connections;socket.on('message',ra
  if(m.type==='CLIENT_MEMBER_LOGOUT'){
   if(m.payload.sessionId!=='paid-session')failure='Logout must identify the active session';
   const send=(type,payload)=>socket.send(JSON.stringify({type,payload}));
-  send('STOP_SESSION',{sessionId:'paid-session',reason:'test-end',memberSummary:{sessionId:'paid-session',username:'member-test',accountId:42,playedMinutes:30,gameAmount:3500,refundAmount:3500,balance:46500,barDebt:10000},barNotice:{sessionId:'paid-session',message:'Siz 1 ta Cola olgansiz.',barDebt:10000}});send('LOCK_SCREEN',{});send('POWER_COMMAND',{command:'REBOOT'});
+  send('STOP_SESSION',{sessionId:'paid-session',reason:'test-end',amountToCollect:10000,balanceRefund:3500,checkoutMessage:'Cola: 10000',memberSummary:{sessionId:'paid-session',username:'member-test',accountId:42,playedMinutes:30,gameAmount:3500,refundAmount:3500,balance:46500,barDebt:10000},barNotice:{sessionId:'paid-session',message:'Siz 1 ta Cola olgansiz.',barDebt:10000}});send('LOCK_SCREEN',{});send('POWER_COMMAND',{command:'REBOOT'});
   if(index===1)setTimeout(()=>socket.close(),150);else send('EMERGENCY_LOCKDOWN',{reason:'audit-ban',message:'Test only'});
   return;
  }
  if(m.type!=='CLIENT_HELLO')return;hellos++;if(m.pcNumber!=='PC-07')failure='Wrong PC identity';
+ if(m.payload?.bookingScreenVersion!==1)failure='Booking screen capability missing';
  const send=(type,payload)=>socket.send(JSON.stringify({type,payload}));
  send('SEND_MESSAGE',{messageId:'notice-'+index,title:'Admin',message:'Hello <b>literal</b>\nSecond line'});
  send('CONFIG_UPDATE',{zoneName:'VIP',pricePerHour:12000});
  const now=Date.now();
+ send('BOOKING_STATE',{pcNumber:7,serverNow:now,reserved:true});
+ send('BOOKING_STATE',{pcNumber:8,serverNow:now+2,reserved:false});
+ send('BOOKING_STATE',{pcNumber:7,serverNow:now-1,reserved:false});
+ send('BOOKING_STATE',{pcNumber:7,serverNow:now+1,reserved:false});
  const info={sessionId:'cash-session',startedAt:now-3600000,asOf:now,gameAmount:14000,isPostpaid:false,canSelfClose:false};
  send('START_SESSION',{sessionId:'cash-session',remainingSeconds:1800,canSelfClose:false,sessionInfo:info});
  send('SESSION_INFO',{sessionInfo:{...info,sessionId:'stale-session'}});

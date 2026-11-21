@@ -1,4 +1,6 @@
 import {checkoutView} from './checkout-view.js';
+import {createBookingTools} from './booking-tools.js';
+import {clubFields,clubInstant} from './booking-time.js';
 export function createOperatorTools({state,remote,modal,esc,money,notice,can,refresh}) {
  const $=s=>document.querySelector(s),content=()=>$('#content');
  const payment=(name='paymentMethod',extra='')=>`<label>To‘lov<select name="${name}"><option value="CASH">Naqd</option><option value="CARD">Karta</option>${extra}</select></label>`;
@@ -7,21 +9,31 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
  const clients=async()=>{const rows=await remote('/api/admin/users');return rows.filter(u=>u.role==='client');};
  const pcOptions=(pcs=state.pcs)=>pcs.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
  const clientOptions=users=>'<option value="">Tanlang</option>'+users.map(u=>`<option value="${u.id}">${esc(u.username)} · ${esc(money(u.balance))}</option>`).join('');
- async function startSession(pc){
+ async function startSession(pc,booking=null){
   try{
    online();let quote=null,quotedInput='',revision=0,quoteTimer=null,calculating=false;
+   if(!booking&&pc.upcomingBooking?.isCurrent){const data=await remote('/api/bookings?bookingId='+pc.upcomingBooking.id),row=data.bookings.find(b=>b.id===pc.upcomingBooking.id);if(!row)throw Error('Bron holati o‘zgargan. Kompyuterlar ro‘yxatini yangilang.');return startSession(pc,{...row,timeZone:data.timeZone});}
+   let requestId=crypto.randomUUID();
    modal(pc.name+' - yangi seans',`<label>Seans turi<select name="mode"><option value="hours">Vaqt bo'yicha</option><option value="price">Summa bo'yicha</option>${pc.isVipPostpaidAllowed===false||pc.isVipPostpaidAllowed===0?'':'<option value="postpaid">VIP Postpaid</option>'}</select></label><label id="sessionMinutes">Daqiqa<input name="minutes" type="number" min="1" max="1440" value="60" required></label><label id="sessionAmount" hidden>Summa (so'm)<input name="amount" type="number" inputmode="numeric" min="1" step="1"></label><div id="sessionPayment">${payment('paymentType','<option value="BALANCE">Mijoz balansi</option>')}</div><label id="sessionMember" hidden>Balans egasi<select name="customerId"><option value="">Tanlang</option></select></label><button type="button" id="sessionCalculate" class="quiet">Narxni qayta tekshirish</button><div id="sessionQuote" class="card" aria-live="polite">Hisoblanmoqda...</div><p class="hint">Narx va vaqt avtomatik hisoblanadi. Seans ochilgan paytda server amaldagi tarifni qayta tekshiradi.</p>${!pc.isOnline?'<p class="hint">Kompyuter ulanmagan. Seans boshlanganda avtomatik yoqish sinaladi; buning uchun MAC va Wake-on-LAN sozlangan bo&#39;lishi kerak. Kompyuter hali yoqilmagan bo&#39;lsa ham seans vaqti boshlanadi.</p>':''}`,async v=>{
     if(!quote||quotedInput!==key())throw Error('Narx hisoblanmoqda. Bir oz kuting.');
-    if(v.mode!=='postpaid'&&v.paymentType==='BALANCE'&&!v.customerId)throw Error('Balans egasini tanlang.');
-    const result=await remote('/api/sessions/start','POST',request());
-    return result;
+    // A booking's wallet owner is locked; disabled inputs are absent from FormData.
+    if(v.mode!=='postpaid'&&v.paymentType==='BALANCE'&&!request().customerId)throw Error('Balans egasini tanlang.');
+    try{return await remote(booking?'/api/bookings/'+booking.id+'/check-in':'/api/sessions/start','POST',{...request(),...(booking?{requestId,quoteRevision:quote.quoteRevision}:{})});}
+    catch(error){if(booking&&error.data?.operationNotApplied){requestId=crypto.randomUUID();invalidate();}throw error;}
    });
    const form=$('#actionForm'),fields=form.elements,panel=$('#sessionQuote');
-   function request(){const mode=fields.mode.value;return {computerId:pc.id,mode,...(mode==='hours'?{durationMinutes:Number(fields.minutes.value)}:mode==='price'?{amount:Number(fields.amount.value)}:{}),customerId:mode!=='postpaid'&&fields.paymentType.value==='BALANCE'?Number(fields.customerId.value):null,paymentType:mode==='postpaid'?'POSTPAID':fields.paymentType.value};}
+   if(booking){
+    if(pc.bookingScreenSupported!==true)panel.insertAdjacentHTML('beforebegin','<p class="hint">Clientning bron ekrani tasdiqlanmagan. Clientni yangilang va aloqasini tekshiring.</p>');
+    const end=clubFields(booking.endTime,booking.timeZone);fields.mode.insertAdjacentHTML('beforeend','<option value="endtime">Tugash vaqti bo‘yicha</option>');
+    panel.insertAdjacentHTML('beforebegin',`<label id="sessionEnd">Tugash (klub vaqti)<input name="endDate" type="date" value="${end.date}"><input name="endTime" type="text" value="${end.time}" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:mm"></label>`);
+    fields.mode.value='endtime';fields.endDate.oninput=fields.endTime.oninput=invalidate;
+   }
+   function request(){const mode=fields.mode.value;return {computerId:pc.id,mode,...(booking?{expectedRevision:booking.revision}:{}),...(mode==='hours'?{durationMinutes:Number(fields.minutes.value)}:mode==='price'?{amount:Number(fields.amount.value)}:mode==='endtime'?{targetEndTime:clubInstant(fields.endDate.value,fields.endTime.value,booking.timeZone)}:{}),customerId:booking?.paymentKind==='BALANCE'?booking.userId:mode!=='postpaid'&&fields.paymentType.value==='BALANCE'?Number(fields.customerId.value):null,paymentType:mode==='postpaid'?'POSTPAID':fields.paymentType.value};}
    function key(){return JSON.stringify(request());}
    function invalidate(){revision++;quote=null;$('#actionSubmit').disabled=true;panel.textContent='Narx avtomatik hisoblanmoqda…';clearTimeout(quoteTimer);quoteTimer=setTimeout(calculate,450);}
    function modeChanged(){
     const mode=fields.mode.value;
+    if(booking)$('#sessionEnd').hidden=mode!=='endtime';
     $('#sessionMinutes').hidden=mode!=='hours';fields.minutes.disabled=mode!=='hours';fields.minutes.required=mode==='hours';
     $('#sessionAmount').hidden=mode!=='price';fields.amount.disabled=mode!=='price';fields.amount.required=mode==='price';
     $('#sessionPayment').hidden=mode==='postpaid';fields.paymentType.disabled=mode==='postpaid';
@@ -41,28 +53,33 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
    async function calculate(){
     clearTimeout(quoteTimer);
     if(!panel.isConnected||!$('#dialog').open||calculating)return;
-    const rev=revision,input=key(),body=request();
+    const rev=revision;let input,body;try{body=request();input=JSON.stringify(body);}catch(error){panel.textContent=error.message;return;}
     if(body.mode==='hours'&&(!Number.isInteger(body.durationMinutes)||body.durationMinutes<1||body.durationMinutes>1440)){panel.textContent='1-1440 daqiqa kiriting.';return;}
     if(body.mode==='price'&&!(body.amount>0)){panel.textContent='Seans summasini kiriting.';return;}
     calculating=true;quote=null;$('#actionSubmit').disabled=true;panel.textContent='Klub serverida hisoblanmoqda...';$('#sessionCalculate').disabled=true;
     try{
-     const data=await remote('/api/sessions/start-preview','POST',body);
+     const data=await remote(booking?'/api/bookings/'+booking.id+'/check-in-preview':'/api/sessions/start-preview','POST',body);
      if(rev!==revision||!panel.isConnected)return;
      quote=data;quotedInput=input;
      const seconds=Math.round(Number(data.durationMinutes||0)*60);
      panel.innerHTML=`<p>Hozirgi tarif: <b>${esc(money(data.currentRate))}/soat</b></p>`+(data.isPostpaid?`<h3>VIP Postpaid</h3><p>Oldindan pul olinmaydi. O'yin va bar hisobi seans yakunida to'lanadi.</p>`:`<h3>${esc(money(data.price))}</h3><p>${Math.floor(seconds/3600)} soat ${Math.floor(seconds%3600/60)} daqiqa ${seconds%60} soniya</p>`);
      $('#actionSubmit').disabled=false;
+     if(booking)panel.insertAdjacentHTML('beforeend',`<p>Depozitdan: <b>${esc(money(data.depositApplied))}</b></p><p>Hozir olinadi: <b>${esc(money(data.additionalPayment))}</b></p>${data.cashRefundPending?`<p>Naqd qaytim kutilmoqda: ${esc(money(data.cashRefundPending))}</p>`:''}${data.balanceRelease?`<p>Balansga qaytadi: ${esc(money(data.balanceRelease))}</p>`:''}`);
     }catch(error){
      if(rev!==revision||!panel.isConnected)return;
      // Older installed servers can still start sessions with their own pricing engine.
      // Only the relay's explicit unsupported-route response enables this fallback.
-     if(error.status===403&&error.message.includes('Bu amal mobil dasturda ruxsat etilmagan')){
+     if(!booking&&error.status===403&&error.message.includes('Bu amal mobil dasturda ruxsat etilmagan')){
       quote={legacy:true};quotedInput=input;
       panel.textContent="Bu server versiyasi oldindan hisob ko'rsatishni qo'llamaydi. Tasdiqlasangiz, narx va vaqt serverda hisoblanib seans ochiladi. Aniq hisobni oldindan ko'rish uchun serverni yangilash kerak.";
       $('#actionSubmit').disabled=false;
      }else panel.textContent=error.message;
     }
     finally{calculating=false;if(panel.isConnected&&$('#dialog').open){$('#sessionCalculate').disabled=false;if(rev!==revision)quoteTimer=setTimeout(calculate,0);}}
+   }
+   if(booking?.paymentKind==='BALANCE'){
+    fields.customerId.innerHTML=`<option value="${booking.userId}">${esc(booking.customerName)}</option>`;
+    fields.customerId.value=String(booking.userId);fields.customerId.disabled=true;usersLoaded=true;
    }
    $('#sessionCalculate').onclick=calculate;modeChanged();await calculate();
   }catch(e){notice(e.message);}
@@ -163,12 +180,7 @@ export function createOperatorTools({state,remote,modal,esc,money,notice,can,ref
   content().innerHTML=`<h2>Bar buyurtmalari</h2><p class="hint">Oxirgi 100 ta buyurtma. Bu operatsion ro‘yxat; umumiy tushum hisoboti menejerda.</p>${data.orders.map(o=>`<section class="card"><div class="heading"><strong>${esc(o.orderNumber)}</strong><span>${esc(money(o.totalAmount))}</span></div><p>${o.items.map(i=>esc(i.item_name)+' × '+i.quantity).join(', ')}</p><p class="hint">${esc(o.createdAt)} · ${esc(o.approvalStatus)} · ${esc(o.paymentStatus)}</p>${o.approvalStatus==='PENDING'?`<button data-order="${o.id}" data-decision="confirm">Tasdiqlash</button> <button data-order="${o.id}" data-decision="reject">Rad etish</button>`:o.paymentStatus==='PENDING_AT_CHECKOUT'?`<button data-order="${o.id}" data-decision="pay">Qarzni qabul qilish</button>`:''}</section>`).join('')||'<p>Buyurtma yo‘q.</p>'}`;
   for(const b of document.querySelectorAll('[data-order]'))b.onclick=()=>modal('Buyurtma #'+b.dataset.order,b.dataset.decision==='pay'?payment():'<p>Tanlangan amalni tasdiqlaysizmi?</p>',v=>b.dataset.decision==='pay'?remote('/api/bar/orders/'+b.dataset.order+'/pay','POST',{paymentMethod:v.paymentMethod}):remote('/api/bar/orders/'+b.dataset.decision,'POST',{orderId:Number(b.dataset.order)}));
  }
- async function bookings(){
-  online();const data=await remote('/api/bookings');
-  content().innerHTML=`<div class="heading"><h2>Bronlar</h2><button id="newBooking" class="primary">+ Bron</button></div>${data.bookings.map(b=>`<section class="card"><strong>${esc(b.computerName)} · ${esc(b.customerName)}</strong><p>${esc(b.startTime)} — ${esc(b.endTime)}</p><p>${esc(b.customerPhone)} · ${esc(b.status)}</p><button data-booking="${b.id}">Holatini o‘zgartirish</button></section>`).join('')||'<p>Bron yo‘q.</p>'}`;
-  $('#newBooking').onclick=()=>modal('Yangi bron',`<label>Kompyuter<select name="computerId" required>${pcOptions()}</select></label><label>Mijoz<input name="customerName" maxlength="160" required></label><label>Telefon<input name="customerPhone" type="tel"></label><label>Boshlanish<input name="startDate" type="date" required><input name="startTime" type="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" required></label><label>Tugash<input name="endDate" type="date" required><input name="endTime" type="text" placeholder="HH:mm" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="24 soatlik vaqt: 13:00" required></label><label>Izoh<input name="note" maxlength="2000"></label>`,v=>remote('/api/bookings','POST',{...v,startTime:new Date(v.startDate+'T'+v.startTime).toISOString(),endTime:new Date(v.endDate+'T'+v.endTime).toISOString()}));
-  for(const b of document.querySelectorAll('[data-booking]'))b.onclick=()=>modal('Bron holati','<label>Holat<select name="status"><option value="CONFIRMED">Tasdiqlangan</option><option value="ACTIVE">Boshlangan</option><option value="COMPLETED">Yakunlangan</option><option value="CANCELLED">Bekor qilingan</option></select></label>',v=>remote('/api/bookings/'+b.dataset.booking+'/status','PUT',v));
- }
+ const bookings=createBookingTools({state,remote,modal,esc,money,notice,startSession,can});
  async function customerList(){
   online();const users=await clients();
   content().innerHTML=`<h2>Mijozlar balansi</h2>${users.map(u=>`<section class="card"><strong>${esc(u.username)}</strong><p>${esc(u.phoneNumber||'')} · ${esc(money(u.balance))}</p>${can('customers:view')?`<button data-topup="${u.id}">Balans to‘ldirish</button>`:''}</section>`).join('')||'<p>Mijozlar hali qo‘shilmagan.</p>'}`;

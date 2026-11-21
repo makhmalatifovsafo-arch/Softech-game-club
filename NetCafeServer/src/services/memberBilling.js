@@ -1,5 +1,6 @@
 import { clientSessionState } from './clientSessionState.js';
 import crypto from 'node:crypto';
+import { assertBookingAvailability } from './bookingAvailability.js';
 import { frozenPriceSegments } from './prepaidTransferPlan.js';
 import { db } from '../db.js';
 import { verifyPassword } from '../auth.js';
@@ -57,6 +58,7 @@ export function startMemberSession(pcId, username, password, durationMinutes) {
   try {
     if (db.prepare("SELECT id FROM sessions WHERE status='ACTIVE' AND (computer_id=? OR user_id=?)").get(pc.id,user.id))
       throw new Error('Kompyuter yoki mijozning seansi allaqachon faol.');
+    assertBookingAvailability(db,{clubId:pc.club_id,computerId:pc.id,start:now.toISOString(),end:endsAt});
     if (db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(amount,user.id,pc.club_id,amount).changes!==1)
       throw new Error('Tanlangan vaqt uchun balans yetarli emas.');
     db.prepare("INSERT INTO sessions (id,club_id,computer_id,tariff_id,user_id,customer_name,started_at,ends_at,total_amount,paid_amount,status,notes,prepaid_rate_plan) VALUES (?,?,?,?,?,?,?,?,?,?,'ACTIVE',?,?)")
@@ -163,6 +165,8 @@ export function extendPrepaidMember(sessionId, minutes) {
   }
   db.exec('BEGIN IMMEDIATE');
   try{
+    assertBookingAvailability(db,{clubId:session.club_id,computerId:session.computer_id,
+      start:new Date(session.ends_at).toISOString(),end:endsAt,excludeSessionId:session.id});
     if(db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(quote.amount,session.user_id,session.club_id,quote.amount).changes!==1)
       throw new Error('Qo‘shimcha vaqt uchun balans yetarli emas.');
     db.prepare('UPDATE sessions SET ends_at=?,paid_amount=paid_amount+?,total_amount=total_amount+?,prepaid_rate_plan=? WHERE id=?')

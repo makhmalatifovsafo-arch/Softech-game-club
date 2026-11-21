@@ -1,5 +1,83 @@
 # Softech barqarorlik rejasi
 
+## 2026-11-20: 5–10 yangi klubga tarqatish auditi (1.3.10)
+
+**Qaror: ommaviy tarqatish uchun hali shartsiz tasdiq berilmagan.** Quyidagi
+avtomatik sinovlar biznes hisoblarini tekshiradi, ammo haqiqiy tarmoqdagi uzoq
+muddatli ishlash va xavfsizlik bo'yicha qolgan ishlarni almashtirmaydi.
+
+### Ushbu auditda tuzatilgan
+
+- Mahalliy HTTP kassa va WebSocket mijoz loginlariga umumiy cheklov qo'shildi:
+  10 daqiqada akkauntga 20, ulanish manziliga 80 urinish. Cheklov parolni tekshirish
+  va bulutga murojaatdan oldin ishlaydi. HTTP 429 va Retry-After qaytariladi;
+  client odatiy MEMBER_LOGIN_FAILED xabarini oladi. Ochilgan kassa sessiyalari
+  va seans hisoblash bu cheklovga kirmaydi.
+- Username bo'shliqlari/katta-kichik harflari, soxta X-Forwarded-For va HTTP'dan
+  WebSocket'ga o'tish cheklovni chetlab o'tmaydi. TCP manzili ishlatiladi.
+  Xotirada ko'pi bilan 4096 bucket saqlanadi; cheklov server qayta ishga tushganda
+  yangidan boshlanadi. Bu to'liq DoS himoyasi yoki diskda saqlanuvchi limit emas.
+- To'g'ri mahalliy parol bitta HTTP login davomida ikki marta hisoblanmaydi.
+  Bulutdan xodim yangilanganda parol qayta tekshiriladi.
+
+### Tarqatishdan oldingi ustuvor ishlar
+
+1. **Bulut imzolash kalitini klub serveridan ajratish — yuqori xavf.**
+   `src/services/telemetryAuth.js`, `cloudActivationService.js` va mahalliy
+   `licenseManager.js` umumiy HMAC kalitidan, sozlanmasa koddagi standart
+   qiymatdan foydalanadi. Litsenziyani tekshiradigan serverda shu imzoni yaratishga
+   ham yetadigan kalit bor. Production muhitida aynan qaysi qiymat ishlatilayotgani
+   ushbu auditda tekshirilmagan. Yechim: bulutda yopiq kalit, klublarda faqat
+   ochiq tekshirish kaliti; litsenziya, xodim, mobil grant va masofaviy buyruqlar
+   uchun versiyalangan, bosqichma-bosqich ko'chirish. Eski kalitni birdan almashtirib,
+   ishlayotgan klublarni bloklash mumkin emas. Bu migratsiya hali bajarilmadi.
+2. **Client qurilmasini ishonchli bog'lash — yuqori xavf.**
+   `protocolDispatcher.js:handleClientHello` PC raqami/nomi, MAC va IP bo'yicha
+   tanlaydi; qurilmaga xos maxfiy kalitni tekshirmaydi. `clientManager.js` bir xil
+   PC qayta ulanganda avvalgi ulanishni almashtiradi. Ishonchsiz LAN qurilmasi
+   boshqa PC sifatida ulanishi xavfi mavjud. Yechim: menejer tasdiqlaydigan juftlash
+   va har bir qurilmaga alohida autentifikatsiya, eski clientlardan xavfsiz o'tish.
+   Hozircha server portini internetga ochmaslik va mehmon Wi-Fi'ni klub LAN'idan
+   ajratish zarur. Qurilma autentifikatsiyasi hali qo'shilmadi.
+3. **Alohida qurilmadagi zaxira va tiklash mashqi.**
+   `databaseBackup.js` tekshirilgan nusxalarni ayni serverdagi `data/backups`ga
+   yozadi. Bir diskning buzilishi asosiy baza va nusxalarni birgalikda yo'qotishi
+   mumkin. Mobil hisobot nusxasi to'liq server bazasi emas. Shifrlangan tashqi
+   zaxira va undan yangi test serveriga tiklash tasdig'i kerak.
+4. **10 klub yuklamasi va jonli aloqa infratuzilmasi.**
+   `docs/LIVE-CONNECTION.md`dagi alohida hub va Production sozlamalari birga
+   tekshirilishi kerak; ushbu audit production deploymentni tasdiqlamaydi.
+   `mobileAgent.js` bo'sh paytda ham har 5 soniyadan keyin so'rov yuboradi:
+   javob vaqtini hisobga olmaganda taxminan 17 280 so'rov/kun/klub yoki 10 klubga
+   172 800. Bu hisoblangan taxmin, o'lchangan yuklama yoki limit emas; boshqa
+   heartbeat/snapshot so'rovlari ham bor. Hub ishlaganda fallback pollingni
+   kamaytirish va 10 klubda kechikish/limitlarni o'lchash alohida ish.
+
+### Tekshiruv dalillari va chegarasi
+
+- Boshlang'ich to'liq Node 22 to'plami: 272/272 o'tdi.
+- HTTP login tuzatishidan keyingi to'liq to'plam: 276/276 o'tdi. Yakuniy umumiy
+  HTTP/WebSocket himoyasi bilan 6/6 yo'naltirilgan test o'tdi: 4 limiter holati va
+  root/standalone bulutga ulangan haqiqiy izolyatsiyalangan serverdagi 2 to'liq
+  oqim. Limitdan so'ng autentifikatsiyalangan hisobot hamon HTTP 200 qaytardi.
+- Izolyatsiyalangan PostgreSQL/PGlite: `postgres-audit.mjs`,
+  `activation-schema.mjs`, `mobile-dashboard-schema.mjs`,
+  `postgres-api-audit.mjs` o'tdi. Haqiqiy Supabase'ga o'zgartirish yuborilmadi.
+- Native client protocol auditi: handshake, reconnect, offline qolgan vaqt,
+  buzilgan yangilanishni rad etish va xabar oynalari o'tdi.
+- Haqiqiy Windows updater + izolyatsiyalangan Node server: success, rollback,
+  updater o'rtada to'xtashi va restart sinovlari o'tdi; 5320 so'mlik yozuv saqlandi.
+- Loglar `.test-output/readiness-*.log`da; ular mahalliy sinov natijalaridir.
+- Haqiqiy SCM o'rnatish, elektrni uzish, production Vercel/Supabase sozlamalari,
+  barcha ekranlarni qo'lda ko'rish va 48–72 soatlik 10 klub yuklama testi bu
+  auditda bajarilgan deb hisoblanmaydi.
+
+Avval yuqori xavfli ikki autentifikatsiya ishini tugatish, alohida zaxiradan
+tiklashni sinash, keyin yangi paketni VM va 1–2 sinov klubida 48–72 soat kuzatish
+kerak. Shundan keyingina qolgan klublarni bosqichma-bosqich ulash. Ushbu auditdagi
+login tuzatishi hali yangi EXE/ZIPga yig'ilmagan, commit/push yoki deploy qilinmagan.
+Mavjud 1.3.10 paketida bu qo'shimcha himoya yo'q.
+
 ## 1.2.1 dan keyingi sinovda topilgan launcher va log tuzatishi
 
 Windows xizmatidagi backend sog'lom ishlayotgan bo'lsa ham, oddiy foydalanuvchi

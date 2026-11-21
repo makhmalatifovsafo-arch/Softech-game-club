@@ -20,9 +20,11 @@ export function createBooking(db,clubId,userId,input){
  return {id:Number(result.lastInsertRowid),clubId,computerId:pc.pc_number,customerName:name,customerPhone:phone,startTime:start,endTime:end,note,status};
 }
 export function updateBookingStatus(db,clubId,id,status){
+ if(status==='ACTIVE'||status==='COMPLETED'||status==='NO_SHOW')throw fail('Bron holati tegishli seans yoki bekor qilish amali orqali o‘zgartiriladi.',409);
  if(!['PENDING','CONFIRMED','ACTIVE','CANCELLED','COMPLETED'].includes(status))throw fail('Bron holati yaroqsiz.');
  const row=clubId===null?db.prepare('SELECT * FROM bookings WHERE id=?').get(id):db.prepare('SELECT * FROM bookings WHERE id=? AND club_id=?').get(id,clubId);
  if(!row)throw fail('Bron topilmadi.',404);
+ if(row.booking_version>=2)throw fail('Bronni yangi, requestId bilan himoyalangan amal orqali o‘zgartiring.',409);
  if(active.includes(status))checkOverlap(db,row.club_id,row.computer_id,row.start_time,row.end_time,id);
  db.prepare('UPDATE bookings SET status=? WHERE id=?').run(status,id);
  return {id,status};

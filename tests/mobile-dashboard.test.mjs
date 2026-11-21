@@ -15,6 +15,11 @@ test('multi-day insights sum exact receipts and profit while excluding unpaid ba
  assert.equal(r.breakdown.total,300);assert.equal(r.summary.barProfit,100);
  assert.deepEqual(r.products,[{name:'Cola',quantity:3,sales:300}]);
  assert.deepEqual(r.dailyTotals.map(d=>d.date),['2026-11-09','2026-11-10']);
+ a.breakdown.bookingDeposits={cashCaptured:3000,cashRefunded:0,cashHeld:3000,balanceHeld:1000,cashRefundPending:0};
+ b.breakdown.bookingDeposits={cashCaptured:2000,cashRefunded:3000,cashHeld:2000,balanceHeld:500,cashRefundPending:2000};
+ const funded=combineDailyReports([b,a],'2026-11-09','2026-11-10');
+ assert.equal(funded.breakdown.total,300,'deposit movements must not double count revenue');
+ assert.deepEqual(funded.breakdown.bookingDeposits,{cashCaptured:5000,cashRefunded:3000,cashHeld:2000,balanceHeld:500,cashRefundPending:2000});
 });
 function report(date,amount){return {accountingVersion:2,filter:{from:date,to:date},breakdown:{cash:amount,card:0,total:amount,gameReceipts:amount,topupReceipts:0,receipts:{GAME:{CASH:amount,CARD:0}},rows:[{id:'tx:'+date,createdAt:date,amount}]}};}
 async function fixture(){

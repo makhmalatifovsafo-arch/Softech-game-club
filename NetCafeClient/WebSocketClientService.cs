@@ -101,6 +101,8 @@ public class WebSocketClientService
     public event Action<string>?                               OnMemberLoginFailed;  // error
     public event Action<double>?                               OnBalanceUpdate;      // balance
     public event Action<SessionInfo>?                          OnSessionInfo;
+    public event Action<bool>? OnBookingState;
+    private long _bookingStateAt;
     public bool CanSelfClose { get; private set; }
     public event Action<string>?                               OnPowerCommand;       // SHUTDOWN | REBOOT | LOCK | UNLOCK
     public event Action<long?, string?>?                       OnForceClientUpdate;
@@ -276,6 +278,7 @@ public class WebSocketClientService
                 _client.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
 
                 await _client.ConnectAsync(new Uri(_config.ServerUrl), _cts.Token);
+                _bookingStateAt = 0;
 
                 // Dispatch connection state
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
@@ -349,6 +352,7 @@ public class WebSocketClientService
             payload = new
             {
                 pcNumber = _config.PcNumber,
+                bookingScreenVersion = 1,
                 ipAddress = localIp,
                 mac = mac,
                 macAddress = mac,
@@ -462,6 +466,15 @@ public class WebSocketClientService
 
             switch (eventName.ToUpperInvariant())
             {
+                case "BOOKING_STATE":
+                    if (data.TryGetProperty("pcNumber", out var bp) && bp.TryGetInt32(out int bookingPc) && bookingPc == PcNumber &&
+                        data.TryGetProperty("serverNow", out var bt) && bt.TryGetInt64(out long bookingAt) && bookingAt > _bookingStateAt &&
+                        data.TryGetProperty("reserved", out var br) && (br.ValueKind == JsonValueKind.True || br.ValueKind == JsonValueKind.False))
+                    {
+                        _bookingStateAt = bookingAt;
+                        OnBookingState?.Invoke(br.GetBoolean());
+                    }
+                    break;
                 case "SEND_MESSAGE": {
                     var text = data.TryGetProperty("message", out var messageText) ? messageText.GetString() : null;
                     var id = data.TryGetProperty("messageId", out var messageId) ? messageId.GetString() : null;
@@ -667,6 +680,8 @@ public class WebSocketClientService
                             string settlementText = refund > 0 ? $"Sizga qaytariladi: {refund:N0} so'm" : $"Qo'shimcha to'lov: {due:N0} so'm";
                             if (data.TryGetProperty("checkoutMessage", out var checkoutMessage) && checkoutMessage.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(checkoutMessage.GetString()))
                                 settlementText = checkoutMessage.GetString()!;
+                            if (data.TryGetProperty("balanceRefund", out var walletRefund) && walletRefund.ValueKind == JsonValueKind.Number && walletRefund.TryGetDouble(out var walletAmount) && double.IsFinite(walletAmount) && walletAmount > 0)
+                                settlementText += $"\nMijoz balansiga qaytdi: {walletAmount:N0} so'm";
                             OnSessionBarNotice?.Invoke(stoppedSessionId, settlementText, refund > 0 ? refund : due);
                         }
                         if (data.TryGetProperty("memberSummary", out var summaryValue) && MemberSessionSummary.Parse(summaryValue) is { } summary)

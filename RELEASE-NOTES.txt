@@ -1,3 +1,21 @@
+2026-11-21: 1.3.11 local bookings and deposit-safe session check-in
+- Reserve a computer for a future interval without starting its billing timer.
+- Support unpaid, cash-deposit and member-balance bookings, configurable grace,
+  no-show handling, confirmed cash refunds and automatic balance returns.
+- Use the existing session pricing and checkout engines for booking check-in;
+  preserve deposits, bar debts, refunds and report totals without double counting.
+- Connect desktop and mobile booking controls with permission checks, persistent
+  request IDs, interval conflict protection and append-only booking history.
+- Show a reservation notice on supported idle clients instead of the login form;
+  preserve active sessions and enforce conflicts even with older clients.
+- Add a switch to pause new bookings while existing bookings and refunds remain
+  available; preserve committed money through process failure and update recovery.
+- Fix mobile wallet-owner validation and main-screen booking actions after using
+  historical booking filters. Add browser and crash-recovery regression checks.
+- Include bounded local login throttling shared by cashier and client logins.
+- Set all source components to 1.3.11. Installed VM acceptance and a controlled
+  pilot remain required before wider rollout; see docs/BOOKING-IMPLEMENTATION-PLAN.md.
+
 2026-11-18: 1.3.10 clear Softech branding and shared website hosting
 - Use the website's vector logo and bundled Manrope font in the Client lock
   screen, Server launcher and cashier UI for sharp rendering at different scales.

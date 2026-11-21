@@ -9,7 +9,7 @@
     const busy = new Set();
     return {
       async post(scope, path, payload, summary = '') {
-        if (!supported.has(path)) throw Error('Noto‘g‘ri to‘lov amali.');
+        if (!supported.has(path) && path!=='/api/bookings' && !/^\/api\/bookings\/\d+\/(check-in|cancel|refund)$/.test(path)) throw Error('Noto‘g‘ri to‘lov amali.');
         const key = 'softech-money-pending:' + JSON.stringify([scope, path]);
         if (busy.has(key)) throw Error('Oldingi amal tasdig‘i kutilmoqda.');
         busy.add(key);

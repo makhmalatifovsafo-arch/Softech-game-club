@@ -1,4 +1,6 @@
 import { acknowledgeScreenMessage } from '../services/screenMessages.js';
+import { sendReservationState } from '../services/bookingPresentation.js';
+import { localLoginThrottle } from '../services/loginThrottle.js';
 import { updateCustomerCredentials } from '../services/customerCredentials.js';
 import { clientSessionState } from '../services/clientSessionState.js';
 import { canClientCloseSession, isPostpaidSession } from '../services/sessionMode.js';
@@ -193,7 +195,9 @@ export class ProtocolDispatcher {
       `).run(newStatus, ipAddress, macAddress, agentVersion, osInfo, pcId);
     }
 
-    ClientManager.registerClient(socket, pcId, numericPcNum || 1, macAddress, ipAddress, pcName);
+    const connectedClient=ClientManager.registerClient(socket, pcId, numericPcNum || 1, macAddress, ipAddress, pcName);
+    connectedClient.bookingScreenSupported=payload.bookingScreenVersion===1;
+    sendReservationState(db,ClientManager,pcId);
     this.saveClientUpdateState(pcId, { ...payload, agentVersion });
 
     // Litsenziya holatini tekshirish — Agar server faollashtirilmagan yoki bloklangan bo'lsa darhol qulflash
@@ -271,6 +275,7 @@ export class ProtocolDispatcher {
     const pcId = ClientManager.socketToPcId.get(socket);
     if (pcId) {
       ClientManager.recordHeartbeat(pcId);
+      sendReservationState(db,ClientManager,pcId);
       this.saveClientUpdateState(pcId, payload);
       const computer = db.prepare('SELECT club_id, name FROM computers WHERE id = ?').get(pcId);
       this.syncClientRate(pcId, Number(computer?.club_id || 1), computer?.name || '');
@@ -314,6 +319,13 @@ export class ProtocolDispatcher {
     try {
       if (!LicenseManager.isOperational()) throw new Error('Litsenziya faol emas.');
       if (!pcId || !payload?.username || !payload?.password) throw new Error('Kompyuter, login va parol talab qilinadi.');
+      if (typeof payload.username !== 'string' || payload.username.length > 1024 || typeof payload.password !== 'string' || payload.password.length > 1024) throw new Error('Login yoki parol formati noto‘g‘ri.');
+      const attempt = localLoginThrottle.take(socket._remoteAddress || socket._socket?.remoteAddress, payload.username);
+      if (!attempt.allowed) {
+        const error = 'Kirishga juda ko‘p urinish bo‘ldi. Biroz kutib, qayta urinib ko‘ring.';
+        socket.send(JSON.stringify({ type: 'MEMBER_LOGIN_FAILED', payload: { error, retryAfter: attempt.retryAfter }, error }));
+        return;
+      }
       if(clubSetupStatus(db,1).required)throw Error('Menejer klubni sozlamoqda. Iltimos, administratorga murojaat qiling.');
       const result=startMemberSession(pcId,payload.username,payload.password,payload.durationMinutes);
       ClientManager.send(pcId,'MEMBER_LOGIN_SUCCESS',result);

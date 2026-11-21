@@ -27,6 +27,16 @@ class ClientProtocolAudit
   if(LockWindow.NormalizeLogin(" +998 (90) 123-45-67 ")!="+998901234567")throw new Exception("Phone login normalization failed");
   loginWindow.ResetFields();
   if(loginInput.Text!=""||passwordInput.Password!="")throw new Exception("Previous user's credentials were retained");
+  loginWindow.SetBookingReserved(true);
+  if(((FrameworkElement)loginWindow.FindName("CardBorder")).Visibility!=Visibility.Collapsed)throw new Exception("Reserved PC exposed login");
+  sentLogin=null;loginInput.Text="blocked-member";passwordInput.Password="test";
+  typeof(LockWindow).GetMethod("SubmitLogin",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(loginWindow,null);
+  if(sentLogin!=null)throw new Exception("Reserved PC submitted member login");
+  loginWindow.ResetFields();
+  if(((FrameworkElement)loginWindow.FindName("CardBorder")).Visibility!=Visibility.Collapsed)throw new Exception("Reset cleared booking guard");
+  loginWindow.SetBookingReserved(false);
+  if(((FrameworkElement)loginWindow.FindName("CardBorder")).Visibility!=Visibility.Visible)throw new Exception("Cancelled booking retained login guard");
+  Console.WriteLine("PASS reservation hides login, blocks submission, survives field reset and clears on server instruction");
   var root=(FrameworkElement)loginWindow.Content;
   root.Measure(new Size(1280,800));root.Arrange(new Rect(0,0,1280,800));root.UpdateLayout();
   var image=new System.Windows.Media.Imaging.RenderTargetBitmap(1280,800,96,96,System.Windows.Media.PixelFormats.Pbgra32);image.Render(root);
@@ -160,6 +170,7 @@ class ClientProtocolAudit
    updateFixture.Stop();
    Console.WriteLine("PASS client starts with unavailable update storage; six failed downloads/extractions leave no staging files");
    var service=new WebSocketClientService();var done=new TaskCompletionSource();int adminMessages=0;
+   var bookingStates=new List<bool>();service.OnBookingState+=reserved=>bookingStates.Add(reserved);
    service.OnAdminMessage+=(title,message)=>app.Dispatcher.Invoke(()=>{
     if(title!="Admin"||message!="Hello <b>literal</b>\nSecond line")throw new Exception("Message text changed");
     var owner=new Window {Left=-10000,Top=-10000,Width=200,Height=200,ShowActivated=false,ShowInTaskbar=false,WindowStartupLocation=WindowStartupLocation.Manual};
@@ -180,7 +191,7 @@ class ClientProtocolAudit
    int connections=0,starts=0;bool zeroBalance=false,time=false,stopped=false,locked=false,config=false,power=false,barNotice=false,memberReceipt=false,cashBlocked=false,billReceived=false;
    Task<bool>? logoutCheck=null;
    service.OnMemberSessionEnded+=receipt=>memberReceipt=receipt.Username=="member-test"&&receipt.Balance==46500;
-   service.OnSessionBarNotice+=(id,message,amount)=>barNotice=id=="paid-session"&&message.Contains("Cola")&&amount==10000;
+   service.OnSessionBarNotice+=(id,message,amount)=>barNotice|=id=="paid-session"&&message.Contains("Cola")&&message.Contains("balansiga qaytdi")&&amount==10000;
    service.OnConnectionStatusChanged+=online=>{if(online)connections++;};
    service.OnStartSession+=(id,seconds,tariff,name,balance)=>{starts++;if(id=="cash-session"){cashBlocked=!service.CanSelfClose&&!service.SendLogoutAsync().GetAwaiter().GetResult();return;}zeroBalance|=id=="paid-session"&&seconds==1800&&balance==0;logoutCheck=service.SendLogoutAsync();};
    service.OnSessionInfo+=info=>{if(info.SessionId=="stale-session")throw new Exception("Stale billing packet accepted");billReceived|=info.SessionId=="cash-session"&&info.GameAmount==14000;};
@@ -195,6 +206,8 @@ class ClientProtocolAudit
     if(logoutCheck==null||!await logoutCheck||!memberReceipt)throw new Exception("Logout acknowledgement or member receipt failed");
     if(connections<2||starts<2||!zeroBalance||!time||!stopped||!locked||!config||!power||!barNotice||!cashBlocked||!billReceived)throw new Exception($"Protocol mismatch: connections={connections},starts={starts},zero={zeroBalance},time={time},stop={stopped},lock={locked},config={config},power={power},bar={barNotice},cashBlocked={cashBlocked},bill={billReceived}");
     if(adminMessages<2)throw new Exception("Missing admin messages");
+    if(bookingStates.Count!=connections*2||bookingStates.Where((v,i)=>v!=(i%2==0)).Any())throw new Exception("Wrong-PC/stale reservation packet or reconnect state failed");
+    Console.WriteLine("PASS reservation protocol rejects wrong PC/stale state and restores state after reconnect");
     Console.WriteLine("PASS screen message dispatch and native owned/unowned topmost windows");
     Console.WriteLine("PASS native client WebSocket handshake, fragmented messages, zero-balance session, time/config/lock/stop/power dispatch, disconnect and reconnect");
    }catch(Exception error){Console.Error.WriteLine(error.Message);Environment.ExitCode=1;}

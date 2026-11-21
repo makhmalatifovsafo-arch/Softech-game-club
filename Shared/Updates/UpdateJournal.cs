@@ -135,6 +135,9 @@ public sealed class UpdateJournal
 
     public void Restore(string target,string transaction,TimeSpan? fileRetryTimeout=null)
     {
+        // Once accepted, new receipts (including booking deposits) may exist.
+        // Enforce this at the restore boundary, not only in updater callers.
+        if(Phase=="ACCEPTED")throw new InvalidOperationException("Accepted update cannot be rolled back: new business records must be preserved.");
         // Check all backup bytes before changing a single application/database file.
         foreach(var entry in Originals.Concat(Databases)) {
             bool database=Databases.ContainsKey(entry.Key);

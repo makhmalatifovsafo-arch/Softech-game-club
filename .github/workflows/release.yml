@@ -74,6 +74,23 @@ jobs:
           path: .test-output/ci-tests.log
           if-no-files-found: warn
       - run: ./tests/window-work-area.ps1
+      - name: Install isolated browser test runtime
+        run: npm install --prefix .tools/browser-test --ignore-scripts --no-audit --no-fund playwright@1.65.0
+      - name: Verify booking desktop and mobile interfaces
+        id: booking_browser
+        run: |
+          node tests/booking-ui-browser.mjs 2>&1 | Tee-Object -FilePath .test-output/booking-browser.log
+          exit $LASTEXITCODE
+      - name: Save booking browser evidence
+        if: ${{ always() && steps.booking_browser.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-browser-evidence
+          path: |
+            .test-output/booking-browser.log
+            .test-output/booking-desktop.png
+            .test-output/booking-mobile.png
+          if-no-files-found: warn
       - name: Install isolated PostgreSQL test runtime
         run: npm install --prefix .tools/postgres-test --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.13
       - run: node tests/postgres-audit.mjs

@@ -46,6 +46,18 @@ export interface SessionAlertPayload {
 // SERVER -> CLIENT PAYLOADS
 // ----------------------------------------------------------------------------
 
+// BOOKING_STATE: display-only, refreshed on handshake/heartbeat and no-show sweep.
+// Never interrupts an active session or grants an unlock. Older clients may ignore it.
+export interface BookingStatePayload {
+  pcNumber: number;
+  serverNow: number;
+  reserved: boolean;
+  bookingId: number | null;
+  revision: number;
+  startTime: string | null;
+  endTime: string | null;
+}
+
 export interface HandshakeAckPayload {
   status: 'SUCCESS' | 'REJECTED';
   pcId: string;

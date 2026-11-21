@@ -63,7 +63,19 @@ export function formatAuditEntry(row) {
   let summary = '';
 
   // 1. SESSION Actions
-  if (action === 'START_SESSION' || action === 'SESSION_START') {
+  if (['BOOKING_FUNDS_CAPTURE','BOOKING_FUNDS_APPLY','BOOKING_FUNDS_REFUND'].includes(action)) {
+    title={BOOKING_FUNDS_CAPTURE:'Bron depoziti olindi',BOOKING_FUNDS_APPLY:'Depozit seansga o‘tkazildi',BOOKING_FUNDS_REFUND:'Bron depoziti qaytarildi'}[action];
+    badgeColor='purple';
+    summary=`Bron #${parsedDetails.bookingId} • ${formatMoney(parsedDetails.amount)} • ${parsedDetails.channel==='BALANCE'?'Mijoz balansi':'Naqd'}`;
+  } else if (['BOOKING_CREATED','BOOKING_CANCELLED','BOOKING_NO_SHOW','BOOKING_SETTINGS_CHANGED','BOOKING_CHECKED_IN','BOOKING_COMPLETED'].includes(action)) {
+    title = { BOOKING_CREATED: 'Bron yaratildi', BOOKING_CANCELLED: 'Bron bekor qilindi',
+      BOOKING_NO_SHOW: 'Mijoz kelmagani uchun bron bekor qilindi', BOOKING_SETTINGS_CHANGED: 'Bron kutish muddati o‘zgartirildi',
+      BOOKING_CHECKED_IN: 'Brondan seans ochildi', BOOKING_COMPLETED: 'Bron seansi yakunlandi' }[action];
+    badgeColor = action === 'BOOKING_CREATED' ? 'purple' : 'blue';
+    summary = action === 'BOOKING_SETTINGS_CHANGED'
+      ? `Kutish: ${parsedDetails.before?.graceMinutes} → ${parsedDetails.after?.graceMinutes} daqiqa`
+      : `Bron #${parsedDetails.bookingId}${parsedDetails.computerId ? ' • ' + parsedDetails.computerId : ''}${parsedDetails.reason ? ' • ' + parsedDetails.reason : ''}`;
+  } else if (action === 'START_SESSION' || action === 'SESSION_START') {
     title = "Seans boshlandi";
     badgeColor = 'green';
     const amount = parsedDetails.amount || parsedDetails.paidAmount || 0;

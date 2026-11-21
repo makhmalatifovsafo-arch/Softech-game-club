@@ -109,6 +109,13 @@ export function combineDailyReports(reports,from,to){
  const breakdown={receipts:Object.fromEntries(['GAME','BAR','TOPUP','OTHER'].map(k=>[k,{CASH:0,CARD:0}])),cash:0,card:0,total:0,gameReceipts:0,topupReceipts:0,gameBalance:0,barBalance:0,rows:[]};
  for(const report of reports){const b=report.breakdown;for(const k of ['cash','card','total','gameReceipts','topupReceipts','gameBalance','barBalance'])breakdown[k]+=Number(b[k]||0);for(const category of Object.keys(breakdown.receipts))for(const method of ['CASH','CARD'])breakdown.receipts[category][method]+=Number(b.receipts?.[category]?.[method]||0);breakdown.rows.push(...b.rows);}
  breakdown.rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+ const deposits=reports.filter(r=>r.breakdown.bookingDeposits).sort((a,b)=>a.filter.from.localeCompare(b.filter.from));
+ if(deposits.length){
+  // Cash movements sum over dates; outstanding holds are a stock, never summed.
+  const latest=deposits.at(-1).breakdown.bookingDeposits;
+  breakdown.bookingDeposits={cashCaptured:0,cashRefunded:0,cashHeld:latest.cashHeld,balanceHeld:latest.balanceHeld,cashRefundPending:latest.cashRefundPending};
+  for(const r of deposits)for(const key of ['cashCaptured','cashRefunded'])breakdown.bookingDeposits[key]+=Number(r.breakdown.bookingDeposits[key]||0);
+ }
  const dailyTotals=reports.map(r=>({date:r.filter.from,total:r.breakdown.total,cash:r.breakdown.cash,card:r.breakdown.card})).sort((a,b)=>a.date.localeCompare(b.date));
  const summaryComplete=reports.every(r=>r.summary&&typeof r.summary.barProfit==='number');
  const summary=summaryComplete?Object.fromEntries(Object.keys(reports[0].summary).map(k=>[k,reports.reduce((sum,r)=>sum+Number(r.summary[k]||0),0)])):null;

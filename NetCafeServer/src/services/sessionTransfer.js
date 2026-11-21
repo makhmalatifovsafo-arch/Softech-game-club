@@ -1,4 +1,5 @@
 import { db, getClubSettings } from '../db.js';
+import { assertBookingAvailability } from './bookingAvailability.js';
 import { recordSessionTransfer } from './sessionTransferHistory.js';
 import { createHash } from 'node:crypto';
 import { isPostpaidSession } from './sessionMode.js';
@@ -56,6 +57,8 @@ function prepareTransfer({fromComputerId,toComputerId,clubId,now=Date.now()}) {
         if(perMinute>0)oldRate.pricePerHour=perMinute*60;
       }
     }
+    assertBookingAvailability(db,{clubId:session.club_id,computerId:to.id,start:new Date(now).toISOString(),
+      end:postpaid||isLiveMember(session)?new Date(now+86400000).toISOString():newEndsAt,openEnded:postpaid||isLiveMember(session)});
     const revision=createHash('sha256').update(JSON.stringify({session,from:from.id,to:to.id,sourceZone,targetZone,
       oldRate,newRate,settings:getClubSettings(session.club_id),
       tariffs:db.prepare('SELECT * FROM tariffs WHERE club_id=? ORDER BY id').all(session.club_id),

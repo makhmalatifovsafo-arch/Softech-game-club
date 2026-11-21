@@ -9,5 +9,7 @@ globalThis.computerState = function (pc) {
     return { online, key: 'OCCUPIED', label: 'Band', color: '#fbbf24', detail: 'Klient ulangan, faol seans bor.' };
   if (pc.status === 'MAINTENANCE')
     return { online, key: 'MAINTENANCE', label: 'Texnik xizmat', color: '#38bdf8', detail: 'Klient ulangan, texnik xizmat rejimida.' };
+  if (pc.upcomingBooking?.isCurrent)
+    return { online, key: 'RESERVED', label: 'Bron qilingan', color: '#f59e0b', detail: 'Bron vaqti keldi. Mijoz kelganda bron orqali seans oching.' };
   return { online, key: 'AVAILABLE', label: 'Bo‘sh / tayyor', color: '#34d399', detail: 'Klient ulangan, faol seans yo‘q.' };
 };

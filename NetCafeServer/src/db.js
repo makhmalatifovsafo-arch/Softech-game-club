@@ -1,5 +1,6 @@
 import { ensureLocalOwner } from './services/localOwnerSetup.js';
 import { initializeMoneyOperations } from './services/moneyOperations.js';
+import { initializeBookings } from './services/bookingSchema.js';
 import { initializeTransferHistory } from './services/sessionTransferHistory.js';
 import { initializeClubSetup } from './services/clubSetup.js';
 import { initializeRoomTariffs } from './services/roomTariffs.js';
@@ -50,6 +51,7 @@ export function initDatabase() {
 
   migrateFinancialSchema();
   initializeMoneyOperations(db);
+  initializeBookings(db);
   initializeTransferHistory(db);
   initializeClubSetup(db, { existingInstallation: existingDatabase });
   initializeRoomTariffs(db);

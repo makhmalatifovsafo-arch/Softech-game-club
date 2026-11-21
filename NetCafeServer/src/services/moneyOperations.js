@@ -59,7 +59,7 @@ export function runMoneyOperation(db, { clubId, actorId, operation, requestId, p
     try { db.exec('ROLLBACK'); rolledBack = true; } catch {}
     // A read/parse failure may concern an already committed receipt. Only an
     // acknowledged rollback of a NEW write permits the UI to discard its ID.
-    if (startedNewWrite && rolledBack && error.statusCode !== 409) error.operationNotApplied = true;
+    if (startedNewWrite && rolledBack && (error.statusCode !== 409 || operation.startsWith('BOOKING_'))) error.operationNotApplied = true;
     throw error;
   }
 }

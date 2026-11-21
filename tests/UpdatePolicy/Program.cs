@@ -205,7 +205,12 @@ foreach(string scenario in new[]{"interrupted","corrupt-backup","port-busy","acc
             bool accepted=scenario=="accepted";
             Check(File.ReadAllText(Path.Combine(root,"netcafe.db"))==(accepted?"new schema":"original money"),"Wrong database generation restored");
             Check(File.Exists(Path.Combine(root,"new.js"))==accepted,"Rollback did not remove new-only application file");
-            if(accepted)Check(File.Exists(Path.Combine(transaction,"approved.json")),"Accepted update lost activation after interruption");
+            if(accepted){
+                Check(File.Exists(Path.Combine(transaction,"approved.json")),"Accepted update lost activation after interruption");
+                bool rejected=false;try{journal.Restore(root,transaction);}catch(InvalidOperationException){rejected=true;}
+                Check(rejected,"Direct restore accepted a completed update");
+                Check(File.ReadAllText(Path.Combine(root,"netcafe.db"))=="new schema"&&File.ReadAllText(Path.Combine(root,"app.js"))=="half-installed","Rejected restore changed accepted files");
+            }
             else Check(!UpdateJournal.HasPending(root)&&UpdateJournal.Recover(root),"Recovery is not idempotent");
         }
         Check(File.ReadAllText(Path.Combine(root,"config.json"))=="local configuration","Recovery changed local settings");

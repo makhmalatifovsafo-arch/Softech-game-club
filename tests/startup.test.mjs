@@ -1,4 +1,5 @@
 import { checkCustomerCredentials } from './customer-credentials-flow.mjs';
+import { checkBookingSessionFlow } from './booking-session-flow.mjs';
 import { checkClubSetup } from './club-setup-flow.mjs';
 import { setupFirstRun } from './club-setup-first-run.mjs';
 import { checkMoneyOperations } from './money-operations-flow.mjs';
@@ -228,15 +229,28 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     const large=await fetch(localUrl+'/api/auth/login',{method:'POST',headers:jsonHeaders,body:JSON.stringify({username:'x'.repeat(1024*1024),password:'x'})});assert.equal(large.status,413);
     assert.equal((await fetch(localUrl+'/api/missing-route')).status,404);
     assert.equal((await fetch(localUrl+'/vendor/')).status,404);
+    assert.equal((await fetch(localUrl+'/api/booking-settings')).status,401);
+    const bookingSettings=await cashierApi('/api/booking-settings');
+    assert.equal(bookingSettings.status,200);
+    const graceRequest={requestId:'startup-booking-grace-01',expectedRevision:bookingSettings.body.settings.revision,graceMinutes:15};
+    const graceSaved=await cashierApi('/api/booking-settings','PUT',graceRequest);
+    assert.equal(graceSaved.status,200,JSON.stringify(graceSaved.body));
+    assert.equal(graceSaved.body.settings.graceMinutes,15);
+    assert.deepEqual((await cashierApi('/api/booking-settings','PUT',graceRequest)).body,graceSaved.body);
+    assert.equal((await cashierApi('/api/booking-settings','PUT',{...graceRequest,requestId:'startup-booking-grace-02'})).status,409);
+    assert.equal((await cashierApi('/api/booking-settings','PUT',{...graceRequest,requestId:undefined})).status,400);
     const badBooking=await cashierApi('/api/bookings','POST',{computerId:pc.id,customerName:'Audit',startTime:'bad',endTime:'bad'});assert.equal(badBooking.status,400);
     const bookingStart=new Date(Date.now()+86400000).toISOString(),end=new Date(Date.now()+90000000).toISOString();
-    const booking=await cashierApi('/api/bookings','POST',{computerId:pc.id,customerName:'Audit',startTime:bookingStart,endTime:end});assert.equal(booking.status,201,JSON.stringify(booking.body));
-    assert.equal((await cashierApi('/api/bookings','POST',{computerId:pc.id,customerName:'Duplicate',startTime:bookingStart,endTime:end})).status,409);
-    assert.equal((await cashierApi('/api/bookings/'+booking.body.booking.id+'/status','PUT',{status:'CANCELLED'})).status,200);
+    const booking=await cashierApi('/api/bookings','POST',{requestId:'startup-booking-create',computerId:pc.id,customerName:'Audit',startTime:bookingStart,endTime:end});assert.equal(booking.status,201,JSON.stringify(booking.body));
+    assert.equal((await cashierApi('/api/bookings','POST',{requestId:'startup-booking-duplicate',computerId:pc.id,customerName:'Duplicate',startTime:bookingStart,endTime:end})).status,409);
+    assert.equal((await cashierApi('/api/bookings/'+booking.body.booking.id+'/status','PUT',{requestId:'startup-booking-cancel',expectedRevision:booking.body.booking.revision,reason:'Test complete',status:'CANCELLED'})).status,200);
     const ownerLogin=await ownerStillWorks.json();const ownerHeaders={...jsonHeaders,Authorization:'Bearer '+ownerLogin.token};
     await checkClubSetup({localUrl,ownerHeaders,cashierHeaders,databasePath:path.join(club,'netcafe.db')});
     socket=new WebSocket('ws://127.0.0.1:'+clubPort+'/ws');await once(socket,'open');socket.send(JSON.stringify({type:'CLIENT_HELLO',payload:{pcNumber:'PC-01',macAddress:'02:00:00:00:00:01',ipAddress:'127.0.0.1'}}));
-    await checkMobileFlow({cloudUrl:env.SOFTECH_CLOUD_URL,localUrl,clubId:approved.club.id,ownerToken:ownerLogin.token,ageSession:async(id,minutes)=>{
+    await checkMobileFlow({cloudUrl:env.SOFTECH_CLOUD_URL,localUrl,clubId:approved.club.id,ownerToken:ownerLogin.token,activateBooking:async id=>{
+      const fixture=new DatabaseSync(path.join(club,'netcafe.db'));fixture.exec('PRAGMA busy_timeout=5000');
+      try{fixture.prepare('UPDATE bookings SET start_time=?,end_time=?,no_show_at=? WHERE id=?').run(new Date(Date.now()-60000).toISOString(),new Date(Date.now()+3600000).toISOString(),new Date(Date.now()+600000).toISOString(),id);}finally{fixture.close();}
+    },ageSession:async(id,minutes)=>{
       const billingFixture=new DatabaseSync(path.join(club,'netcafe.db'));
       billingFixture.exec('PRAGMA busy_timeout=5000');
       try{billingFixture.prepare('UPDATE sessions SET started_at=?,ends_at=? WHERE id=?').run(new Date(Date.now()-minutes*60000).toISOString(),new Date(Date.now()+(60-minutes)*60000).toISOString(),id);}finally{billingFixture.close();}
@@ -256,7 +270,33 @@ test(cloudSource + ': isolated cloud and club server start and accept a client h
     assert.equal(cloudInspection.prepare('SELECT total_workstations FROM clubs WHERE id=?').get(approved.club.id).total_workstations,24,'Heartbeat must not shrink the licensed PC count');
     assert.equal(cloudInspection.prepare("SELECT COUNT(*) AS n FROM club_workstations_cache WHERE club_id=? AND pc_number='0'").get(approved.club.id).n,0,'Cloud inventory must exclude legacy layout placeholders');cloudInspection.close();
     assert.equal((await fetch(localUrl+'/api/health')).status,200);
-    const reportBeforeStop=await(await fetch(localUrl+'/api/reports/financial',{headers:ownerHeaders})).json();
+    // A real HTTP request must hit the limiter before cloud synchronization.
+    // Spoofed proxy headers and whitespace/case changes must not bypass it.
+    for (let i=0;i<20;i++) {
+      const denied=await fetch(localUrl+'/api/auth/login',{method:'POST',headers:{...jsonHeaders,'X-Forwarded-For':'192.0.2.'+i},body:JSON.stringify({username:i%2?' Throttle-Test ':'throttle-test',password:'incorrect'})});
+      assert.ok([401,503].includes(denied.status), String(denied.status));
+      await denied.arrayBuffer();
+    }
+    const throttled=await fetch(localUrl+'/api/auth/login',{method:'POST',headers:{...jsonHeaders,'X-Forwarded-For':'192.0.2.250'},body:JSON.stringify({username:'THROTTLE-TEST',password:'incorrect'})});
+    assert.equal(throttled.status,429);
+    assert.ok(Number(throttled.headers.get('Retry-After'))>0);
+    const throttleBody=await throttled.json();assert.ok(throttleBody.retryAfter>0);
+    // Switching from HTTP to the native client's protocol cannot reset a bucket.
+    const memberDenied=new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{socket.off('message',receive);reject(Error('Member login throttle response timed out'));},3000);
+      function receive(raw){const message=JSON.parse(raw);if(message.type==='MEMBER_LOGIN_FAILED'){clearTimeout(timer);socket.off('message',receive);resolve(message);}}
+      socket.on('message',receive);
+    });
+    socket.send(JSON.stringify({type:'CLIENT_MEMBER_LOGIN',payload:{username:'throttle-test',password:'incorrect'}}));
+    assert.ok((await memberDenied).payload.retryAfter>0,'Member and cashier logins must share the same account throttle');
+    assert.equal((await fetch(localUrl+'/api/health')).status,200);
+    await checkBookingSessionFlow({api:async(route,method='GET',body)=>{
+      const r=await fetch(localUrl+route,{method,headers:ownerHeaders,...(body?{body:JSON.stringify(body)}:{})});
+      return {status:r.status,body:await r.json()};
+    },databasePath:path.join(club,'netcafe.db')});
+    const reportResponse=await fetch(localUrl+'/api/reports/financial',{headers:ownerHeaders});
+    assert.equal(reportResponse.status,200,'Login limits must not block already-authenticated cashier operations');
+    const reportBeforeStop=await reportResponse.json();
     const dashboardLogin=async()=>{
       const r=await fetch(env.SOFTECH_CLOUD_URL+'/api/mobile/dashboard/login',{method:'POST',headers:jsonHeaders,body:JSON.stringify({clubId:approved.club.id,username:'manager',password:'central-owner-password'})});
       const data=await r.json();assert.equal(r.status,200,JSON.stringify(data));return data;

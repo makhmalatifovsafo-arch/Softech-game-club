@@ -2,6 +2,7 @@
 // Desktop routes keep their existing role/permission checks.
 export function mobileManagerSetting(path, method) {
   const pathname = new URL(path, 'http://localhost').pathname;
+  if(pathname==='/api/booking-settings')return ['GET','PUT'].includes(method);
   if (method === 'GET') return ['/api/tariffs','/api/tariff-schedules','/api/admin/users','/api/settings'].includes(pathname);
   if (method === 'PUT') return ['/api/admin/tariffs','/api/admin/settings'].includes(pathname) || /^\/api\/admin\/users\/\d+\/permissions$/.test(pathname) || /^\/api\/admin\/tariff-schedules\/\d+$/.test(pathname);
   if (method === 'POST') return ['/api/admin/users','/api/admin/tariff-schedules'].includes(pathname);
@@ -9,6 +10,7 @@ export function mobileManagerSetting(path, method) {
 }
 export function mobileRoleAllows(role, path, method) {
   const pathname = new URL(path, 'http://localhost').pathname;
+  if(pathname==='/api/booking-settings')return ['administrator','club_owner','manager'].includes(role)&&['GET','PUT'].includes(method);
   if (pathname === '/api/auth/logout') return true;
   if (['club_owner', 'manager'].includes(role)) {
     return mobileManagerSetting(path, method) || method === 'GET' && ['/api/auth/me','/api/computers','/api/shifts/current','/api/reports/financial'].includes(pathname);

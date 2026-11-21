@@ -1,4 +1,5 @@
 import {getRetainedPayments,paymentMethod as method} from './netSessionReceipts.js';
+import {bookingFundsReport} from './bookingFunds.js';
 // Receipts and balance spending are separate ledgers: never add them together.
 export function getFinancialBreakdown(db, from, to, clubId = null) {
   const scoped = (alias) => clubId === null ? '' : ` AND ${alias}.club_id = ?`;
@@ -49,7 +50,7 @@ export function getFinancialBreakdown(db, from, to, clubId = null) {
   rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   const cash = Object.values(receipts).reduce((sum,x)=>sum+x.CASH,0);
   const card = Object.values(receipts).reduce((sum,x)=>sum+x.CARD,0);
-  return { receipts, cash, card, total:cash+card,
+  return { receipts, cash, card, total:cash+card,bookingDeposits:bookingFundsReport(db,from,to,clubId),
     gameReceipts:receipts.GAME.CASH+receipts.GAME.CARD,
     topupReceipts:receipts.TOPUP.CASH+receipts.TOPUP.CARD,
     gameBalance:balance.reduce((sum,t)=>sum+t.amount,0),

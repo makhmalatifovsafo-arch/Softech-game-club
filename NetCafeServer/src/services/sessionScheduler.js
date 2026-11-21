@@ -1,5 +1,6 @@
-import { clientSessionState } from './clientSessionState.js';
-import { settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
+import { clientSessionState,postpaidGameBill } from './clientSessionState.js';
+import { settleMemberUsage, getMemberSessionSummary,prepaidRefund } from './memberBilling.js';
+import {hasBookingFunding,bookingFundingPreview,refundFundingWallet} from './bookingFunds.js';
 import { db } from '../db.js';
 import { ClientManager } from './clientManager.js';
 import { getSessionBarDebt } from './sessionBarDebt.js';
@@ -204,7 +205,7 @@ export class SessionScheduler {
   static dropAllActiveSessions(reason = 'LOCKED_BY_ADMIN') {
     try {
       const activeSessions = db.prepare(`
-        SELECT s.id, s.computer_id, c.pc_number, s.customer_name 
+        SELECT s.*, c.pc_number
         FROM sessions s 
         JOIN computers c ON s.computer_id = c.id 
         WHERE s.status = 'ACTIVE'
@@ -214,6 +215,13 @@ export class SessionScheduler {
         db.exec('BEGIN IMMEDIATE');
         try {
         settleMemberUsage(session.id,new Date(),true,true);
+        if(hasBookingFunding(db,session.id)){
+          const now=new Date(),game=isPostpaidSession(session)?postpaidGameBill(session,now.getTime()):prepaidRefund(session,now).usedAmount;
+          refundFundingWallet(db,session,bookingFundingPreview(db,session,game,0));
+          db.prepare('UPDATE sessions SET total_amount=? WHERE id=?').run(game,session.id);
+          // Cash is not marked refunded by a remote stop. The ordinary checkout
+          // remains available after recovery, even when there are no bar orders.
+        }
         db.prepare("UPDATE sessions SET status = 'COMPLETED', ends_at = CURRENT_TIMESTAMP WHERE id = ?").run(session.id);
         db.prepare("UPDATE computers SET status = 'LOCKED', current_session_id = NULL WHERE id = ?").run(session.computer_id);
         db.exec('COMMIT');

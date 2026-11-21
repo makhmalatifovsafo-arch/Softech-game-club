@@ -1,4 +1,7 @@
+import { listBookingRows } from './services/bookingList.js';
 import { deliverScreenMessage } from './services/screenMessages.js';
+import { sendReservationState } from './services/bookingPresentation.js';
+import { localLoginThrottle } from './services/loginThrottle.js';
 import { ClubSetupDrafts, evaluateSetupDraft, setupLiveClients } from './services/clubSetup.js';
 import { roomTariffState, saveRoomTariffs } from './services/roomTariffs.js';
 import { clubSetupContext } from './services/clubSetupContext.js';
@@ -24,7 +27,10 @@ import { MobileSnapshotSync } from './services/mobileSnapshotSync.js';
 import { OptionalService } from './services/optionalService.js';
 import { mobileCloudUser } from './services/mobileCloudSession.js';
 import { getSession as mobileStaffSession, destroySession as mobileLogout } from './auth.js';
-import { createBooking, updateBookingStatus } from './services/bookingService.js';
+import { readBookingSettings, saveBookingSettings, createFreeReservation, cancelFreeReservation, expireFreeReservations, confirmBookingCashRefund } from './services/bookingFoundation.js';
+import {bookingFunds,hasBookingFunding,recordSessionPayment} from './services/bookingFunds.js';
+import { assertBookingAvailability } from './services/bookingAvailability.js';
+import { prepareCashierSession, cashierSessionQuote, startCashierSession } from './services/cashierSessionStart.js';
 import { startMemberSession, isMemberSession, isPrepaidMember, extendPrepaidMember, settleMemberUsage, freezePrepaidRates, prepaidRefund } from './services/memberBilling.js';
 import { confirmClientBarOrder, payPendingBarOrder } from './services/clientBarOrders.js';
 import http from 'node:http';
@@ -290,18 +296,25 @@ function handleRequest(req, res) {
     readBody(req, async (body) => {
       const username = typeof body.username === 'string' ? body.username.trim() : '';
       const password = body.password;
-      if (!username || typeof password !== 'string' || !password) {
+      if (!username || username.length > 1024 || typeof password !== 'string' || !password || password.length > 1024) {
         sendJson(res, 400, { error: 'Username va parol kiritilishi shart.' });
         return;
       }
 
+      const attempt = localLoginThrottle.take(req.socket.remoteAddress, username);
+      if (!attempt.allowed) {
+        res.setHeader('Retry-After', String(attempt.retryAfter));
+        return sendJson(res, 429, { error: 'Kirishga juda ko‘p urinish bo‘ldi. Biroz kutib, qayta urinib ko‘ring.', retryAfter: attempt.retryAfter });
+      }
       let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+      let passwordMatches = user && verifyPassword(password, user.password_hash);
       let syncResult;
-      if (!user || !verifyPassword(password, user.password_hash)) {
+      if (!passwordMatches) {
         syncResult = await CloudLicenseService.syncStaffAccounts();
         user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+        passwordMatches = user && verifyPassword(password, user.password_hash);
       }
-      if (!user || !verifyPassword(password, user.password_hash)) {
+      if (!passwordMatches) {
         const unavailable = syncResult && !syncResult.success && LicenseManager.licenseData;
         sendJson(res, unavailable ? 503 : 401, { error: unavailable
           ? 'Login tasdiqlanmadi. Bulutdagi yangi akkauntni sinxronlab bo‘lmadi. Internet va klub ulanishini tekshirib, qayta urinib ko‘ring.'
@@ -1665,46 +1678,10 @@ function handleRequest(req, res) {
 
       // Ushbu kompyuter uchun yaqinlashib kelayotgan bronni aniqlash (15-30 daqiqa oldin ogohlantirish)
       let upcomingBooking = null;
-      const pcBookings = activeBookings.filter(b => b.computer_id === pc.pc_number || b.computer_id === pc.id || String(b.computer_id) === String(pc.pc_number));
-      for (const b of pcBookings) {
-        let bStartMs;
-        if (b.start_time.includes('T') || b.start_time.includes('-')) {
-          bStartMs = new Date(b.start_time).getTime();
-        } else {
-          const parts = b.start_time.split(':');
-          const today = new Date();
-          today.setHours(parseInt(parts[0], 10), parseInt(parts[1] || '0', 10), 0, 0);
-          bStartMs = today.getTime();
-        }
-
-        let bEndMs;
-        if (b.end_time.includes('T') || b.end_time.includes('-')) {
-          bEndMs = new Date(b.end_time).getTime();
-        } else {
-          const parts = b.end_time.split(':');
-          const today = new Date();
-          today.setHours(parseInt(parts[0], 10), parseInt(parts[1] || '0', 10), 0, 0);
-          bEndMs = today.getTime();
-        }
-
-        const diffMinutes = Math.floor((bStartMs - now) / 60000);
-        const isCurrent = (now >= bStartMs && now <= bEndMs);
-        // Agar bron ayni paytda faol bo'lsa yoki boshlanishiga 30 daqiqa yoki undan kam qolgan bo'lsa
-        if (isCurrent || (diffMinutes >= 0 && diffMinutes <= 30)) {
-          upcomingBooking = {
-            id: b.id,
-            customerName: b.customer_name,
-            customerPhone: b.customer_phone,
-            startTime: b.start_time,
-            endTime: b.end_time,
-            status: b.status,
-            diffMinutes,
-            isCurrent,
-            isImminent: isCurrent || diffMinutes <= 15
-          };
-          break;
-        }
-      }
+      const pcBookings = activeBookings.filter(b => b.club_id===pc.club_id && b.computer_ref===pc.id && !b.needs_review && !b.session_id && Date.parse(b.no_show_at)>now).sort((a,b)=>Date.parse(a.start_time)-Date.parse(b.start_time));
+      const b=pcBookings[0];
+      if(b){const diffMinutes=Math.floor((Date.parse(b.start_time)-now)/60000),isCurrent=now>=Date.parse(b.start_time);
+        upcomingBooking={id:b.id,revision:b.revision,customerName:b.customer_name,startTime:b.start_time,endTime:b.end_time,status:b.status,diffMinutes,isCurrent,isImminent:isCurrent||diffMinutes<=15};}
 
       const isClientWsConnected = ClientManager.clients.get(pc.id)?.socket?.readyState === WebSocket.OPEN;
       const isOnlineVal = isClientWsConnected ? 1 : 0;
@@ -1730,6 +1707,7 @@ function handleRequest(req, res) {
         roomName: pc.room_name ?? null,
         roomColor: pc.room_color ?? null,
         roomType: pc.room_type ?? null,
+        bookingScreenSupported:ClientManager.clients.get(pc.id)?.bookingScreenSupported ?? null,
         currentRate: currentRateInfo.pricePerHour,
         currentRateName: currentRateInfo.name,
         isVipPostpaidAllowed: getClubSettings(pc.club_id || clubId || 1).vip_enabled && currentRateInfo.isVipPostpaidAllowed !== false,
@@ -1947,32 +1925,19 @@ function handleRequest(req, res) {
 
   // POST /api/sessions/start (Qayta ishlangan: Hours, Price, VIP Postpaid, Client Base, Tenant Scoped)
   // Read-only quote using the same clock, room and pricing engine as session start.
-  if (url.pathname === '/api/sessions/start-preview' && req.method === 'POST') {
+  const bookingStartMatch=url.pathname.match(/^\/api\/bookings\/(\d+)\/check-in(-preview)?$/);
+  if ((url.pathname === '/api/sessions/start-preview' || bookingStartMatch?.[2]) && req.method === 'POST') {
     if (!authenticate(req,res,{permission:'session:manage'})) return;
     readBody(req,body=>{
       try {
-        const clubId=req.user.clubId||1;
-        const pc=db.prepare('SELECT * FROM computers WHERE id=? AND club_id=?').get(body.computerId,clubId);
-        if(!pc) return sendJson(res,404,{error:'Kompyuter topilmadi.'});
-        if(db.prepare("SELECT id FROM sessions WHERE computer_id=? AND status='ACTIVE'").get(pc.id))return sendJson(res,409,{error:'Kompyuterda faol seans mavjud.'});
-        if(!['hours','price','postpaid'].includes(body.mode))return sendJson(res,400,{error:'Seans turi notogri.'});
-        const now=new Date(),zoneId=resolveZoneIdForComputer(pc.id,clubId),isPostpaid=body.mode==='postpaid';
-        const rate=requireRateForMoment(now,isPostpaid,clubId,zoneId);
-        if(isPostpaid){
-          const settings=getClubSettings(clubId);
-          if(!settings.vip_enabled||rate.isVipPostpaidAllowed===false)return sendJson(res,403,{error:'VIP Postpaid bu xona yoki klubda yoqilmagan.'});
-          const currentRate=settings.vip_pricing_mode==='CUSTOM'?Number(settings.vip_custom_price):rate.pricePerHour;
-          if(!Number.isFinite(currentRate)||currentRate<=0)throw Error('VIP tarifi belgilanmagan.');
-          return sendJson(res,200,{success:true,isPostpaid:true,currentRate,pricingMode:settings.vip_pricing_mode,asOf:now.toISOString()});
-        }
-        const quote=prepaidQuote(body,now,clubId,zoneId);
-        sendJson(res,200,{success:true,isPostpaid:false,price:quote.totalAmount,durationMinutes:quote.totalMinutes,endTime:quote.endTime,currentRate:rate.pricePerHour,asOf:now.toISOString()});
-      }catch(error){sendJson(res,400,{error:error.message});}
+        const plan=prepareCashierSession(db,{...req.user,clubId:req.user.clubId||1},body,{bookingId:bookingStartMatch?Number(bookingStartMatch[1]):null});
+        sendJson(res,200,cashierSessionQuote(plan));
+      }catch(error){sendJson(res,error.statusCode || 400,{error:error.message,code:error.code});}
     });
     return;
   }
 
-  if (url.pathname === '/api/sessions/start' && req.method === 'POST') {
+  if ((url.pathname === '/api/sessions/start' || (bookingStartMatch && !bookingStartMatch[2])) && req.method === 'POST') {
     if (CloudLicenseService.isBlocked() || !LicenseManager.isOperational()) {
       sendJson(res, 403, {
         success: false,
@@ -1982,117 +1947,20 @@ function handleRequest(req, res) {
       return;
     }
     if (!authenticate(req, res, { permission: 'session:manage' })) return;
-    const currentUserId = req.user.id;
     const clubId = req.user.clubId || 1;
 
     readBody(req, async (data) => {
+      let committedResult;
       try {
-        const {
-          computerId,
-          mode = 'hours',           // 'hours', 'price', 'postpaid', 'client'
-          durationMinutes = 60,
-          amount = 0,
-          customerName = 'Mijoz',
-          customerId = null,
-          paymentType = 'CASH',     // 'CASH', 'CLICK', 'BALANCE', 'POSTPAID'
-          isPostpaid = false,
-          tariffId = null
-        } = data;
+        const result=startCashierSession(db,{...req.user,clubId},data,{bookingId:bookingStartMatch?Number(bookingStartMatch[1]):null});
+        committedResult=result;
+        if(result.replayed){sendJson(res,result.status,{...result.body,replayed:true});return;}
+        const p=result.plan, sessionId=result.body.sessionId;
+        const {pc:targetPcRow,mode,customerId,customerName,paymentType,isPostpaid,startedAt,
+          endsAt:finalEndsAt,amount:finalAmount,durationMinutes:finalDuration,rate:activeRate,tariff}=p;
+        const resolvedCompId=targetPcRow.id;
+        const wasOffline=!ClientManager.isConnected(resolvedCompId);
 
-        const pcNum = /^\d+$/.test(String(computerId || '').trim()) ? parseInt(computerId, 10) : -999999;
-        const targetPcRow = db.prepare('SELECT id, status, mac_address, name, pc_number, zone, zone_id FROM computers WHERE club_id=? AND (id = ? OR name = ? OR pc_number = ?) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1').get(clubId, String(computerId), String(computerId), pcNum, String(computerId));
-        if (!targetPcRow) { sendJson(res, 404, { error: 'Kompyuter topilmadi.' }); return; }
-        const activeSession = db.prepare("SELECT id FROM sessions WHERE computer_id = ? AND status = 'ACTIVE'").get(targetPcRow.id);
-        if (activeSession) { sendJson(res, 409, { error: 'Kompyuterda faol seans mavjud.' }); return; }
-        const resolvedCompId = targetPcRow.id;
-        const pcZoneId = targetPcRow?.zone_id || resolveZoneIdForComputer(resolvedCompId, clubId);
-
-        if ((mode === 'client' || paymentType === 'BALANCE') && !db.prepare("SELECT id FROM users WHERE id=? AND club_id=? AND role='client'").get(customerId,clubId)) throw new Error('Mijoz hisobi topilmadi.');
-        let finalDuration = durationMinutes;
-        let finalAmount = amount;
-        let finalEndsAt;
-        const startedAt = sessionStartTime(data);
-
-        const isPostpaidReq = Boolean(mode === 'postpaid' || mode === 'VIP' || mode === 'vip' || isPostpaid || paymentType === 'POSTPAID');
-        const activeRate = requireRateForMoment(startedAt, isPostpaidReq, clubId, pcZoneId);
-        if(isPostpaidReq && paymentType==='BALANCE')throw new Error('Postpaid seansni balansdan oldindan to‘lab bo‘lmaydi.');
-        if (isPostpaidReq) {
-          const settings = getClubSettings(clubId);
-          if (!settings.vip_enabled) {
-            sendJson(res, 403, { error: 'VIP Postpaid hozirda faol emas (Menejer tomonidan sozlamalarda o\'chirilgan).' });
-            return;
-          }
-          if (activeRate.isVipPostpaidAllowed === false) {
-            sendJson(res, 403, { error: 'Ushbu xonada VIP Postpaid (Keyin to\'lash) taqiqlangan.' });
-            return;
-          }
-          finalDuration = 24 * 60;
-          finalAmount = 0;
-          finalEndsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
-        } else {
-          const calc = prepaidQuote(data, startedAt, clubId, pcZoneId);
-          finalDuration = calc.totalMinutes;
-          finalAmount = calc.totalAmount;
-          finalEndsAt = new Date(calc.endTime);
-        }
-
-        if (!isPostpaidReq) calculateIntervalPrice(startedAt, finalEndsAt, false, clubId, pcZoneId);
-        const prepaidRates=paymentType==='BALANCE'?freezePrepaidRates(resolvedCompId,startedAt,finalEndsAt):null;
-
-        // Standart soatlik tarif
-        const defaultTariff = db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE club_id = ? ORDER BY price_per_hour ASC LIMIT 1').get(clubId)
-          || db.prepare('SELECT id, name, price_per_hour FROM tariffs ORDER BY price_per_hour ASC LIMIT 1').get();
-        const tariff = (tariffId && db.prepare('SELECT id, name, price_per_hour FROM tariffs WHERE id = ?').get(tariffId)) || defaultTariff;
-
-        const sessionId = `ses_${Date.now().toString(36)}`;
-        const notes = paymentType === 'BALANCE' ? 'CLIENT_BALANCE_PREPAID:'+customerId : isPostpaidReq ? 'POSTPAID' : (mode === 'client' ? `CLIENT_ID:${customerId}` : mode);
-
-        db.exec('BEGIN');
-        if (paymentType === 'BALANCE') {
-          const debit = db.prepare('UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND balance>=?').run(finalAmount,customerId,clubId,finalAmount);
-          if (debit.changes !== 1) throw new Error('Mijoz balansi yetarli emas yoki mijoz topilmadi.');
-          db.prepare("INSERT INTO client_transactions (club_id,user_id,amount,type,payment_method,category,session_id) VALUES (?,?,?,'SESSION_DEDUCT','BALANCE','GAME',?)").run(clubId,customerId,finalAmount,sessionId);
-        }
-
-        // 1. Sessiya yaratish (club_id bilan)
-        db.prepare(`
-          INSERT INTO sessions (id, club_id, computer_id, tariff_id, user_id, customer_name, started_at, ends_at, total_amount, paid_amount, status, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-        `).run(
-          sessionId,
-          clubId,
-          resolvedCompId,
-          activeRate.tariffId || tariff?.id || 'trf_standard_1h',
-          customerId || null,
-          customerName || 'Mijoz',
-          startedAt.toISOString(),
-          finalEndsAt.toISOString(),
-          finalAmount,
-          isPostpaidReq ? 0 : finalAmount,
-          notes
-        );
-
-        if(prepaidRates)db.prepare('UPDATE sessions SET prepaid_rate_plan=? WHERE id=?').run(JSON.stringify(prepaidRates),sessionId);
-
-        // 2. Tranzaksiya yozish (agar postpaid bo'lmasa va pul to'langan bo'lsa)
-        if (!isPostpaidReq && finalAmount > 0 && paymentType !== 'BALANCE') {
-          const validPayType = ['CASH', 'CARD', 'CLICK', 'PAYME'].includes(paymentType) ? paymentType : 'CASH';
-          db.prepare(`
-            INSERT INTO transactions (id, club_id, session_id, amount, payment_type, payment_method, transaction_type, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, 'PREPAID', ?)
-          `).run(`tx_${Date.now().toString(36)}`, clubId, sessionId, finalAmount, validPayType, validPayType, String(currentUserId));
-        }
-
-        // 3. Kompyuter holatini yangilash
-        const wasOffline = !ClientManager.isConnected(resolvedCompId);
-
-        db.prepare(`
-          UPDATE computers 
-          SET status = 'OCCUPIED', current_session_id = ? 
-          WHERE id = ?
-        `).run(sessionId, resolvedCompId);
-
-        db.exec('COMMIT');
         const wake = await autoWakeComputer(targetPcRow,{isConnected:id=>ClientManager.isConnected(id),sendWake:sendWakeOnLan});
 
         // 4. Client Agent ga START_SESSION yuborish
@@ -2145,19 +2013,10 @@ function handleRequest(req, res) {
           tariffName: isPostpaid ? 'VIP Postpaid' : (tariff?.name || 'Standart')
         });
 
-        sendJson(res, 201, {
-          success: true,
-          wake,
-          message: wake.message,
-          sessionId,
-          mode,
-          durationMinutes: finalDuration,
-          amount: finalAmount,
-          isPostpaid: isPostpaidReq
-        });
+        sendJson(res,result.status,{...result.body,wake,message:wake.message});
       } catch (e) {
-        try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, ['TARIFF_NOT_CONFIGURED','INVALID_SESSION_QUOTE'].includes(e.code) ? 400 : 500, { error: e.message });
+        if(committedResult){sendJson(res,committedResult.status,{...committedResult.body,deliveryPending:true,message:'Seans saqlandi. Client bilan aloqa tiklanishi kutilmoqda.'});return;}
+        sendJson(res,e.statusCode || (['TARIFF_NOT_CONFIGURED','INVALID_SESSION_QUOTE'].includes(e.code) ? 400 : 500),{error:e.message,code:e.code,operationNotApplied:e.operationNotApplied===true,requestId:data.requestId});
       }
     });
     return;
@@ -2321,6 +2180,8 @@ function handleRequest(req, res) {
         } else {
           db.exec('BEGIN IMMEDIATE');
           try {
+        assertBookingAvailability(db,{clubId:sessionRow.club_id,computerId:compId,start:new Date(currentEnd).toISOString(),
+          end:newEnd.toISOString(),excludeSessionId:sessionRow.id});
         // Bazada seans vaqtini yangilash
         db.prepare(`
           UPDATE sessions 
@@ -2337,7 +2198,11 @@ function handleRequest(req, res) {
         }
 
         // Kassa tranzaksiyasiga yozish
-        if (addAmt > 0) {
+        if (addAmt > 0 && hasBookingFunding(db,sessionRow.id) && paymentType==='BALANCE') {
+          if(!sessionRow.user_id || db.prepare("UPDATE users SET balance=balance-? WHERE id=? AND club_id=? AND role='client' AND balance>=?")
+            .run(addAmt,sessionRow.user_id,sessionRow.club_id,addAmt).changes!==1)throw Object.assign(Error('Uzaytirish uchun mijoz balansi yetarli emas.'),{statusCode:409});
+          recordSessionPayment(db,{clubId:sessionRow.club_id,sessionId:sessionRow.id,userId:sessionRow.user_id,amount:addAmt,channel:'BALANCE',actor:req.user,createdAt:new Date().toISOString()});
+        } else if (addAmt > 0) {
           const validPayType = ['CASH', 'CARD', 'CLICK', 'PAYME'].includes(paymentType) ? paymentType : 'CASH';
           db.prepare(`
             INSERT INTO transactions (id, club_id, session_id, amount, payment_type, created_by, notes)
@@ -2380,7 +2245,7 @@ function handleRequest(req, res) {
           remainingSeconds: remSec
         });
       } catch (err) {
-        sendJson(res, 500, { error: 'Seansni uzaytirishda xatolik: ' + err.message });
+        sendJson(res, err.statusCode || 500, { error: 'Seansni uzaytirishda xatolik: ' + err.message,code:err.code });
       }
     });
     return;
@@ -2394,7 +2259,7 @@ function handleRequest(req, res) {
     if (!authenticate(req,res,{permission:'session:manage'})) return;
     try {
       sendJson(res,200,previewSessionTransfer({fromComputerId:url.searchParams.get('fromComputerId'),toComputerId:url.searchParams.get('toComputerId'),clubId:getTenantClubId(req)}));
-    } catch(error) {sendJson(res,error.status || 400,{error:error.message});}
+    } catch(error) {sendJson(res,error.statusCode || error.status || 400,{error:error.message});}
     return;
   }
   if (url.pathname === '/api/sessions/transfer' && req.method === 'POST') {
@@ -2451,7 +2316,7 @@ function handleRequest(req, res) {
           endsAt: session.ends_at
         });
       } catch (err) {
-        sendJson(res, err.status || (err.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500), { error: 'Kompyuterni almashtirishda xatolik: ' + err.message });
+        sendJson(res, err.statusCode || err.status || (err.code === 'TARIFF_NOT_CONFIGURED' ? 400 : 500), { error: 'Kompyuterni almashtirishda xatolik: ' + err.message,code:err.code });
       }
     });
     return;
@@ -2651,6 +2516,7 @@ function handleRequest(req, res) {
           || db.prepare('SELECT id, name FROM tariffs ORDER BY price_per_hour ASC LIMIT 1').get();
 
         for (const {pcId, rate, perPcAmount, perPcDurationMins, endsAt, prepaidRates} of plans) {
+          assertBookingAvailability(db,{clubId,computerId:pcId,start:startedAt.toISOString(),end:endsAt.toISOString(),openEnded:isPostpaid});
           const sessionId = `ses_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
           const notes = paymentType === 'BALANCE' ? 'CLIENT_BALANCE_PREPAID:'+customerId : isPostpaid ? 'POSTPAID' : `BATCH_${normalizedMode}`;
 
@@ -2733,7 +2599,7 @@ function handleRequest(req, res) {
         });
       } catch (err) {
         try { db.exec('ROLLBACK'); } catch {}
-        sendJson(res, ['TARIFF_NOT_CONFIGURED','INVALID_SESSION_QUOTE'].includes(err.code) ? 400 : 500, { error: 'Guruh seansini ochishda xatolik: ' + err.message });
+        sendJson(res, err.statusCode || (['TARIFF_NOT_CONFIGURED','INVALID_SESSION_QUOTE'].includes(err.code) ? 400 : 500), { error: 'Guruh seansini ochishda xatolik: ' + err.message,code:err.code });
       }
     });
     return;
@@ -3382,30 +3248,38 @@ function handleRequest(req, res) {
   // ==========================================================================
 
   // 4. GET /api/bookings & POST /api/bookings
+  // Narrow setting: administrators may change grace without receiving access
+  // to manager tariff/staff settings. New reservation primitives are not exposed
+  // until phase B connects availability to every session-entry path.
+  if (url.pathname === '/api/booking-settings' && ['GET','PUT'].includes(req.method)) {
+    if (!authenticate(req, res, { roles: ['superadmin','club_owner','administrator'] })) return;
+    const actor = { ...req.user, clubId: req.user.clubId ?? 1 };
+    if (req.method === 'GET') {
+      try { sendJson(res, 200, { success: true, settings: readBookingSettings(db, actor) }); }
+      catch (error) { sendJson(res, error.statusCode || 500, { error: error.message }); }
+    } else readBody(req, data => {
+      try {
+        const result = saveBookingSettings(db, actor, data);
+        if (!result.replayed) broadcastAdminUpdate();
+        sendJson(res, result.status, result.body);
+      } catch (error) { sendJson(res, error.statusCode || 500, { error: error.message, code: error.code }); }
+    });
+    return;
+  }
+
   if (url.pathname === '/api/bookings' && req.method === 'GET') {
     if (!authenticate(req, res, { roles: ['superadmin','club_owner','administrator'], allowExpiredClub: true })) return;
     const clubId = getTenantClubId(req);
 
     try {
-      const bookings = clubId === null
-        ? db.prepare(`
-            SELECT b.*, c.name as computer_name, c.pc_number
-            FROM bookings b
-            LEFT JOIN computers c ON (b.computer_id = c.pc_number OR b.computer_id = c.id) AND (c.club_id = b.club_id)
-            ORDER BY b.start_time ASC
-          `).all()
-        : db.prepare(`
-            SELECT b.*, c.name as computer_name, c.pc_number
-            FROM bookings b
-            LEFT JOIN computers c ON (b.computer_id = c.pc_number OR b.computer_id = c.id) AND (c.club_id = b.club_id)
-            WHERE b.club_id = ?
-            ORDER BY b.start_time ASC
-          `).all(clubId);
+      const {rows:bookings,page}=listBookingRows(db,clubId,url.searchParams);
 
       const formatted = bookings.map(b => ({
+        funds:bookingFunds(db,b),paymentKind:b.payment_kind,
         id: b.id,
         clubId: b.club_id,
         computerId: b.computer_id,
+        computerRef: b.computer_ref, revision:b.revision, sessionId:b.session_id, noShowAt:b.no_show_at, needsReview:Boolean(b.needs_review),
         computerName: b.computer_name || `PC-${b.computer_id}`,
         pcNumber: b.pc_number || b.computer_id,
         userId: b.user_id,
@@ -3419,7 +3293,7 @@ function handleRequest(req, res) {
         createdAt: b.created_at
       }));
 
-      sendJson(res, 200, { success: true, bookings: formatted });
+      sendJson(res, 200, { success: true, bookings: formatted, page, serverNow:Date.now(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone });
     } catch (err) {
       sendJson(res, 500, { error: 'Bronlarni olishda xatolik: ' + err.message });
     }
@@ -3432,46 +3306,32 @@ function handleRequest(req, res) {
     const clubId = req.user.clubId || 1;
 
     readBody(req, body => {
-      try { const booking=createBooking(db,clubId,currentUserId,body);broadcastAdminUpdate();sendJson(res,201,{success:true,booking}); }
-      catch(error){sendJson(res,error.statusCode || 500,{error:error.message});}
+      try { const result=createFreeReservation(db,{...req.user,clubId},body);if(!result.replayed)broadcastAdminUpdate();sendJson(res,result.status,result.body); }
+      catch(error){sendJson(res,error.statusCode || 500,{error:error.message,operationNotApplied:error.operationNotApplied===true,requestId:body.requestId});}
     });
     return;
   }
 
-  // 5a. PATCH /api/bookings/:id/status (Bron holatini o'zgartirish)
-  const bookingStatusMatch = url.pathname.match(/^\/api\/bookings\/(\d+)\/status$/);
-  if (bookingStatusMatch && (req.method === 'PATCH' || req.method === 'PUT')) {
-    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner', 'administrator'] })) return;
-    const targetId = parseInt(bookingStatusMatch[1], 10);
-    const clubId = getTenantClubId(req);
-
-    readBody(req, data => {
-      try {const result=updateBookingStatus(db,clubId,targetId,data.status);broadcastAdminUpdate();sendJson(res,200,{success:true,...result});}
-      catch(error){sendJson(res,error.statusCode || 500,{error:error.message});}
-    });
-    return;
+  const bookingRefundMatch=url.pathname.match(/^\/api\/bookings\/(\d+)\/refund$/);
+  if(bookingRefundMatch && req.method==='POST'){
+    if(!authenticate(req,res,{roles:['superadmin','club_owner','administrator'],permission:'session:manage'}))return;
+    readBody(req,input=>{
+      try{const result=confirmBookingCashRefund(db,{...req.user,clubId:req.user.clubId||1},{...input,bookingId:Number(bookingRefundMatch[1])});
+        if(!result.replayed)broadcastAdminUpdate();sendJson(res,result.status,result.body);
+      }catch(error){sendJson(res,error.statusCode||500,{error:error.message,operationNotApplied:error.operationNotApplied===true,requestId:input.requestId});}
+    });return;
   }
-
-  // 5. DELETE /api/bookings/:id
-  const bookingMatch = url.pathname.match(/^\/api\/bookings\/(\d+)$/);
-  if (bookingMatch && req.method === 'DELETE') {
-    if (!authenticate(req, res, { roles: ['superadmin', 'club_owner', 'administrator'] })) return;
-    const targetId = parseInt(bookingMatch[1], 10);
-    const clubId = getTenantClubId(req);
-
-    try {
-      if (clubId === null) {
-        db.prepare('DELETE FROM bookings WHERE id = ?').run(targetId);
-      } else {
-        db.prepare('DELETE FROM bookings WHERE id = ? AND club_id = ?').run(targetId, clubId);
-      }
-
-      broadcastAdminUpdate();
-      sendJson(res, 200, { success: true, deletedId: targetId });
-    } catch (err) {
-      sendJson(res, 500, { error: 'Bronni o\'chirishda xatolik: ' + err.message });
-    }
-    return;
+  const bookingCancelMatch=url.pathname.match(/^\/api\/bookings\/(\d+)(?:\/(cancel|status))?$/);
+  if(bookingCancelMatch && ['POST','PUT','PATCH','DELETE'].includes(req.method)){
+    if(!authenticate(req,res,{roles:['superadmin','club_owner','administrator'],permission:'session:manage'}))return;
+    readBody(req,data=>{
+      try{
+        if(bookingCancelMatch[2]==='status' && data.status!=='CANCELLED')return sendJson(res,409,{error:'Bron holati faqat tegishli seans yoki bekor qilish amali bilan o‘zgaradi.'});
+        if(bookingCancelMatch[2]==='cancel' && req.method!=='POST')return sendJson(res,405,{error:'POST kerak.'});
+        const result=cancelFreeReservation(db,{...req.user,clubId:req.user.clubId||1},{...data,bookingId:Number(bookingCancelMatch[1])});
+        if(!result.replayed)broadcastAdminUpdate();sendJson(res,result.status,result.body);
+      }catch(error){sendJson(res,error.statusCode||500,{error:error.message,code:error.code,operationNotApplied:error.operationNotApplied===true,requestId:data.requestId});}
+    });return;
   }
 
   // ==========================================================================
@@ -4040,6 +3900,31 @@ function resolvePcId(rawId) {
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 65536 });
 ClientManager.wss = wss;
 
+let bookingExpiryTimer, bookingExpiryLastError = 0;
+function startBookingExpiry() {
+  if (bookingExpiryTimer) return;
+  const sweep = () => {
+    if (ServerUpdater.applying || updateProbation.pending) return;
+    try {
+      const now = Date.now();
+      const clubs = db.prepare(`SELECT club_id FROM bookings WHERE booking_version=2
+        AND needs_review=0 AND session_id IS NULL AND status IN ('PENDING','CONFIRMED') AND no_show_at<=?
+        GROUP BY club_id ORDER BY min(no_show_at) LIMIT 10`).all(new Date(now).toISOString());
+      let changed = 0;
+      for (const row of clubs) changed += expireFreeReservations(db,row.club_id,now,5);
+      if (changed) { broadcastAdminUpdate(); mobileSnapshots.requestSoon(); }
+      for(const pcId of ClientManager.clients.keys())sendReservationState(db,ClientManager,pcId,now);
+    } catch (error) {
+      if (Date.now()-bookingExpiryLastError>60000) {
+        bookingExpiryLastError=Date.now(); console.warn('[Booking expiry]',error.message);
+      }
+    }
+  };
+  sweep();
+  bookingExpiryTimer=setInterval(sweep,5000);
+  bookingExpiryTimer.unref();
+}
+
 // Anti-Piracy, HWID Locking & Remote Kill-Switch Initsializatsiyasi
 function initializeLicense() {
 try {
@@ -4155,10 +4040,12 @@ server.listen(PORT, '0.0.0.0', () => {
 
   HeartbeatMonitor.start();
   SessionScheduler.start();
+  startBookingExpiry();
   });
 });
 
 ServerUpdater.onShutdown = () => {
+  clearInterval(bookingExpiryTimer);
   mobileAgent.stop();
   mobileSnapshots.stop();
   HeartbeatMonitor.stop();
@@ -4169,6 +4056,7 @@ ServerUpdater.onShutdown = () => {
 };
 
 process.on('SIGINT', () => {
+  clearInterval(bookingExpiryTimer);
   void analyticsCache.close();
   HeartbeatMonitor.stop();
   SessionScheduler.stop();

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { postpaidGameBill } from './clientSessionState.js';
 import { isMemberSession, isPrepaidMember, prepaidRefund, settleMemberUsage, getMemberSessionSummary } from './memberBilling.js';
 import { getFinancialBreakdown } from './financialBreakdown.js';
+import {bookingFundingPreview,settleBookingFunding,hasBookingFunding} from './bookingFunds.js';
 import { db, getClubSettings } from '../db.js';
 import { getSessionBarDebt } from './sessionBarDebt.js';
 import { isPostpaidSession } from './sessionMode.js';
@@ -67,7 +68,8 @@ export class BarLedgerService {
     const computerNum = session.pc_number || pc?.pc_number || targetNum;
 
     const pendingOrders = getSessionBarDebt(db, session, computerNum).orders;
-    if (session.status === 'COMPLETED' && pendingOrders.length === 0)
+    const fundingPending=hasBookingFunding(db,session.id)&&!db.prepare('SELECT 1 FROM session_funding_settlements WHERE session_id=?').get(session.id);
+    if (session.status === 'COMPLETED' && pendingOrders.length === 0 && !fundingPending)
       throw new Error('Seans hisobi allaqachon yopilgan.');
 
     let barBill = 0;
@@ -104,10 +106,11 @@ export class BarLedgerService {
     // Postpaid bo'lsa: GameBill + BarBill. 
     // Prepaid bo'lsa: Game allaqachon to'langan, mijoz faqat BarBill to'laydi (yoki jami kassa formulasi bilan ko'rsatiladi).
     const totalSessionCost = gameBill + barBill;
-    const gameAmountToCollect = !isPostpaid ? 0 : session.status === 'ACTIVE' ? gameBill : Math.max(0,gameBill-Number(session.paid_amount || 0));
-    const prepaidCredit = cashPrepaid ? refund.amount : 0;
-    const amountToCollect = Math.max(0, gameAmountToCollect + barBill - prepaidCredit);
-    const refundAmount = Math.max(0, prepaidCredit - barBill);
+    const funding=bookingFundingPreview(db,session,gameBill,barBill);
+    const gameAmountToCollect = funding?.gameAmountToCollect ?? (!isPostpaid ? 0 : session.status === 'ACTIVE' ? gameBill : Math.max(0,gameBill-Number(session.paid_amount || 0)));
+    const prepaidCredit = funding?.prepaidCredit ?? (cashPrepaid ? refund.amount : 0);
+    const amountToCollect = funding?.amountToCollect ?? Math.max(0, gameAmountToCollect + barBill - prepaidCredit);
+    const refundAmount = funding?.refundAmount ?? Math.max(0, prepaidCredit - barBill);
 
     // Formula matni
     const durationLabel = playedHours >= 1 ? `${playedHours} soat` : `${playedMinutes} daqiqa`;
@@ -139,6 +142,7 @@ export class BarLedgerService {
       amountToCollect,
       prepaidCredit,
       refundAmount,
+      balanceRefund:funding?.balanceRefund||0,
       barItems,
       barSummaryText,
       formulaText,
@@ -158,6 +162,8 @@ export class BarLedgerService {
       const settlement = preview.sessionStatus === 'ACTIVE' ? settleMemberUsage(preview.sessionId,new Date(),true,true) : null;
       preview = this.getSessionCheckoutPreview(target, clubId);
       const targetClubId = clubId || 1;
+      const fundingSettled=settleBookingFunding(db,db.prepare('SELECT * FROM sessions WHERE id=? AND club_id=?').get(preview.sessionId,targetClubId),preview,validPayMethod,cashierUserId);
+      if(!fundingSettled){
       const original = preview.prepaidCredit > 0
         ? db.prepare("SELECT payment_method,payment_type FROM transactions WHERE session_id=? AND club_id=? AND amount>0 AND transaction_type!='BAR_SALE' ORDER BY created_at LIMIT 1").get(preview.sessionId,targetClubId)
         : null;
@@ -212,6 +218,7 @@ export class BarLedgerService {
         for (const id of preview.pendingOrderIds) markPaid.run(orderMethod, id, targetClubId);
       }
 
+      }
       // 3. Sessiyani yakunlash (COMPLETED)
       db.prepare(`
         UPDATE sessions 
@@ -219,7 +226,7 @@ export class BarLedgerService {
           total_amount = ?, paid_amount = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND status = 'ACTIVE'
       `).run(preview.gameBill, preview.gameBill, preview.sessionId);
-      if(preview.sessionStatus==='COMPLETED'&&preview.gameAmountToCollect>0)
+      if(preview.sessionStatus==='COMPLETED'&&(preview.gameAmountToCollect>0||fundingSettled))
         db.prepare("UPDATE sessions SET paid_amount=? WHERE id=? AND club_id=? AND status='COMPLETED'").run(preview.gameBill,preview.sessionId,targetClubId);
 
       // 4. Kompyuterni qulflash
@@ -240,6 +247,7 @@ export class BarLedgerService {
         memberSummary,
         amountToCollect: preview.amountToCollect,
         refundAmount: preview.refundAmount,
+        balanceRefund:preview.balanceRefund,
         checkoutMessage: preview.barBill > 0
           ? `Siz ${preview.barSummaryText} olgansiz.\n${preview.refundAmount > 0
             ? `Kassadan ${preview.refundAmount.toLocaleString('uz-UZ')} so‘m qaytim olishni unutmang 😊`
@@ -283,6 +291,7 @@ export class BarLedgerService {
         finalBill: preview.finalBill,
         amountCollected: preview.amountToCollect,
         refundAmount: settlement?.refundAmount || preview.refundAmount || 0,
+        balanceRefund:preview.balanceRefund||0,
         memberSummary,
         formulaText: preview.formulaText,
         barSummaryText: preview.barSummaryText,

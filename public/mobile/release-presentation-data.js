@@ -1,6 +1,15 @@
 // These releases intentionally open without the full-screen presentation.
 export const presentationlessReleases=['1.3.5','1.3.6'];
 export const releaseNotes={
+ '1.3.11':{
+  title:'Bron va seans bir joyda',
+  intro:'Mijoz kelguncha kompyuterni band qiling; hisob o‘yin boshlanganda yuradi.',
+  slides:[
+   {roles:['club_owner','manager','administrator'],icon:'◷',title:'Vaqtni oldindan band qiling',text:'Serverdagi «Band qilingan» bo‘limida kompyuter va vaqtni tanlang. Bron yaratish seansni boshlamaydi. Administrator telefondan ham bron qo‘sha oladi.',action:'Server → Band qilingan · Mobil administrator → Bronlar'},
+   {roles:['club_owner','manager','administrator'],icon:'₴',title:'Depozit qayta olinmaydi',text:'Bronni to‘lovsiz yoki naqd/balans depoziti bilan yarating. «Mijoz keldi» bosilganda odatiy seans oynasi ochiladi va depozit hisobga olinadi. Bekor qilinganda balans avtomatik qaytadi; naqd qaytimni pulni bergach tasdiqlang.',action:'Bron → Mijoz keldi · Seans ochish'},
+   {roles:['club_owner','manager','administrator'],icon:'⚙',title:'Bron qabulini boshqaring',text:'Mijozni necha daqiqa kutishni belgilang. Kerak bo‘lsa yangi bron qabulini vaqtincha to‘xtating — mavjud bron va qaytimlar ishlashda davom etadi. Clientdagi bron yozuvi uchun uning dasturini ham yangilang.',action:'Bron sozlamalari → Kutish vaqti / Yangi bron qabul qilish'}
+  ]
+ },
  '1.3.10':{
   title:'Aniq logo va qulay qo‘llanma',
   intro:'Server va client ko‘rinishi saytimizga moslandi.',

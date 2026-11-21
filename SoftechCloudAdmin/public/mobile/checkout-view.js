@@ -10,5 +10,6 @@ export function checkoutView(bill,{esc,money}) {
   +(bill.barBill>0?`<p>${esc(bill.barSummaryText||'')}</p>`:'')
   +(!bill.isPostpaid&&!bill.isMember?row('Oldindan to‘langan',Number(bill.gameBill)+Number(bill.prepaidCredit))+row('Ishlatilmagan vaqt puli',bill.prepaidCredit):'')
   +(bill.isMember?row('Mijoz balansiga qaytadi',bill.member?.refundAmount||0):'')
+  +(!bill.isMember&&bill.balanceRefund>0?row('Mijoz balansiga qaytadi',bill.balanceRefund):'')
   +`<section class="card" aria-live="polite"><p>${refund>0?'Mijozga qaytim':due>0?'Mijozdan olinadi':'Hisob-kitob teng'}</p><h2>${esc(money(refund>0?refund:due))}</h2></section>`;
 }

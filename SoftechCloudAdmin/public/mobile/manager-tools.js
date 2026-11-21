@@ -1,6 +1,7 @@
 // All settings are saved by the club server using the manager's signed session.
 export function managerSettingRequest(path, method) {
   const pathname = new URL(path, 'http://localhost').pathname;
+  if(pathname==='/api/booking-settings')return ['GET','PUT'].includes(method);
   if (method === 'PUT') return ['/api/admin/tariffs','/api/admin/settings'].includes(pathname) || /^\/api\/admin\/users\/\d+\/permissions$/.test(pathname) || /^\/api\/admin\/tariff-schedules\/\d+$/.test(pathname);
   if (method === 'POST') return ['/api/admin/users','/api/admin/tariff-schedules'].includes(pathname);
   return method === 'DELETE' && /^\/api\/admin\/(users|tariff-schedules)\/\d+$/.test(pathname);
@@ -65,6 +66,8 @@ export function createManagerTools({state, remote, modal, esc, money, refresh}) 
     const root=document.querySelector('#content');
     root.innerHTML=`<section class="card"><h2 class="section-title">Klub boshqaruvi</h2><p class="hint">Tarif va xodimlarni boshqarish uchun klub serveri va internet ishlashi kerak. Hisobotlar server o‘chiq bo‘lsa ham ochiladi.</p><div class="actions"><button data-manager-section="tariffs">Tariflar</button><button data-manager-section="staff">Xodimlar</button></div></section><div id="managerContent"></div>`;
     root.querySelectorAll('[data-manager-section]').forEach(b=>{b.classList.toggle('primary',b.dataset.managerSection===state.managerSection);b.onclick=()=>{state.managerSection=b.dataset.managerSection;refresh();};});
+    const grace=document.createElement('button');grace.textContent='Bron sozlamalari';root.querySelector('.actions').append(grace);
+    grace.onclick=async()=>{try{const s=(await remote('/api/booking-settings')).settings,requestId=crypto.randomUUID();modal('Bron sozlamalari',`<label>Yangi bron qabul qilish<select name="enabled"><option value="1">Yoqilgan</option><option value="0" ${s.creationEnabled===false?'selected':''}>Vaqtincha to‘xtatilgan</option></select></label><p>Mavjud bronlar, seans ochish va qaytim ishlashda davom etadi.</p><label>Mijoz necha daqiqa kechikishi mumkin?<input name="minutes" type="number" min="1" max="180" value="${s.graceMinutes}" required></label><p>Kutish vaqti yangi bronlarga amal qiladi.</p>`,v=>remote('/api/booking-settings','PUT',{requestId,expectedRevision:s.revision,graceMinutes:Number(v.minutes),creationEnabled:v.enabled==='1'}));}catch(error){grace.textContent=error.message;}};
     const container=root.querySelector('#managerContent');
     if(!state.managerSection)return;
     container.innerHTML='<p class="empty">Klub serveridan olinmoqda…</p>';

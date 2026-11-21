@@ -8,6 +8,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
+import {createFreeReservation} from '../NetCafeServer/src/services/bookingFoundation.js';
 const dotnet=process.env.DOTNET_EXE||path.resolve('.tools/dotnet-sdk/dotnet.exe');
 const helper=path.resolve('SoftechUpdater/bin/Debug/net8.0-windows/win-x64/SoftechUpdater.dll');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
@@ -77,11 +78,21 @@ for(const scenario of ['success','rollback','interrupted','restart']){
     assert.equal(current.version,scenario==='success'?'9.0.0':oldVersion);
     const check=new DatabaseSync(database);try{
       assert.equal(check.prepare('SELECT amount FROM saved_balance').get().amount,5320);
-      if(scenario==='success')check.exec('UPDATE saved_balance SET amount=6320');
+      if(scenario==='success'){
+        check.exec("UPDATE saved_balance SET amount=6320; INSERT INTO computers(id,club_id,pc_number,name) VALUES('ota-booking-pc',1,900,'OTA fixture')");
+        const now=Date.now();
+        createFreeReservation(check,{id:7,clubId:1,username:'OTA fixture',role:'administrator',permissions:['session:manage']},
+          {requestId:'ota-accepted-booking',computerId:'ota-booking-pc',customerName:'Fixture',
+            startTime:new Date(now+3600000).toISOString(),endTime:new Date(now+7200000).toISOString(),payment:{kind:'CASH',amount:3000}},now);
+      }
     }finally{check.close();}
     if(scenario==='success'){
       const recover=spawn(dotnet,[helper,'--recover',target],{env,windowsHide:true,stdio:'ignore'});assert.equal((await once(recover,'exit'))[0],0);
-      const check=new DatabaseSync(database);try{assert.equal(check.prepare('SELECT amount FROM saved_balance').get().amount,6320,'Accepted update rolled back new receipts');}finally{check.close();}
+      const check=new DatabaseSync(database);try{
+        assert.equal(check.prepare('SELECT amount FROM saved_balance').get().amount,6320,'Accepted update rolled back new receipts');
+        assert.equal(check.prepare("SELECT amount FROM booking_funds WHERE kind='CAPTURE'").get().amount,3000,'Recovery lost accepted booking deposit');
+        assert.equal(check.prepare("SELECT count(*) n FROM money_operation_receipts WHERE request_id='ota-accepted-booking'").get().n,1);
+      }finally{check.close();}
       // Even with no listening-port evidence, SQLite's live ownership blocks recovery.
       const interrupted=path.join(target,'.ota',crypto.randomUUID().replaceAll('-',''));fs.mkdirSync(interrupted);
       fs.writeFileSync(path.join(interrupted,'journal.json'),JSON.stringify({Phase:'APPLYING',Kind:'server',Version:'9.0.0'}));

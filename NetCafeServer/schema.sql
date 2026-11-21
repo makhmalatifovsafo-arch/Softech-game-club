@@ -163,9 +163,20 @@ CREATE TABLE IF NOT EXISTS bookings (
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
     note TEXT,
-    status TEXT DEFAULT 'CONFIRMED' CHECK(status IN ('PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED')),
+    status TEXT DEFAULT 'CONFIRMED' CHECK(status IN ('PENDING', 'CONFIRMED', 'ACTIVE', 'CANCELLED', 'COMPLETED', 'NO_SHOW')),
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    computer_ref TEXT,
+    grace_minutes INTEGER NOT NULL DEFAULT 10 CHECK(grace_minutes BETWEEN 0 AND 180),
+    no_show_at TEXT,
+    session_id TEXT,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    needs_review INTEGER NOT NULL DEFAULT 0 CHECK(needs_review IN (0,1)),
+    review_reason TEXT,
+    cancelled_at TEXT,
+    cancellation_reason TEXT,
+    booking_version INTEGER NOT NULL DEFAULT 1,
+    payment_kind TEXT NOT NULL DEFAULT 'NONE' CHECK(payment_kind IN ('NONE','CASH','BALANCE')),
     FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE
 );
 
@@ -355,3 +366,23 @@ CREATE TABLE IF NOT EXISTS session_end_notices (
     dismissed_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Booking deposit funding (also migrated by initializeBookingFunds).
+CREATE TABLE IF NOT EXISTS booking_funds(
+    id INTEGER PRIMARY KEY AUTOINCREMENT, club_id INTEGER NOT NULL,
+    booking_id INTEGER NOT NULL REFERENCES bookings(id),
+    kind TEXT NOT NULL CHECK(kind IN ('CAPTURE','APPLY','REFUND')),
+    channel TEXT NOT NULL CHECK(channel IN ('CASH','BALANCE')),
+    user_id INTEGER REFERENCES users(id), amount INTEGER NOT NULL CHECK(amount>0),
+    session_id TEXT, actor_id TEXT NOT NULL, created_at TEXT NOT NULL,
+    UNIQUE(booking_id,kind), CHECK(channel<>'BALANCE' OR user_id IS NOT NULL));
+    CREATE INDEX IF NOT EXISTS idx_booking_funds_club_date ON booking_funds(club_id,created_at);
+    CREATE TABLE IF NOT EXISTS session_funding_allocations(
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id), club_id INTEGER NOT NULL,
+      booking_id INTEGER NOT NULL UNIQUE REFERENCES bookings(id),
+      source_id INTEGER NOT NULL UNIQUE REFERENCES booking_funds(id),
+      amount INTEGER NOT NULL CHECK(amount>0));
+    CREATE TABLE IF NOT EXISTS session_funding_settlements(
+      session_id TEXT PRIMARY KEY REFERENCES sessions(id), settled_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+
+-- Deposit audit/protection triggers are installed after legacy table migrations.

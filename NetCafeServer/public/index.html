@@ -859,176 +859,7 @@
   <!-- ===================================================================== -->
   <!-- VIEW 2: BOOKINGS (BAND QILINGANLAR VA REZERVATSIYA MATRITSASI)          -->
   <!-- ===================================================================== -->
-  <section id="view-bookings" aria-labelledby="headerPageTitle" class="spa-view hidden space-y-5">
-    <div class="min-h-[55vh] flex items-center justify-center">
-      <div class="w-full max-w-lg rounded-3xl border border-sky-500/20 bg-[var(--card-bg)] px-8 py-12 text-center shadow-2xl shadow-sky-950/20">
-        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-sky-500/25 bg-sky-500/10 text-3xl">📅</div>
-        <h2 class="text-2xl font-bold text-white">Band qilingan</h2>
-        <p class="mt-3 text-sm text-[var(--text-muted)]">Bu bo‘lim hozir tayyorlanmoqda.</p>
-        <div class="mt-6 inline-flex items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-300">Tez orada...</div>
-      </div>
-    </div>
-    <div class="hidden" aria-hidden="true">
-    <!-- Header with Date Navigator & Controls -->
-    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-1">
-      <div>
-        <div class="flex items-center gap-2.5">
-          <div class="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-lg shadow-sm">
-            📅
-          </div>
-          <div>
-            <div class="flex items-center gap-2">
-              <span id="bookingScheduleDateLabel" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/15 text-sky-400 border border-sky-500/30">
-                Bugun
-              </span>
-            </div>
-            <p class="text-xs text-[var(--text-muted)] mt-0.5">24-soatlik Gantt shkalasi, stollar bandligi va kutilayotgan bronlar boshqaruvi</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tezkor Sanalar va Boshqaruv Tugmalari -->
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- Date Selector Pills -->
-        <div class="flex items-center bg-[#141418] border border-[#27272a] rounded-xl p-1 gap-1">
-          <button type="button" id="bookingDateTodayBtn" onclick="setBookingDateFilter('TODAY')" 
-                  class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-black transition cursor-pointer shadow-sm">
-            Bugun
-          </button>
-          <button type="button" id="bookingDateTomorrowBtn" onclick="setBookingDateFilter('TOMORROW')" 
-                  class="px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-white transition cursor-pointer">
-            Ertaga
-          </button>
-          <div class="relative flex items-center">
-            <input type="date" id="bookingScheduleDateInput" onchange="handleBookingDateChange(this.value)" 
-                   class="bg-[#09090b] text-zinc-300 border border-[#27272a] text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-sky-500 font-mono">
-          </div>
-        </div>
-
-        <!-- Ko'rinish Switcher: Gantt vs Jadval -->
-        <div class="flex items-center bg-[#141418] border border-[#27272a] rounded-xl p-0.5">
-          <button type="button" id="bookingViewModeGanttBtn" onclick="toggleBookingViewMode('gantt')" 
-                  class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 text-white transition flex items-center gap-1 cursor-pointer" title="Gantt Matritsa / Shkala">
-            <span>📊</span>
-            <span class="hidden sm:inline">Gantt Shkala</span>
-          </button>
-          <button type="button" id="bookingViewModeTableBtn" onclick="toggleBookingViewMode('table')" 
-                  class="px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-white transition flex items-center gap-1 cursor-pointer" title="Ro'yxat Jadvali">
-            <span>📋</span>
-            <span class="hidden sm:inline">Ro'yxat</span>
-          </button>
-        </div>
-
-        <button type="button" onclick="loadBookings()" class="p-2 rounded-xl bg-[#141418] border border-[#27272a] hover:bg-zinc-800 text-zinc-300 hover:text-white transition cursor-pointer" title="Yangilash">
-          🔄
-        </button>
-
-        <button type="button" onclick="openAddBookingModal()" class="softech-btn-primary text-xs !py-2 px-3.5 font-bold flex items-center gap-1.5 cursor-pointer shadow-md shadow-sky-500/20">
-          <span>➕</span>
-          <span>Yangi Bron</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- 4 Ta Hisoblagich Kartochkalari -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
-        <div>
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Jami Bronlar</span>
-          <div id="statBookingTotal" class="text-lg font-bold font-mono text-white mt-0.5">0</div>
-        </div>
-        <div class="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center text-sm">📅</div>
-      </div>
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
-        <div>
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Tasdiqlangan</span>
-          <div id="statBookingConfirmed" class="text-lg font-bold font-mono text-emerald-400 mt-0.5">0</div>
-        </div>
-        <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-sm">✓</div>
-      </div>
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
-        <div>
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Kutilmoqda</span>
-          <div id="statBookingPending" class="text-lg font-bold font-mono text-amber-400 mt-0.5">0</div>
-        </div>
-        <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-sm">⏳</div>
-      </div>
-      <div class="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] flex items-center justify-between">
-        <div>
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">Band Soatlar</span>
-          <div id="statBookingHours" class="text-lg font-bold font-mono text-purple-400 mt-0.5">0</div>
-        </div>
-        <div class="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center text-sm">⏱️</div>
-      </div>
-    </div>
-
-    <!-- 1. GANTT / TIMELINE MATRIX KO'RINISHI (#bookingGanttContainer) -->
-    <div id="bookingGanttContainer" class="rounded-2xl border border-[var(--border-color)] overflow-hidden bg-[var(--card-bg)] shadow-lg">
-      <div class="p-4 border-b border-[#27272a] flex items-center justify-between bg-[#121216]">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-bold text-white uppercase tracking-wider">Kunlik Vaqt Matritsasi (24 Soatlik Shkala)</span>
-          <span class="text-[10px] text-zinc-400">• Bo'sh joyni bosib tezkor bron qiling</span>
-        </div>
-        <div class="flex items-center gap-3 text-[10px] font-mono">
-          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-emerald-500"></span><span class="text-zinc-300">Tasdiqlangan</span></div>
-          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-amber-500"></span><span class="text-zinc-300">Kutilmoqda</span></div>
-          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded bg-sky-500"></span><span class="text-zinc-300">Faol Seans</span></div>
-        </div>
-      </div>
-
-      <div class="overflow-x-auto scrollbar-thin">
-        <div id="bookingGanttMatrixBody" class="min-w-[960px] p-4 space-y-2">
-          <!-- Dynamically populated 24h Gantt rows per desk -->
-        </div>
-      </div>
-    </div>
-
-    <!-- 2. RO'YXAT / JADVAL KO'RINISHI (#bookingTableContainer) -->
-    <div id="bookingTableContainer" class="hidden space-y-4">
-      <!-- Filter Bar -->
-      <div class="p-3.5 rounded-2xl bg-[#141418] border border-[#27272a] flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-2 flex-1 min-w-[240px]">
-          <span class="text-zinc-500 text-xs">🔍</span>
-          <input type="text" id="bookingSearchInput" oninput="filterBookingsTable()" 
-                 placeholder="Mijoz ismi, telefon yoki stol bo'yicha qidiruv..." 
-                 class="bg-transparent text-xs text-white placeholder-zinc-500 focus:outline-none w-full font-sans">
-        </div>
-        <div class="flex items-center gap-2">
-          <select id="bookingFilterStatus" onchange="filterBookingsTable()" class="bg-[#09090b] text-zinc-300 border border-[#27272a] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-sky-500">
-            <option value="ALL">Barcha Holatlar</option>
-            <option value="CONFIRMED">✓ Tasdiqlangan</option>
-            <option value="PENDING">⏳ Kutilmoqda</option>
-            <option value="COMPLETED">Tugallangan</option>
-            <option value="CANCELLED">Bekor qilingan</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Jadval -->
-      <div class="rounded-2xl border border-[var(--border-color)] overflow-hidden bg-[var(--card-bg)]">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-[#0e0e12] border-b border-[#27272a] text-zinc-400 uppercase tracking-wider text-[10px] font-bold">
-              <tr>
-                <th class="p-3.5">Kompyuter</th>
-                <th class="p-3.5">Mijoz Ismi</th>
-                <th class="p-3.5">Telefon</th>
-                <th class="p-3.5">Vaqt Oralig'i</th>
-                <th class="p-3.5">Davomiylik</th>
-                <th class="p-3.5">Holati</th>
-                <th class="p-3.5">Izoh</th>
-                <th class="p-3.5 text-right">Amallar</th>
-              </tr>
-            </thead>
-            <tbody id="bookingsTableBody" class="divide-y divide-[#27272a]/60">
-              <!-- Dynamically populated rows -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    </div>
-  </section>
+  <section id="view-bookings" aria-labelledby="headerPageTitle" class="spa-view hidden"><div id="bookingWorkspace"></div></section>
 
   <!-- ===================================================================== -->
   <!-- VIEW 3: REPORTS (OTCHYOTLAR VA MOLIYAVIY HISOBOTLAR)                    -->
@@ -7693,8 +7524,9 @@
         document.getElementById('vipCheckoutPcName').textContent = data.computerName;
         document.getElementById('vipCheckoutCustomerName').textContent = data.customerName;
         const memberInfo = document.getElementById('checkoutMemberInfo');
-        memberInfo.classList.toggle('hidden', !data.isMember);
+        memberInfo.classList.toggle('hidden', !data.isMember && !(data.balanceRefund>0));
         memberInfo.textContent = data.member ? `Mijoz hisobi #${data.member.accountId} · ${data.member.username}\nJoriy balans: ${data.member.balance.toLocaleString()} so‘m\nHisobga qaytadi: ${data.member.refundAmount.toLocaleString()} so‘m` : '';
+        if(!data.isMember&&data.balanceRefund>0)memberInfo.textContent=`Mijoz balansiga qaytadi: ${data.balanceRefund.toLocaleString()} so‘m`;
         document.getElementById('vipCheckoutPlayedTime').textContent = `${data.playedMinutes} daqiqa (${data.playedHours} soat)`;
 
         const modeBadge = document.getElementById('vipCheckoutPricingModeBadge');
@@ -8558,7 +8390,7 @@
                   ${pc.roomName ? `<span class="text-xs font-medium text-sky-400 font-sans tracking-normal">• ${escapeHtml(pc.roomName)}</span>` : ''}
                 </span>
                 ${zoneBadgeHtml}
-                ${pc.upcomingBooking ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse" title="Bron qilingan: ${escapeHtml(pc.upcomingBooking.customerName)}">📅 ${escapeHtml(pc.upcomingBooking.startTime)}</span>` : ''}
+                ${pc.upcomingBooking ? `<span class="text-[9px] font-mono px-1.5 py-0.5 rounded font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse" title="Bron qilingan: ${escapeHtml(pc.upcomingBooking.customerName)}">📅 ${escapeHtml(new Date(pc.upcomingBooking.startTime).toLocaleString('uz-UZ',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}))}</span>` : ''}
               </div>
               <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full ${statusColor}" style="background:${state.color}"></span>
@@ -8625,10 +8457,10 @@
                 <div class="mt-2.5 p-2 rounded-xl ${pc.upcomingBooking.isImminent ? 'bg-amber-500/20 border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.25)] animate-pulse' : 'bg-amber-500/10 border-amber-500/30'} border flex items-center justify-between text-[11px] text-amber-300 pointer-events-auto">
                   <span class="flex items-center gap-1.5 truncate mr-1.5">
                     <span>⚠️</span>
-                    <span class="truncate">Bron qilingan: <b>${escapeHtml(pc.upcomingBooking.startTime)}</b> da ${escapeHtml(pc.upcomingBooking.customerName)}</span>
+                    <span class="truncate">Bron qilingan: <b>${escapeHtml(new Date(pc.upcomingBooking.startTime).toLocaleString('uz-UZ',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}))}</b> da ${escapeHtml(pc.upcomingBooking.customerName)}</span>
                   </span>
                   ${!isOccupied ? `
-                    <button type="button" onclick="startSessionFromBookingDirect('${pc.id}', '${escapeHtml(pc.upcomingBooking.customerName)}', '${escapeHtml(pc.upcomingBooking.startTime)}')" 
+                    <button type="button" data-pc-id="${escapeHtml(pc.id)}" onclick="startSessionFromBookingDirect(this.dataset.pcId)" ${pc.upcomingBooking.isCurrent?'':'disabled'}
                             class="px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-[10px] font-bold shrink-0 cursor-pointer transition">
                       Ochish
                     </button>
@@ -8658,7 +8490,12 @@
     let currentHourlyRate = 0;
     let customerSearchTimeout = null;
 
-    function openStartModal(pcId, pcName, batchIds = null) {
+    function openStartModal(pcId, pcName, batchIds = null, bookingEntry = false) {
+      const reservedPc=computersData.find(p=>p.id===pcId);
+      if(!bookingEntry&&!batchIds&&!reservedPc?.activeSession&&reservedPc?.upcomingBooking?.isCurrent&&globalThis.BookingUI){
+        window.startSessionFromBooking(reservedPc.upcomingBooking.id).catch(e=>showToast(e.message,'error'));return;
+      }
+      globalThis.BookingUI?.clear();
       if (batchIds && batchIds.length > 0) {
         targetSelectedPcIds = [...batchIds];
       } else {
@@ -8740,6 +8577,7 @@
         }
       }
       currentStartMode = mode;
+      if(globalThis.BookingUI?.active)setTimeout(()=>globalThis.BookingUI.schedule(),0);
       setStartQuotePending(false);
       const count = Math.max(1, targetSelectedPcIds.length);
 
@@ -8848,6 +8686,7 @@
 
     // 1. Soat yoki daqiqa bo'yicha hisoblash
     function calcFromHours(val) {
+      if(globalThis.BookingUI?.active){globalThis.BookingUI.schedule();return;}
       const revision = ++priceCalculationRevision;
       setStartQuotePending(true);
       const h = Number(val);
@@ -8908,6 +8747,7 @@
 
     // 2. Summa bo'yicha hisoblash
     function calcFromPrice(val) {
+      if(globalThis.BookingUI?.active){globalThis.BookingUI.schedule();return;}
       const revision = ++priceCalculationRevision;
       setStartQuotePending(true);
       const perPc = Math.max(0, parseFloat(val) || 0);
@@ -8963,6 +8803,7 @@
 
     // 3. Tugash vaqti bo'yicha dinamik hisoblash (Server Dynamic Pricing Engine orqali)
     async function calcFromEndTime(timeVal) {
+      if(globalThis.BookingUI?.active){globalThis.BookingUI.schedule();return;}
       const revision = ++priceCalculationRevision;
       quotedTargetEndTime = null;
       setStartQuotePending(true);
@@ -9075,6 +8916,7 @@
     }
 
     function calcClientHours(val) {
+      if(globalThis.BookingUI?.active){globalThis.BookingUI.schedule();return;}
       const revision = ++priceCalculationRevision;
       clearTimeout(calcDebounceTimer);
       setStartQuotePending(true);
@@ -9100,6 +8942,7 @@
     // 5. Seansni Boshlash (Single va Multi-PC Batch qo'llab-quvvatlaydi)
     async function handleStartSession(e) {
       e.preventDefault();
+      if(globalThis.BookingUI?.active)return globalThis.BookingUI.submit();
       if (document.getElementById('btnSubmitStart').disabled) return;
       const selectedPaymentEl = document.querySelector('input[name="paymentType"]:checked');
       const paymentType = selectedPaymentEl ? selectedPaymentEl.value : 'CASH';
@@ -9772,6 +9615,7 @@
     }
 
     function closeModal(id) {
+      if(id==='startSessionModal')globalThis.BookingUI?.clear();
       const el = document.getElementById(id);
       if (el) el.classList.add('hidden');
     }
@@ -9861,6 +9705,8 @@
   </script>
   <!-- SPA View Routing and Module Controller -->
   <script src="app.js"></script>
+  <link rel="stylesheet" href="/booking-ui.css">
+  <script src="/booking-ui.js"></script>
   <script src="session-end-notices.js"></script>
   <script src="cloud-announcements.js"></script>
   <script>
